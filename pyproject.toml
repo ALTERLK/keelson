@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keelson"
+version = "0.1.0"
+description = "A self-evolving agent harness — Agent Runtime with permission gateway, context folding, long-term memory and self-evolving Skills."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "anthropic>=0.25",
+    "openai>=1.0",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
+# Third-party libs a subset of ToolHop tool bodies import.
+bench = [
+    "python-dateutil>=2.8",
+    "pytz>=2024.1",
+    "babel>=2.14",
+    "dicttoxml>=1.7",
+]
+
+[project.scripts]
+keelson = "agents.main:main"
+
+[tool.setuptools]
+packages = ["agents"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# Vendored third-party skill payloads are not part of the harness.
+extend-exclude = [".keelson/skills/*/scripts", "bench/tasks"]
+
+[tool.ruff.lint]
+# Pragmatic: this is a ported prototype, not greenfield. Keep the signal high.
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",   # long lines — pragmatic for a ported prototype
+    "B008",   # function call in arg default — used intentionally
+    "E741",   # ambiguous var name (pre-existing: `l` for line)
+    "E722",   # bare except (pre-existing in legacy tool wrappers)
+    "B023",   # loop-var closure (pre-existing, not hot)
+    "E402",   # import-not-at-top (one deliberate late import)
+]
