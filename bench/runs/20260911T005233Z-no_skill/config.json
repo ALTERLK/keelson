@@ -1,0 +1,20 @@
+{
+  "dataset_path": "<repo>\\data\\ToolHop\\ToolHop.json",
+  "arm": "no_skill",
+  "split_name": "task-ids(3)",
+  "split_path": "bench/splits.json",
+  "model": "gemini-3.8-flash",
+  "api_base": "https://4sapi.com/v1",
+  "use_openai": true,
+  "concurrency": 6,
+  "max_turns": 40,
+  "seed": 0,
+  "git_commit": "e52491d",
+  "evolved_skill_dir": "",
+  "repeats": 2,
+  "variant": "none",
+  "save_transcripts": true,
+  "dump_payloads": false,
+  "started_at": "2026-09-11T00:52:33Z",
+  "n_tasks": 3
+}

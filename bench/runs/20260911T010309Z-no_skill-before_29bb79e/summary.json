@@ -1,0 +1,68 @@
+{
+  "config": {
+    "dataset_path": "<repo>/data/ToolHop/ToolHop.json",
+    "arm": "no_skill",
+    "split_name": "task-ids(7)",
+    "split_path": "bench/splits.json",
+    "model": "gemini-3.8-flash",
+    "api_base": "https://4sapi.com/v1",
+    "use_openai": true,
+    "concurrency": 6,
+    "max_turns": 20,
+    "seed": 0,
+    "git_commit": "29bb79e",
+    "evolved_skill_dir": "",
+    "repeats": 5,
+    "variant": "none",
+    "save_transcripts": false,
+    "dump_payloads": false,
+    "started_at": "2026-09-11T01:03:09Z",
+    "n_tasks": 7
+  },
+  "arm": {
+    "arm": "no_skill",
+    "n": 35,
+    "correct": 9,
+    "accuracy": 0.2571428571428571,
+    "avg_turns": 18.8,
+    "avg_tool_calls": 18.37142857142857,
+    "invalid_tool_call_rate": 0.0,
+    "avg_input_tokens": 28022.685714285715,
+    "avg_output_tokens": 853.7714285714286,
+    "est_cost_usd": 0.3689,
+    "wall_time_s": 1759.7399999999998
+  },
+  "pooled": {
+    "n_rows": 35,
+    "n_tasks": 7,
+    "accuracy": 0.2571428571428571,
+    "task_mean_min": 0.0,
+    "task_mean_max": 1.0,
+    "tasks_unstable": 2
+  },
+  "hit_cap_rate": 0.6,
+  "avg_model_calls": 19.2,
+  "by_hops": {
+    "3": {
+      "n": 20,
+      "correct": 7,
+      "accuracy": 0.35
+    },
+    "4": {
+      "n": 5,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    "5": {
+      "n": 5,
+      "correct": 2,
+      "accuracy": 0.4
+    },
+    "7": {
+      "n": 5,
+      "correct": 0,
+      "accuracy": 0.0
+    }
+  },
+  "errors": []
+}

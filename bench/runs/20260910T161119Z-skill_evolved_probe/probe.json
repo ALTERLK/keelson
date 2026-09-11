@@ -1,0 +1,83 @@
+{
+  "probe": "skill_evolved",
+  "model": "gemini-3.8-flash",
+  "n_train_tasks": 12,
+  "n_candidates": 0,
+  "candidates": [],
+  "maintainer_decisions": [],
+  "per_task": [
+    {
+      "task_id": 3,
+      "hops": 4,
+      "transcript_turns": 10,
+      "candidate": null
+    },
+    {
+      "task_id": 4,
+      "hops": 3,
+      "transcript_turns": 28,
+      "candidate": null
+    },
+    {
+      "task_id": 43,
+      "hops": 3,
+      "transcript_turns": 24,
+      "candidate": null
+    },
+    {
+      "task_id": 67,
+      "hops": 3,
+      "transcript_turns": 14,
+      "candidate": null
+    },
+    {
+      "task_id": 121,
+      "hops": 3,
+      "transcript_turns": 10,
+      "candidate": null
+    },
+    {
+      "task_id": 139,
+      "hops": 3,
+      "transcript_turns": 28,
+      "candidate": null
+    },
+    {
+      "task_id": 170,
+      "hops": 3,
+      "transcript_turns": 28,
+      "candidate": null
+    },
+    {
+      "task_id": 174,
+      "hops": 3,
+      "transcript_turns": 28,
+      "candidate": null
+    },
+    {
+      "task_id": 177,
+      "hops": 3,
+      "transcript_turns": 28,
+      "candidate": null
+    },
+    {
+      "task_id": 200,
+      "hops": 3,
+      "transcript_turns": 28,
+      "candidate": null
+    },
+    {
+      "task_id": 201,
+      "hops": 3,
+      "transcript_turns": 18,
+      "candidate": null
+    },
+    {
+      "task_id": 271,
+      "hops": 4,
+      "transcript_turns": 28,
+      "candidate": null
+    }
+  ],
+  "conclusion": "0 candidates extracted -> skill_evolved == no_skill on ToolHop"
+}

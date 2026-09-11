@@ -1,0 +1,300 @@
+[
+  {
+    "role": "system",
+    "content": "You answer multi-hop questions using ONLY the tools provided in this request. Never answer from your own knowledge. Decompose the question into ordered sub-questions; call one tool per hop; feed each tool result into the next call verbatim. If a tool returns an object, extract the field the next hop needs. When every hop is done, output only: ANSWER: <final answer>"
+  },
+  {
+    "role": "user",
+    "content": "How many hours are there between the winter time zone of the place of burial of Margaret Clifford, Countess Of Cumberland's father and UTC?\n\nUse the provided tools to answer. Each tool's output feeds the next call. When you have the answer, reply with ONLY the final answer on the last line, prefixed exactly with 'ANSWER: '."
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_927a8410cbdd4580adca04d0317a7e62",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Margaret Clifford, Countess of Cumberland\",\"relationship\":\"father\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_927a8410cbdd4580adca04d0317a7e62",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_9d0bcb026290434d9a6f2b57c96165cc",
+        "type": "function",
+        "function": {
+          "name": "historical_figure_info",
+          "arguments": "{\"name\":\"Margaret Clifford, Countess of Cumberland\",\"query_type\":\"significant_events\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_9d0bcb026290434d9a6f2b57c96165cc",
+    "content": "\"Information not available.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_04d1ef5686e745f08c357920bd757cf9",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Margaret Clifford\",\"relationship\":\"father\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_04d1ef5686e745f08c357920bd757cf9",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_4b8f82cd2f3c472daf0a89710e52c91a",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Margaret Russell, Countess of Cumberland\",\"relationship\":\"father\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_4b8f82cd2f3c472daf0a89710e52c91a",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_947f132467a9484aaac0640f0cebcbe3",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Lady Margaret Clifford\",\"relationship\":\"father\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_947f132467a9484aaac0640f0cebcbe3",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_74169cb980924df9a4634ffba9fa9c27",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Margaret Stanley, Countess of Derby\",\"relationship\":\"father\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_74169cb980924df9a4634ffba9fa9c27",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_82acc3aba6e442ff9cb79ed49b4114a8",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Margaret Clifford, Countess of Cumberland\",\"relationship\":\"father\",\"source_credibility\":\"unverified\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_82acc3aba6e442ff9cb79ed49b4114a8",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_2fe6e0e7fa6d46b38b39a034e277d627",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Francis Russell, 2nd Earl of Bedford\",\"relationship\":\"children\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_2fe6e0e7fa6d46b38b39a034e277d627",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_d2cb61b83d524e58bf06ddd301c8ea65",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Henry Clifford, 2nd Earl of Cumberland\",\"relationship\":\"children\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_d2cb61b83d524e58bf06ddd301c8ea65",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_44cb4ade00624719a25cf24eaf33b24b",
+        "type": "function",
+        "function": {
+          "name": "historical_figure_info",
+          "arguments": "{\"name\":\"Henry Clifford\",\"query_type\":\"burial_place\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_44cb4ade00624719a25cf24eaf33b24b",
+    "content": "\"Information not available.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_4e8730301c2a4805bc33f5ff8989b964",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Margaret Clifford, Countess of Derby\",\"relationship\":\"father\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_4e8730301c2a4805bc33f5ff8989b964",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_67354943978143749a58b0752b3465cf",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"data_accuracy\":\"low\",\"person_name\":\"Margaret Clifford\",\"relationship\":\"father\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_67354943978143749a58b0752b3465cf",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_b22301c107c645e1b14f13ec82528265",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Margaret Clifford, Countess of Cumberland\",\"relationship\":\"mother\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_b22301c107c645e1b14f13ec82528265",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_f407b48c465142a394abba33274cd09c",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"Francis Russell\",\"relationship\":\"children\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_f407b48c465142a394abba33274cd09c",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+      {
+        "id": "call_8ea0ae4c26e74cc49da53739d4e27969",
+        "type": "function",
+        "function": {
+          "name": "genealogy_lookup",
+          "arguments": "{\"person_name\":\"George Clifford, 3rd Earl of Cumberland\",\"relationship\":\"father\"}"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "tool_call_id": "call_8ea0ae4c26e74cc49da53739d4e27969",
+    "content": "\"Error: No genealogical data found for the specified person.\""
+  },
+  {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": null
+  }
+]

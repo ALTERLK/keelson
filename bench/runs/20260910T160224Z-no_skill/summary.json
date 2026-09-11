@@ -1,0 +1,140 @@
+{
+  "config": {
+    "dataset_path": "<repo>\\data\\ToolHop\\ToolHop.json",
+    "arm": "no_skill",
+    "split_name": "test",
+    "split_path": "bench/splits.json",
+    "model": "gemini-3.8-flash",
+    "api_base": "https://4sapi.com/v1",
+    "use_openai": true,
+    "concurrency": 6,
+    "max_turns": 20,
+    "seed": 0,
+    "git_commit": "9573e65",
+    "evolved_skill_dir": "",
+    "started_at": "2026-09-10T15:57:12Z",
+    "n_tasks": 60
+  },
+  "arm": {
+    "arm": "no_skill",
+    "n": 60,
+    "correct": 43,
+    "accuracy": 0.7166666666666667,
+    "avg_turns": 6.933333333333334,
+    "avg_tool_calls": 6.85,
+    "invalid_tool_call_rate": 0.0,
+    "avg_input_tokens": 9545.366666666667,
+    "avg_output_tokens": 416.05,
+    "est_cost_usd": 0.2342,
+    "wall_time_s": 1696.3099999999997
+  },
+  "by_hops": {
+    "3": {
+      "n": 27,
+      "correct": 20,
+      "accuracy": 0.7407407407407407
+    },
+    "4": {
+      "n": 21,
+      "correct": 17,
+      "accuracy": 0.8095238095238095
+    },
+    "5": {
+      "n": 7,
+      "correct": 6,
+      "accuracy": 0.8571428571428571
+    },
+    "6": {
+      "n": 1,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    "7": {
+      "n": 4,
+      "correct": 0,
+      "accuracy": 0.0
+    }
+  },
+  "errors": [
+    {
+      "task_id": 262,
+      "arm": "no_skill",
+      "hops": 7,
+      "answer_type": "number",
+      "gold": "3",
+      "prediction": null,
+      "correct": false,
+      "turns": 0,
+      "tool_calls": 0,
+      "invalid_tool_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_time_s": 1.26,
+      "error": "BadRequestError: Error code: 400 - {'error': {'message': 'Unable to submit request because `advanced_calculator` functionDeclaration `parameters.number2` schema specified incorrect schema type field. For schema with items, schema type should be ARRAY. Learn more: https://***.com/***/***/***/***/***', 'type': 'upstream_error', 'param': '', 'code': 400}}"
+    },
+    {
+      "task_id": 416,
+      "arm": "no_skill",
+      "hops": 4,
+      "answer_type": "number",
+      "gold": "625.0",
+      "prediction": null,
+      "correct": false,
+      "turns": 0,
+      "tool_calls": 0,
+      "invalid_tool_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_time_s": 5.29,
+      "error": "BadRequestError: Error code: 400 - {'error': {'message': 'Unable to submit request because `advanced_square_calculator` functionDeclaration `***.number` schema specified incorrect schema type field. For schema with properties, schema type should be OBJECT. Learn more: https://***.com/***/***/***/***/***', 'type': 'upstream_error', 'param': '', 'code': 400}}"
+    },
+    {
+      "task_id": 427,
+      "arm": "no_skill",
+      "hops": 7,
+      "answer_type": "number",
+      "gold": "3",
+      "prediction": null,
+      "correct": false,
+      "turns": 0,
+      "tool_calls": 0,
+      "invalid_tool_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_time_s": 1.94,
+      "error": "BadRequestError: Error code: 400 - {'error': {'message': 'Duplicate function declaration found: extract_first_name', 'type': 'upstream_error', 'param': '', 'code': 400}}"
+    },
+    {
+      "task_id": 552,
+      "arm": "no_skill",
+      "hops": 3,
+      "answer_type": "number",
+      "gold": "15",
+      "prediction": null,
+      "correct": false,
+      "turns": 0,
+      "tool_calls": 0,
+      "invalid_tool_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_time_s": 2.8,
+      "error": "BadRequestError: Error code: 400 - {'error': {'message': \"Invalid value at 'tools[0].function_declarations[2].***.properties[0].***.enum[0]' (TYPE_STRING), 2\\nInvalid value at 'tools[0].function_declarations[2].***.properties[0].***.enum[1]' (TYPE_STRING), 8\\nInvalid value at 'tools[0].function_declarations[2].***.properties[0].***.enum[2]' (TYPE_STRING), 10\\nInvalid value at 'tools[0].function_declarations[2].***.properties[0].***.enum[3]' (TYPE_STRING), 16\", 'type': 'upstream_error', 'param': '', 'code': 400}}"
+    },
+    {
+      "task_id": 555,
+      "arm": "no_skill",
+      "hops": 7,
+      "answer_type": "string",
+      "gold": "ca",
+      "prediction": null,
+      "correct": false,
+      "turns": 0,
+      "tool_calls": 0,
+      "invalid_tool_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_time_s": 1.11,
+      "error": "BadRequestError: Error code: 400 - {'error': {'message': 'Unable to submit request because `first_letter_extractor` functionDeclaration `***.input` schema specified incorrect schema type field. For schema with items, schema type should be ARRAY. Learn more: https://***.com/***/***/***/***/***', 'type': 'upstream_error', 'param': '', 'code': 400}}"
+    }
+  ]
+}
