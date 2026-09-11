@@ -1,0 +1,10 @@
+{
+  "arm": "raw",
+  "model": "gpt-6-astra",
+  "api_base": "https://4sapi.com/v1",
+  "use_openai": true,
+  "max_turns": 20,
+  "timeout_s": 120,
+  "git_commit": "cecfd39",
+  "started_at": "2026-09-11T02:44:41Z"
+}

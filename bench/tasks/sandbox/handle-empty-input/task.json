@@ -1,0 +1,4 @@
+{"id": "handle-empty-input",
+ "instruction": "average() raises ZeroDivisionError on an empty list. Make it return 0.0 for an empty input instead, without changing behaviour for non-empty lists.",
+ "files": ["stats.py"],
+ "kind": "edge-case"}

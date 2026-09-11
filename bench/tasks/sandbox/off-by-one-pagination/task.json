@@ -1,0 +1,4 @@
+{"id": "off-by-one-pagination",
+ "instruction": "paginate() drops the last item on the final page. Fix the off-by-one so every item is returned exactly once across all pages.",
+ "files": ["pager.py"],
+ "kind": "bugfix"}

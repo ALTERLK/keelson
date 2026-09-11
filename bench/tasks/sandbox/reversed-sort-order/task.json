@@ -1,0 +1,4 @@
+{"id": "reversed-sort-order",
+ "instruction": "top_n(items, n) is supposed to return the n largest items, largest first, but it currently returns the n smallest. Fix sorter.py so it returns the largest.",
+ "files": ["sorter.py"],
+ "kind": "bugfix"}

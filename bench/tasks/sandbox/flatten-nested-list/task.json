@@ -1,0 +1,4 @@
+{"id": "flatten-nested-list",
+ "instruction": "Add a function flatten(nested) to listutils.py that fully flattens an arbitrarily nested list of lists into a single flat list, preserving order. Non-list items pass through unchanged.",
+ "files": ["listutils.py"],
+ "kind": "feature"}

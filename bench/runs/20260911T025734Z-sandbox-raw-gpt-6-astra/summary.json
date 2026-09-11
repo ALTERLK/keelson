@@ -1,0 +1,25 @@
+{
+  "config": {
+    "arm": "raw",
+    "model": "gpt-6-astra",
+    "api_base": "https://4sapi.com/v1",
+    "use_openai": true,
+    "max_turns": 20,
+    "timeout_s": 120,
+    "git_commit": "cecfd39",
+    "started_at": "2026-09-11T02:57:34Z"
+  },
+  "grader": {
+    "n": 3,
+    "solve_rate": 1.0,
+    "test_file_modified_rate": 0.0,
+    "out_of_scope_edit_rate": 0.0,
+    "by_kind": {
+      "refactor": 1.0
+    }
+  },
+  "hit_cap_rate": 0.0,
+  "loop_guard_hits": 0,
+  "avg_turns": 5.0,
+  "errors": []
+}

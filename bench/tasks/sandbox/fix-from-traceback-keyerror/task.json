@@ -1,0 +1,4 @@
+{"id": "fix-from-traceback-keyerror",
+ "instruction": "Running the test suite produces:\n\nTraceback (most recent call last):\n  File \"test_orders.py\", line 6, in test_total_for_customer\n    assert total_for_customer(orders, \"c1\") == 30\n  File \"orders.py\", line 3, in total_for_customer\n    return sum(o[\"amount\"] for o in orders if o[\"customer_id\"] == customer_id)\nKeyError: 'customer_id'\n\nFix orders.py so the tests pass.",
+ "files": ["orders.py"],
+ "kind": "traceback"}

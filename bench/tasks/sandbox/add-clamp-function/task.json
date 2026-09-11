@@ -1,0 +1,4 @@
+{"id": "add-clamp-function",
+ "instruction": "Add a function clamp(x, lo, hi) to numeric.py that returns x constrained to the inclusive range [lo, hi]. If lo > hi, raise ValueError.",
+ "files": ["numeric.py"],
+ "kind": "feature"}

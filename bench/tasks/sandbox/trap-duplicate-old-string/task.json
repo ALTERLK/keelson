@@ -1,0 +1,4 @@
+{"id": "trap-duplicate-old-string",
+ "instruction": "celsius_to_kelvin() in convert.py uses the wrong formula (it looks copy-pasted from celsius_to_fahrenheit). Fix it to correctly convert Celsius to Kelvin (K = C + 273.15), rounded to 2 decimal places.",
+ "files": ["convert.py"],
+ "kind": "trap"}

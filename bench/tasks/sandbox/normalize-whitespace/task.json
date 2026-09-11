@@ -1,0 +1,4 @@
+{"id": "normalize-whitespace",
+ "instruction": "normalize(s) should collapse any run of internal whitespace (spaces, tabs, newlines) down to a single space, in addition to stripping the ends. Right now it only strips.",
+ "files": ["text_utils.py"],
+ "kind": "bugfix"}

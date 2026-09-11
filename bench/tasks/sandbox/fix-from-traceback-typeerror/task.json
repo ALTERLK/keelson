@@ -1,0 +1,4 @@
+{"id": "fix-from-traceback-typeerror",
+ "instruction": "Running the test suite produces:\n\nTraceback (most recent call last):\n  File \"test_discount.py\", line 5, in test_format_price\n    assert format_price(9.5) == \"USD: 9.5\"\n  File \"discount.py\", line 3, in format_price\n    return currency + \": \" + amount\nTypeError: can only concatenate str (not \"float\") to str\n\nFix discount.py so the tests pass.",
+ "files": ["discount.py"],
+ "kind": "traceback"}

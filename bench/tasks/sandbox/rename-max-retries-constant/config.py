@@ -1,0 +1,2 @@
+MAX_RETRY = 3
+TIMEOUT_S = 5

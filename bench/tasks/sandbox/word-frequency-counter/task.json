@@ -1,0 +1,4 @@
+{"id": "word-frequency-counter",
+ "instruction": "Add top_words(text, n) to wordcount.py that returns the n most frequent words as a list of (word, count) tuples, using the existing tokenize() function for splitting. Break ties alphabetically by word.",
+ "files": ["wordcount.py"],
+ "kind": "feature"}

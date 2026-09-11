@@ -1,0 +1,4 @@
+{"id": "rename-max-retries-constant",
+ "instruction": "Rename the constant MAX_RETRY in config.py to MAX_RETRIES everywhere it is defined and used (including in client.py), without changing behaviour.",
+ "files": ["config.py", "client.py"],
+ "kind": "refactor"}

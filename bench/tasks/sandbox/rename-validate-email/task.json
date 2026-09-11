@@ -1,0 +1,4 @@
+{"id": "rename-validate-email",
+ "instruction": "Rename the function chk_email in validators.py to validate_email everywhere it is defined and used (including its use in signup.py), without changing its behaviour.",
+ "files": ["validators.py", "signup.py"],
+ "kind": "refactor"}

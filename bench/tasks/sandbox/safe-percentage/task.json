@@ -1,0 +1,4 @@
+{"id": "safe-percentage",
+ "instruction": "percentage(part, whole) should return 0.0 when whole is 0 instead of raising ZeroDivisionError, and should round its result to 1 decimal place otherwise.",
+ "files": ["percent.py"],
+ "kind": "edge-case"}
