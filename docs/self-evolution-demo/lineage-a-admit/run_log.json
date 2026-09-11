@@ -1,0 +1,181 @@
+{
+  "label": "lineage-a-admit",
+  "intent": "admit",
+  "steps": [
+    {
+      "step": "round1 online_ingest",
+      "result": {
+        "action": "add",
+        "candidate": {
+          "name": "summarize-pr-changes-concisely",
+          "description": "Format pull request (PR) change summaries as concise bullet points, avoiding lengthy paragraphs.",
+          "when_to_use": "When the user asks to summarize PR changes, code updates, or commit diffs.",
+          "instructions": "- Present the PR changes as a concise bulleted list.\n- Keep each bullet point brief, clear, and focused on key modifications.\n- Avoid large blocks of text or verbose explanations.",
+          "evidence": "- 以后总结 PR 改动都用要点列表的形式，保持简洁，不要写大段文字。",
+          "tags": [
+            "git",
+            "pull-request",
+            "summary",
+            "formatting"
+          ]
+        },
+        "decision": {
+          "action": "add",
+          "target_skill": "",
+          "reason": "No existing skills match this durable preference for concise PR summary formatting.",
+          "merged_description": "",
+          "merged_when_to_use": "",
+          "merged_instructions": ""
+        },
+        "ok": true,
+        "event": "create",
+        "time": "2026-09-11T05:30:58Z",
+        "actor": "online",
+        "skill": "summarize-pr-changes-concisely",
+        "file": "<scratch-temp>\\.keelson\\skills\\summarize-pr-changes-concisely\\SKILL.md",
+        "target": "project",
+        "description": "Format pull request (PR) change summaries as concise bullet points, avoiding lengthy paragraphs.",
+        "when_to_use": "When the user asks to summarize PR changes, code updates, or commit diffs.",
+        "evidence": "- 以后总结 PR 改动都用要点列表的形式，保持简洁，不要写大段文字。"
+      }
+    },
+    {
+      "step": "round2 online_ingest",
+      "result": {
+        "action": "merge",
+        "candidate": {
+          "name": "format-change-summary-with-action-verbs",
+          "description": "Format bullet points in change summaries or changelogs starting with clear action verbs (e.g., '修复了', '新增了', '优化了').",
+          "when_to_use": "Use when summarizing code changes, pull requests, release notes, or updates in Chinese where bullet points should be structured and easy to scan.",
+          "instructions": "1. Begin each bullet point with an explicit action verb indicating the nature of the change (e.g., '修复了' for bug fixes, '新增了' for new features, '优化了' for performance/refactoring, '更新了' for updates).\n2. Keep each point concise, clearly stating the component or scope followed by the specific change made.\n3. Ensure consistent grammatical structure across all bullet items.",
+          "evidence": "每个要点最好用动词开头，比如'修复了'、'新增了'，这样读起来更清楚。",
+          "tags": [
+            "formatting",
+            "changelog",
+            "pr-summary",
+            "writing-style"
+          ]
+        },
+        "decision": {
+          "action": "merge",
+          "target_skill": "summarize-pr-changes-concisely",
+          "reason": "The candidate refines how bullet points in PR change summaries should be structured by specifying action verbs, which directly enhances the existing PR change summarization skill.",
+          "merged_description": "Format pull request (PR) change summaries and changelogs as concise bullet points starting with clear action verbs.",
+          "merged_when_to_use": "When summarizing PR changes, code updates, commit diffs, or changelogs, especially when concise and structured bullet points are needed.",
+          "merged_instructions": "# Skill Instructions\n\n- Present changes as a concise bulleted list; avoid large blocks of text or verbose explanations.\n- Begin each bullet point with an explicit action verb indicating the nature of the change (e.g., '修复了' for bug fixes, '新增了' for new features, '优化了' for performance/refactoring, '更新了' for general updates).\n- Clearly state the affected component or scope followed by the specific change made.\n- Maintain consistent grammatical structure and brief, scannable phrasing across all bullet items."
+        },
+        "ok": true,
+        "event": "evolve",
+        "time": "2026-09-11T05:31:06Z",
+        "actor": "agent",
+        "skill": "summarize-pr-changes-concisely",
+        "file": "<scratch-temp>\\.keelson\\skills\\summarize-pr-changes-concisely\\SKILL.md",
+        "version": "0.1.1",
+        "target": "active",
+        "lesson": "每个要点最好用动词开头，比如'修复了'、'新增了'，这样读起来更清楚。",
+        "rationale": "The candidate refines how bullet points in PR change summaries should be structured by specifying action verbs, which directly enhances the existing PR change summarization skill.",
+        "history": "<scratch-temp>\\.keelson\\skill-evolution\\history\\summarize-pr-changes-concisely.jsonl",
+        "gate": {
+          "action": "admit",
+          "reason": "non-inferior on replay",
+          "skill": "summarize-pr-changes-concisely",
+          "samples": 1,
+          "delta_score": 0.0,
+          "old": {
+            "n": 1,
+            "avg_score": 2.0,
+            "hard_failures": 0,
+            "pass_rate": 1.0,
+            "rule_count": 1
+          },
+          "new": {
+            "n": 1,
+            "avg_score": 2.0,
+            "hard_failures": 0,
+            "pass_rate": 1.0,
+            "rule_count": 1
+          }
+        }
+      }
+    }
+  ],
+  "path": "natural (Maintainer merge landed on the intended gate outcome)",
+  "final_result": {
+    "action": "merge",
+    "candidate": {
+      "name": "format-change-summary-with-action-verbs",
+      "description": "Format bullet points in change summaries or changelogs starting with clear action verbs (e.g., '修复了', '新增了', '优化了').",
+      "when_to_use": "Use when summarizing code changes, pull requests, release notes, or updates in Chinese where bullet points should be structured and easy to scan.",
+      "instructions": "1. Begin each bullet point with an explicit action verb indicating the nature of the change (e.g., '修复了' for bug fixes, '新增了' for new features, '优化了' for performance/refactoring, '更新了' for updates).\n2. Keep each point concise, clearly stating the component or scope followed by the specific change made.\n3. Ensure consistent grammatical structure across all bullet items.",
+      "evidence": "每个要点最好用动词开头，比如'修复了'、'新增了'，这样读起来更清楚。",
+      "tags": [
+        "formatting",
+        "changelog",
+        "pr-summary",
+        "writing-style"
+      ]
+    },
+    "decision": {
+      "action": "merge",
+      "target_skill": "summarize-pr-changes-concisely",
+      "reason": "The candidate refines how bullet points in PR change summaries should be structured by specifying action verbs, which directly enhances the existing PR change summarization skill.",
+      "merged_description": "Format pull request (PR) change summaries and changelogs as concise bullet points starting with clear action verbs.",
+      "merged_when_to_use": "When summarizing PR changes, code updates, commit diffs, or changelogs, especially when concise and structured bullet points are needed.",
+      "merged_instructions": "# Skill Instructions\n\n- Present changes as a concise bulleted list; avoid large blocks of text or verbose explanations.\n- Begin each bullet point with an explicit action verb indicating the nature of the change (e.g., '修复了' for bug fixes, '新增了' for new features, '优化了' for performance/refactoring, '更新了' for general updates).\n- Clearly state the affected component or scope followed by the specific change made.\n- Maintain consistent grammatical structure and brief, scannable phrasing across all bullet items."
+    },
+    "ok": true,
+    "event": "evolve",
+    "time": "2026-09-11T05:31:06Z",
+    "actor": "agent",
+    "skill": "summarize-pr-changes-concisely",
+    "file": "<scratch-temp>\\.keelson\\skills\\summarize-pr-changes-concisely\\SKILL.md",
+    "version": "0.1.1",
+    "target": "active",
+    "lesson": "每个要点最好用动词开头，比如'修复了'、'新增了'，这样读起来更清楚。",
+    "rationale": "The candidate refines how bullet points in PR change summaries should be structured by specifying action verbs, which directly enhances the existing PR change summarization skill.",
+    "history": "<scratch-temp>\\.keelson\\skill-evolution\\history\\summarize-pr-changes-concisely.jsonl",
+    "gate": {
+      "action": "admit",
+      "reason": "non-inferior on replay",
+      "skill": "summarize-pr-changes-concisely",
+      "samples": 1,
+      "delta_score": 0.0,
+      "old": {
+        "n": 1,
+        "avg_score": 2.0,
+        "hard_failures": 0,
+        "pass_rate": 1.0,
+        "rule_count": 1
+      },
+      "new": {
+        "n": 1,
+        "avg_score": 2.0,
+        "hard_failures": 0,
+        "pass_rate": 1.0,
+        "rule_count": 1
+      }
+    }
+  },
+  "gate": {
+    "action": "admit",
+    "reason": "non-inferior on replay",
+    "skill": "summarize-pr-changes-concisely",
+    "samples": 1,
+    "delta_score": 0.0,
+    "old": {
+      "n": 1,
+      "avg_score": 2.0,
+      "hard_failures": 0,
+      "pass_rate": 1.0,
+      "rule_count": 1
+    },
+    "new": {
+      "n": 1,
+      "avg_score": 2.0,
+      "hard_failures": 0,
+      "pass_rate": 1.0,
+      "rule_count": 1
+    }
+  },
+  "skill_name": "summarize-pr-changes-concisely"
+}

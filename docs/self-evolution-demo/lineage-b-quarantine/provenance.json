@@ -1,0 +1,140 @@
+[
+  {
+    "action": "add",
+    "decision": {
+      "action": "add",
+      "reason": "No existing skill matches this formatting standard, adding as a new durable user preference skill.",
+      "target_skill": ""
+    },
+    "error": "",
+    "event": "online_ingest",
+    "messages": [
+      {
+        "content": "帮我写一下这次发布的 release notes。",
+        "role": "user"
+      },
+      {
+        "content": "- 修复了分页边界的 bug\n- 新增了导出 CSV 的功能\n- 优化了首页加载速度",
+        "role": "assistant"
+      },
+      {
+        "content": "以后写 release notes 用要点列表，保持简洁。",
+        "role": "user"
+      }
+    ],
+    "ok": true,
+    "result": {
+      "action": "add",
+      "actor": "online",
+      "candidate": {
+        "description": "Standard for writing release notes using concise bullet points.",
+        "evidence": "以后写 release notes 用要点列表，保持简洁。",
+        "instructions": "Present the release notes as a concise bulleted list without unnecessary elaboration.",
+        "name": "format_release_notes",
+        "tags": [
+          "release-notes",
+          "formatting",
+          "writing-style"
+        ],
+        "when_to_use": "When generating or formatting release notes, changelogs, or update summaries."
+      },
+      "decision": {
+        "action": "add",
+        "reason": "No existing skill matches this formatting standard, adding as a new durable user preference skill.",
+        "target_skill": ""
+      },
+      "description": "Standard for writing release notes using concise bullet points.",
+      "event": "create",
+      "evidence": "以后写 release notes 用要点列表，保持简洁。",
+      "file": "<scratch-temp>\\.keelson\\skills\\format_release_notes\\SKILL.md",
+      "ok": true,
+      "skill": "format_release_notes",
+      "target": "project",
+      "time": "2026-09-11T05:31:12Z",
+      "when_to_use": "When generating or formatting release notes, changelogs, or update summaries."
+    },
+    "retrieved_reference": {},
+    "skill": "format_release_notes",
+    "time": "2026-09-11T05:31:12Z"
+  },
+  {
+    "action": "merge_quarantined",
+    "decision": {
+      "action": "merge",
+      "merged_description": "Standard for formatting release notes into concise bullet points with traceable issue or PR references.",
+      "merged_instructions": "# Skill Instructions\n\n1. Present release notes as a concise bulleted list without unnecessary elaboration.\n2. For each bullet point or changelog entry, include the corresponding issue number, pull request reference, or direct link to ensure full traceability.",
+      "merged_when_to_use": "Use when drafting, generating, or formatting release notes, changelogs, or update summaries.",
+      "reason": "Both skills define release note formatting standards; merging links issue/PR traceability directly into the release note bullet point guidelines.",
+      "target_skill": "format_release_notes"
+    },
+    "error": "candidate regressed on replay; rolled back",
+    "event": "online_ingest",
+    "messages": [
+      {
+        "content": "这次的 release notes 呢？",
+        "role": "user"
+      },
+      {
+        "content": "- 修复了登录超时的问题\n- 新增了深色模式",
+        "role": "assistant"
+      },
+      {
+        "content": "以后每一条 release notes 都要标注来源 issue/PR 链接，方便追溯，必须注明来源。",
+        "role": "user"
+      }
+    ],
+    "ok": false,
+    "result": {
+      "action": "merge_quarantined",
+      "candidate": {
+        "description": "Ensure every release note entry explicitly references its source issue or pull request link for traceability.",
+        "evidence": "以后每一条 release notes 都要标注来源 issue/PR 链接，方便追溯，必须注明来源。",
+        "instructions": "1. When writing release notes or changelog entries, do not list changes in isolation.\n2. For each bullet point or entry, include the corresponding issue number, pull request reference, or direct link.\n3. Ensure the source reference is clearly visible and facilitates traceability back to the original task or discussion.",
+        "name": "include-issue-pr-links-in-release-notes",
+        "tags": [
+          "release-notes",
+          "changelog",
+          "formatting",
+          "traceability"
+        ],
+        "when_to_use": "Use when drafting, generating, or formatting release notes, changelogs, or update summaries."
+      },
+      "decision": {
+        "action": "merge",
+        "merged_description": "Standard for formatting release notes into concise bullet points with traceable issue or PR references.",
+        "merged_instructions": "# Skill Instructions\n\n1. Present release notes as a concise bulleted list without unnecessary elaboration.\n2. For each bullet point or changelog entry, include the corresponding issue number, pull request reference, or direct link to ensure full traceability.",
+        "merged_when_to_use": "Use when drafting, generating, or formatting release notes, changelogs, or update summaries.",
+        "reason": "Both skills define release note formatting standards; merging links issue/PR traceability directly into the release note bullet point guidelines.",
+        "target_skill": "format_release_notes"
+      },
+      "error": "candidate regressed on replay; rolled back",
+      "gate": {
+        "action": "quarantine",
+        "delta_score": 0.0,
+        "new": {
+          "avg_score": 2.0,
+          "hard_failures": 1,
+          "n": 1,
+          "pass_rate": 0.5,
+          "rule_count": 2
+        },
+        "old": {
+          "avg_score": 2.0,
+          "hard_failures": 0,
+          "n": 1,
+          "pass_rate": 1.0,
+          "rule_count": 1
+        },
+        "reason": "hard_failures 1 > 0",
+        "samples": 1,
+        "skill": "format_release_notes"
+      },
+      "ok": false,
+      "quarantine_file": "<scratch-temp>\\.keelson\\skill-evolution\\quarantine\\format_release_notes-20260911T053122Z.md",
+      "skill": "format_release_notes"
+    },
+    "retrieved_reference": {},
+    "skill": "format_release_notes",
+    "time": "2026-09-11T05:31:22Z"
+  }
+]

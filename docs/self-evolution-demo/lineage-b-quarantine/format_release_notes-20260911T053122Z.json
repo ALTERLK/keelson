@@ -1,0 +1,25 @@
+{
+  "skill": "format_release_notes",
+  "time": "2026-09-11T05:31:22Z",
+  "decision": {
+    "action": "quarantine",
+    "reason": "hard_failures 1 > 0",
+    "skill": "format_release_notes",
+    "samples": 1,
+    "delta_score": 0.0,
+    "old": {
+      "n": 1,
+      "avg_score": 2.0,
+      "hard_failures": 0,
+      "pass_rate": 1.0,
+      "rule_count": 1
+    },
+    "new": {
+      "n": 1,
+      "avg_score": 2.0,
+      "hard_failures": 1,
+      "pass_rate": 0.5,
+      "rule_count": 2
+    }
+  }
+}
