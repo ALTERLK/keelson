@@ -1,127 +1,129 @@
 # Keelson
 
-> Keelson（内龙骨）：船底把龙骨和肋骨锁死的那根梁。模型是帆，Keelson 是把帆的力传导到整条船骨架上的结构件。
+**English** | [中文](README.zh-CN.md)
 
-一个**自研的自进化 Agent Harness**（Python，约 8k 行，无框架依赖）。模型只负责推理和提出工具调用意图；真正的环境操作由 Runtime 统一做**权限判断、工具执行、结果回写、上下文折叠和经验沉淀**。
+> A keelson is the structural beam that locks a ship's keel to its ribs. The model is the sail; Keelson is what carries that force through the rest of the hull.
 
-不用 LangGraph / AutoGen —— 项目的价值就是那个循环本身（见 [`docs/design-tradeoffs.md`](docs/design-tradeoffs.md)）。
+A **self-evolving agent harness**, built from scratch in Python (~8k lines, no framework dependencies). The model only reasons and proposes tool calls; the runtime owns everything that actually touches the environment — **permission checks, tool execution, writing results back, context folding, and skill accumulation**.
 
-## 证据,不是设计意图
+No LangGraph / AutoGen — the loop itself is the point of the project (see [`docs/design-tradeoffs.md`](docs/design-tradeoffs.md)).
 
-这个项目最容易被问穿的地方是"怎么证明有用"。三条证据链,数字和产物都在仓库里,不是口头描述:
+## Evidence, not design intent
 
-| | 做了什么 | 结果 |
+The question this kind of project gets asked hardest is "how do you know it actually helps?" Three evidence chains, with the numbers and artifacts committed in the repo — not just described:
+
+| | What was done | Result |
 |---|---|---|
-| **[ToolHop 基准](bench/REPORT.md)** | 自建四臂对照（裸 API / 裸 harness / 手写 Skill / 自进化 Skill）；n=60，配对 bootstrap 95% CI | 自己的基准跑出了自己 harness 的真实 bug（一处提示词让小模型陷入工具调用死循环），[定位](bench/spiral-diagnosis.md)、修复、重测：准确率 72.8%→79.4%，撞轮次上限 8.3%→0.0%，置信区间排除 0 |
-| **[Sandbox 编码基准](bench/REPORT.md#sandbox-coding-benchmark)** | 14 个真实编码任务（bugfix/feature/重构/只给报错栈/两个诱导作弊的陷阱题），两个模型档位各跑一遍 | 全部 56 次运行 0% 测试篡改、0% 越界修改；抓到一次真实的"编辑完不验证就交"失败案例，多跑几次确认不是偶然 |
-| **[自进化实测](docs/self-evolution-demo.md)** | 真实跑两条 Skill 演化链路 | 一次真实 **通过**（门禁核验后写入生效）、一次真实**隔离**（门禁拦截、live 文件回滚、留痕 Evolution Card）——不是单元测试模拟的，是真实链路里跑出来的 |
+| **[ToolHop benchmark](bench/REPORT.md)** | A self-built four-arm comparison (raw API / bare harness / hand-written skill / self-evolved skill); n=60, paired bootstrap 95% CI | The benchmark caught a real bug in the harness itself (an injected prompt sent a small model into a tool-call loop). [Root-caused](bench/spiral-diagnosis.md), fixed, and re-measured: accuracy 72.8%→79.4%, turn-cap hit rate 8.3%→0.0%, CI on the delta excludes zero |
+| **[Sandbox coding benchmark](bench/REPORT.md#sandbox-coding-benchmark)** | 14 real coding tasks (bugfix / feature / refactor / traceback-only / two adversarial traps), run once per model tier | Zero test tampering and zero out-of-scope edits across all 56 runs; caught one genuine "shipped without verifying" failure and re-ran it to confirm it wasn't a fluke |
+| **[Self-evolution, live-fired](docs/self-evolution-demo.md)** | Drove two real skill-evolution lineages through the actual pipeline | One real **admit** (passed the gate, written live), one real **quarantine** (gate blocked it, live file rolled back, audited on an Evolution Card) — not simulated in a unit test, produced by the real pipeline |
 
-`docs/design-tradeoffs.md` 里还有一张"已知问题"清单——包括自己发现、暂未修的两个真实缺陷。诚实比看起来完美更有说服力。
+`docs/design-tradeoffs.md` also carries a known-issues table — including two real defects found and left unfixed. Being honest about that is more convincing than looking flawless.
 
-## 里面有什么
+## What's inside
 
-**Runtime（`agents/`）**
+**Runtime (`agents/`)**
 
-- **Agent Loop** —— 流式响应、tool call 解析、权限门、工具执行、tool result 回写；OpenAI / Anthropic 双协议
-- **权限门（`tools.py::check_permission`）** —— 5 种模式 + `settings.json` allow/deny 规则 + 危险命令正则；子 Agent 不超过父级权限；MCP / 未分类工具默认拦截
-- **上下文折叠（`session_memory.py`）** —— 长任务把历史重写为 episodic / working / tool 三段结构化记忆；三层压缩（预算截断 → 陈旧结果剪除 → 空闲期微压缩）
-- **循环守卫** —— 检测到模型在小窗口内反复调用同一工具且结果不再收敛时拦截并提示收尾，按工具名开窗口（不是按参数——观察到的失效模式是参数模糊化，不是完全重复）
-- **长期 Memory** —— 按项目 hash 隔离
-- **Skills** —— 项目级 / 用户级 `SKILL.md`，BM25 检索，inline / fork 执行
-- **Skills 自进化** —— 从用户下一轮反馈中抽取可复用规则，`add / merge / discard`，非劣性门禁把关
-- **MCP** —— 自研 stdio JSON-RPC client，外部工具包装为 `mcp__server__tool`
-- **子 Agent** —— `explore` / `plan` / `general` + 自定义
+- **Agent loop** — streaming responses, tool-call parsing, the permission gate, tool execution, writing tool results back; OpenAI and Anthropic protocols
+- **Permission gate (`tools.py::check_permission`)** — 5 modes + `settings.json` allow/deny rules + a dangerous-shell-command regex; a sub-agent's permissions never exceed its parent's; MCP and unclassified tools are denied by default
+- **Context folding (`session_memory.py`)** — long tasks get their history rewritten into three structured slices (episodic / working / tool memory); three-tier compression (per-result budget → stale-result pruning → idle-time micro-compaction)
+- **Loop guard** — stops the model when it keeps hammering one tool in a small window without the results converging; windowed on tool *name*, not arguments, because the failure mode actually observed was argument fuzzing, not exact repetition
+- **Long-term memory** — isolated per project hash
+- **Skills** — project- and user-level `SKILL.md`, BM25 retrieval, inline or forked execution
+- **Skills self-evolution** — extracts reusable rules from the user's next-turn feedback, decides `add` / `merge` / `discard`, gated by a non-inferiority check
+- **MCP** — a hand-rolled stdio JSON-RPC client; external tools are wrapped as `mcp__server__tool`
+- **Sub-agents** — `explore` / `plan` / `general`, plus custom types
 
-**证据层（`agents/bench/`）**
+**Evidence layer (`agents/bench/`)**
 
-- **ToolHop 离线 benchmark（`runner.py`）** —— 每题自带可执行工具函数体 + 标准答案，判分确定可复现；四臂对照，训练/测试分离，配对 bootstrap 95% CI + McNemar
-- **非劣性晋级门禁（`skill_gate.py`）** —— 候选 Skill 必须在自身 replay 历史上不劣于旧版才允许写入生效，否则进隔离区并回滚；隔离事件和通过事件一样留痕
-- **可回滚 + Evolution Card** —— `/skill-diff` `/skill-history` `/skill-rollback`；每次 add/merge/quarantine 产出一张审计卡（证据 → 候选 → 决策 → diff → 门禁 → 结果）
-- **Sandbox 编码基准（`sandbox_runner.py`）** —— 真实 Agent 接入自建评分器，14 题、双模型
-- **成本 gating（`skill_gating.py`）** —— 零模型前置分类器，只有反馈型输入才进入昂贵的抽取链路
-- **性能 trace（`trace.py`）** + **折叠保真度探针（`fold_fidelity.py`）**（这两项机制已建好，实测数据待补,见 [`PROGRESS.md`](PROGRESS.md)）
+- **ToolHop offline benchmark (`runner.py`)** — every task ships an executable tool body and a gold answer, so scoring is deterministic; four-arm comparison, train/test split, paired bootstrap 95% CI + McNemar
+- **Non-inferiority promotion gate (`skill_gate.py`)** — a candidate skill may only go live if it doesn't regress against its own replay history; otherwise it's quarantined and rolled back — a quarantine event is audited exactly like an acceptance
+- **Rollback + Evolution Card** — `/skill-diff`, `/skill-history`, `/skill-rollback`; every add/merge/quarantine produces one audit card (evidence → candidate → decision → diff → gate result → outcome)
+- **Sandbox coding benchmark (`sandbox_runner.py`)** — a real Agent wired into a purpose-built grader, 14 tasks, two model tiers
+- **Cost gating (`skill_gating.py`)** — a zero-model pre-filter so only feedback-shaped turns enter the expensive extraction path
+- **Perf tracing (`trace.py`)** + **fold-fidelity probe (`fold_fidelity.py`)** (both built; measured numbers still pending, see [`PROGRESS.md`](PROGRESS.md))
 
-当前进度见 [`PROGRESS.md`](PROGRESS.md)；183 个测试全部无需 API key（模型调用全 mock）。
+Current status in [`PROGRESS.md`](PROGRESS.md); 183 tests, all mocked (no API key required).
 
-## 项目架构
+## Architecture
 
-![Keelson 总体架构](wiki/assets/architecture/01-overall-architecture.svg)
+![Keelson overall architecture](wiki/assets/architecture/01-overall-architecture.svg)
 
-核心运行链路：
+Core request path:
 
 ```text
-用户输入
+user input
   -> agents/main.py
   -> Agent.chat()
-  -> 构建 Prompt / 检索 Skills / 预取 Memory / 初始化 MCP
-  -> 调用 OpenAI-compatible 或 Anthropic-compatible 模型
-  -> 模型返回文本或 tool call
-  -> Runtime 做权限检查 + 循环守卫检查
-  -> 执行工具 / Skill / MCP / 子 Agent
-  -> tool result 回写模型
-  -> 保存 Session
-  -> 后台执行 Skill usage tracking 和 online skill evolution
+  -> build prompt / retrieve skills / prefetch memory / init MCP
+  -> call an OpenAI-compatible or Anthropic-compatible model
+  -> model returns text or a tool call
+  -> runtime runs the permission check + loop guard check
+  -> execute tool / skill / MCP / sub-agent
+  -> write the tool result back to the model
+  -> save the session
+  -> skill usage tracking + online skill evolution run in the background
 ```
 
-## 目录结构
+## Directory layout
 
 ```text
 keelson/
 ├── agents/
-│   ├── main.py                    # CLI 入口、REPL、参数解析
-│   ├── agent.py                   # Agent Runtime、模型调用、工具调度、上下文压缩、循环守卫
-│   ├── tools.py                   # 内置工具和权限系统
-│   ├── paths.py                   # 运行时路径解析（$KEELSON_HOME、项目级 .keelson/）
-│   ├── prompt.py                  # System prompt 动态构建
-│   ├── skills.py                  # Skills 加载、检索、执行、创建和演化封装
-│   ├── online_skill_evolution.py  # 在线 Skill 抽取和 add/merge/discard 决策
-│   ├── skill_evolution.py         # Skill 落盘、版本快照、审计统计
-│   ├── skill_gate.py              # 非劣性晋级门禁
+│   ├── main.py                    # CLI entry point, REPL, arg parsing
+│   ├── agent.py                   # Agent runtime: model calls, tool dispatch, context compression, loop guard
+│   ├── tools.py                   # built-in tools + the permission system
+│   ├── paths.py                   # runtime path resolution ($KEELSON_HOME, project-local .keelson/)
+│   ├── prompt.py                  # dynamic system-prompt assembly
+│   ├── skills.py                  # skill loading, retrieval, execution, create/evolve wrappers
+│   ├── online_skill_evolution.py  # online extraction + add/merge/discard decisions
+│   ├── skill_evolution.py         # skill file writes, version snapshots, audit stats
+│   ├── skill_gate.py              # non-inferiority promotion gate
 │   ├── skill_history.py           # diff / rollback
-│   ├── evolution_card.py          # 审计卡渲染
-│   ├── memory.py                  # 长期记忆系统
-│   ├── mcp_client.py              # MCP stdio JSON-RPC 客户端
-│   ├── subagent.py                # 子 Agent 配置
-│   ├── session.py                 # 会话保存与恢复
-│   ├── trace.py                   # 耗时 span 打点
-│   ├── ui.py                      # 终端 UI 输出
-│   └── bench/                     # ToolHop / sandbox 基准、评测统计
-├── tests/                         # 183 个测试，无需 API key
-├── bench/                         # 基准任务、split、REPORT.md、run 产物
-├── docs/                          # 设计取舍、自进化实测记录
-├── wiki/                          # 架构图与详细说明文档
-├── scripts/                       # 数据拉取、报告生成、自进化演示
+│   ├── evolution_card.py          # audit-card rendering
+│   ├── memory.py                  # long-term memory
+│   ├── mcp_client.py              # MCP stdio JSON-RPC client
+│   ├── subagent.py                # sub-agent config
+│   ├── session.py                 # session save/resume
+│   ├── trace.py                   # latency span tracing
+│   ├── ui.py                      # terminal UI rendering
+│   └── bench/                     # ToolHop / sandbox benchmarks, metrics
+├── tests/                         # 183 tests, no API key required
+├── bench/                         # benchmark tasks, splits, REPORT.md, run artifacts
+├── docs/                          # design trade-offs, self-evolution live-fire record
+├── wiki/                          # architecture diagrams and deep-dive docs (Chinese)
+├── scripts/                       # data fetching, report generation, self-evolution demo
 ├── Dockerfile
 ├── pyproject.toml
 └── README.md
 ```
 
-## 快速启动
+## Quickstart
 
-### 1. 准备环境
+### 1. Environment
 
-推荐环境：
+Recommended:
 
 - Python 3.11+
 - macOS / Linux / Windows
 - Git
-- ripgrep，可选但推荐
-- 一个 OpenAI-compatible 或 Anthropic-compatible 模型接口
+- ripgrep (optional but recommended)
+- An OpenAI-compatible or Anthropic-compatible model endpoint
 
-安装：
+Install:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
-pip install -e ".[dev,bench]"   # 装好 keelson 命令行入口 + 测试/评测依赖
-pytest -q                       # 应该 183 passed，无需配置任何 API key
+pip install -e ".[dev,bench]"   # installs the `keelson` CLI entry point + test/bench deps
+pytest -q                       # should read 183 passed, no API key needed
 ```
 
-### 2. 配置 `.env`
+### 2. Configure `.env`
 
-复制 `.env.example` 为 `.env`，项目会自动读取当前目录或父目录中的 `.env`。
+Copy `.env.example` to `.env` — the project reads `.env` from the current directory or a parent directory automatically.
 
-Anthropic-compatible 示例：
+Anthropic-compatible example:
 
 ```env
 APIKEY=sk-your-api-key
@@ -129,7 +131,7 @@ API=https://your-host/anthropic
 MODEL=claude-sonnet-4-6
 ```
 
-OpenAI-compatible 示例：
+OpenAI-compatible example:
 
 ```env
 OPENAI_API_KEY=sk-your-api-key
@@ -137,132 +139,135 @@ OPENAI_BASE_URL=https://your-host/v1
 MODEL=gpt-4o
 ```
 
-协议判断规则：
+Protocol detection:
 
-- `API` 或 `--api-base` 路径包含 `/anthropic` 时，按 Anthropic-compatible 调用。
-- 否则有 OpenAI base URL 时，按 OpenAI-compatible 调用。
-- `--model` 会覆盖 `.env` 中的 `MODEL`。
+- If `API` or `--api-base` contains `/anthropic`, it's called as Anthropic-compatible.
+- Otherwise, if an OpenAI base URL is set, it's called as OpenAI-compatible.
+- `--model` overrides `MODEL` from `.env`.
 
-### 3. 启动 REPL
+### 3. Start the REPL
 
 ```bash
 python3 -m agents.main
 ```
 
-启动后直接输入任务，例如：
+Then just type a task, e.g.:
 
 ```text
-阅读这个项目，告诉我 agent loop 是怎么跑起来的
+Read this project and tell me how the agent loop actually runs.
 ```
 
-### 4. 执行一次性任务
+### 4. Run a one-shot task
 
 ```bash
-python3 -m agents.main "总结这个项目的目录结构和核心模块"
+python3 -m agents.main "Summarize this project's directory structure and core modules"
 ```
 
-### 5. 使用 Plan Mode
+### 5. Use Plan Mode
 
-Plan Mode 适合重构、复杂修复和多文件修改。它会先只读分析和写计划，用户审批后再执行。
+Plan Mode suits refactors, complex fixes, and multi-file changes: it does a read-only analysis and writes a plan first, then executes after you approve it.
 
 ```bash
-python3 -m agents.main --plan "分析 Skills 检索逻辑应该如何优化"
+python3 -m agents.main --plan "Analyze how skill retrieval should be optimized"
 ```
 
-REPL 中也可以输入 `/plan`。
+`/plan` also works inside the REPL.
 
-### 6. 恢复最近会话
+### 6. Resume the last session
 
 ```bash
 python3 -m agents.main --resume
 ```
 
-## Skills 自进化
+## Skills self-evolution
 
-Keelson 的核心特色是 **Skills 自进化**。它可以从用户明确反馈中抽取未来可复用的规则，自动新增或合并到项目级或用户级 `SKILL.md`，并经过非劣性门禁才生效——真实跑出来的一次通过、一次隔离见 [`docs/self-evolution-demo.md`](docs/self-evolution-demo.md)。
+Keelson's headline feature is **skill self-evolution**: it extracts durable, reusable rules from explicit user feedback, adds or merges them into project- or user-level `SKILL.md` files, and only lets a merge go live after it clears a non-inferiority gate — one real admit and one real quarantine, produced by the actual pipeline, are documented in [`docs/self-evolution-demo.md`](docs/self-evolution-demo.md).
 
-### 1. 开启自动自进化
+### 1. Turn on auto-evolution
 
-默认 `KEELSON_AUTO_SKILL_EVOLUTION` 是开启的。为了明确配置，建议在 `.env` 中写：
+`KEELSON_AUTO_SKILL_EVOLUTION` defaults to on. To be explicit, put this in `.env`:
 
 ```env
 KEELSON_AUTO_SKILL_EVOLUTION=1
 KEELSON_AUTO_SKILL_TARGET=project
 ```
 
-- `KEELSON_AUTO_SKILL_EVOLUTION=1`：启用在线 Skill 自进化
-- `KEELSON_AUTO_SKILL_TARGET=project`：自动新增的 Skill 写入当前项目 `.keelson/skills/`（改成 `user` 则写入 `~/.keelson/skills/`，跨项目共享）
+- `KEELSON_AUTO_SKILL_EVOLUTION=1`: enables online skill self-evolution
+- `KEELSON_AUTO_SKILL_TARGET=project`: newly auto-created skills are written to the current project's `.keelson/skills/` (set to `user` to write to `~/.keelson/skills/` and share across projects)
 
-### 2. 用允许写入的权限模式启动
+### 2. Start in a permission mode that allows writes
 
-后台自动写入 Skill 需要当前权限模式允许写文件：
+Background skill writes need a permission mode that allows file writes:
 
 ```bash
 python3 -m agents.main --accept-edits
 ```
 
-### 3. 给出可复用反馈
+### 3. Give feedback worth capturing
 
-自进化不是把每一句话都写成 Skill，只适合沉淀稳定、明确、未来同类任务仍适用的规则——判定逻辑见 `agents/skill_gating.py::looks_like_feedback`。
+Self-evolution doesn't turn every sentence into a skill — only stable, explicit rules that will still apply to future tasks of the same kind. See `agents/skill_gating.py::looks_like_feedback` for the actual filter.
 
-不适合沉淀（一次性任务）：
+Not worth capturing (one-off task):
 
 ```text
-帮我写一篇 500 字政府报告。
+Write me a 500-word government report.
 ```
 
-适合沉淀（面向未来的规则）：
+Worth capturing (a forward-looking rule):
 
 ```text
-以后写政府报告、工作汇报、调研材料时，默认先给可直接使用的初稿，不要连续追问；
-结构按"标题、背景、主要情况、问题分析、工作举措、下一步计划"组织，语言要正式克制。
+From now on, government reports, work summaries, and research briefs should
+default to a ready-to-use draft on the first pass, no back-and-forth questions;
+structure them as title, background, current situation, problem analysis,
+actions taken, next steps — formal, restrained tone.
 ```
 
-### 4. 自进化链路如何工作
+### 4. How the pipeline works
 
 ```text
-第 N 轮用户任务
-  -> Agent 输出结果
-  -> 保存 pending extraction window
-第 N+1 轮用户反馈
-  -> 合并进上一轮 window
+turn N: user task
+  -> Agent produces a result
+  -> save a pending extraction window
+turn N+1: user feedback
+  -> merged into the previous window
   -> online_ingest()
-  -> Extractor 抽取候选 Skill（只认用户反馈轮，不认模型自我评估）
-  -> Maintainer 判断 add / merge / discard
-  -> merge 走非劣性门禁：候选在该 Skill 的历史回放样本上不能变差
-  -> 门禁通过 -> 写入 SKILL.md + Evolution Card
-  -> 门禁拒绝 -> 隔离候选、live 文件回滚、同样写 Evolution Card（标 REJECTED）
+  -> Extractor pulls a candidate skill (only from the user's turn, never the model's own self-assessment)
+  -> Maintainer decides add / merge / discard
+  -> merge goes through the non-inferiority gate: the candidate must not regress against the skill's own replay history
+  -> gate passes -> write SKILL.md + an Evolution Card
+  -> gate rejects -> quarantine the candidate, roll back the live file, still write an Evolution Card (marked REJECTED)
 ```
 
-核心文件：`agents/agent.py`、`agents/online_skill_evolution.py`、`agents/skill_gate.py`、`agents/skills.py`、`agents/skill_evolution.py`。真实跑一遍：`python scripts/demo_self_evolution.py`（需要 API key；`--dry-run` 不需要）。
+Core files: `agents/agent.py`, `agents/online_skill_evolution.py`, `agents/skill_gate.py`, `agents/skills.py`, `agents/skill_evolution.py`. Run it for real: `python scripts/demo_self_evolution.py` (needs an API key; `--dry-run` doesn't).
 
-## 评测
+## Evaluation
 
 ```bash
-# ToolHop 四臂（每臂独立隔离，互不串味）
+# ToolHop, four arms (each isolated, no cross-contamination)
 python -m agents.bench.runner --arm raw_api   --n 60
 python -m agents.bench.runner --arm no_skill  --n 60
 python -m agents.bench.runner --arm skill_v1  --n 60
-python -m agents.bench.runner --arm no_skill --dry-run    # 只构建不调模型
+python -m agents.bench.runner --arm no_skill --dry-run    # build only, no model calls
 
-# 用已有 run 产物重新生成报告表格
+# Regenerate the report tables from existing run artifacts
 python scripts/bench_report.py
 
-# Sandbox 编码基准（无需 API key，先验证任务本身有效）
+# Sandbox coding benchmark (no API key needed to just validate the tasks)
 python -m agents.bench.sandbox_runner --validate
 python -m agents.bench.sandbox_runner --arm harness --model <model-name>
 ```
 
-- ToolHop 数据集：`bench/toolhop_subset.json`（120 题固定子集，够复现 `bench/REPORT.md` 的全部数字）；完整集用 `python scripts/fetch_data.py toolhop` 拉取
-- `pytest -q` 全绿（183 项，无需 API key，模型调用全 mock）
+- ToolHop dataset: `bench/toolhop_subset.json` (a fixed 120-task subset, enough to reproduce every number in `bench/REPORT.md`); pull the full dataset with `python scripts/fetch_data.py toolhop`
+- `pytest -q` is fully green (183 tests, no API key needed, every model call mocked)
 
-## 更多文档
+## More docs
 
-- [ToolHop + Sandbox 完整评测报告](bench/REPORT.md)
-- [自进化实测：一次真实通过 + 一次真实隔离](docs/self-evolution-demo.md)
-- [设计取舍与已知问题](docs/design-tradeoffs.md)
-- [从0到1学习了解项目](wiki/从0到1学习了解项目.md)
-- [架构设计](wiki/架构设计.md)
-- [核心源码阅读指南](wiki/核心源码阅读指南.md)
-- [技术亮点](wiki/技术亮点.md)
-- [Skills自进化逻辑与实现思路](wiki/Skills自进化逻辑与实现思路.md)
+- [ToolHop + Sandbox full evaluation report](bench/REPORT.md)
+- [Self-evolution, live-fired: one real admit + one real quarantine](docs/self-evolution-demo.md)
+- [Design trade-offs and known issues](docs/design-tradeoffs.md)
+- [Build progress log](PROGRESS.md)
+- [From zero to one — a guided tour of the project](wiki/从0到1学习了解项目.md) (Chinese)
+- [Architecture design](wiki/架构设计.md) (Chinese)
+- [Core source-reading guide](wiki/核心源码阅读指南.md) (Chinese)
+- [Technical highlights](wiki/技术亮点.md) (Chinese)
+- [Skills self-evolution: logic and implementation](wiki/Skills自进化逻辑与实现思路.md) (Chinese)
