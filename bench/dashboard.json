@@ -1,0 +1,27 @@
+{
+  "_comment": "Names which run directories under bench/runs/ make up each series on the web dashboard. Figures are recomputed from those runs' results.jsonl; nothing is entered by hand.",
+  "toolhop": {
+    "model": "gemini-3.8-flash",
+    "dataset": "ToolHop, 60-task hop-stratified test split",
+    "fix": {
+      "before": ["20260911T011133Z-no_skill-before_29bb79e"],
+      "after": ["20260911T011140Z-no_skill"]
+    },
+    "arms": {
+      "raw_api": ["20260911T012554Z-raw_api"],
+      "no_skill": ["20260911T011140Z-no_skill"],
+      "skill_v1": ["20260911T012600Z-skill_v1"]
+    },
+    "comparisons": [
+      ["no_skill", "raw_api"],
+      ["skill_v1", "no_skill"],
+      ["skill_v1", "raw_api"]
+    ]
+  },
+  "sandbox": [
+    {"arm": "raw", "tier": "weak", "run": "20260911T024427Z-sandbox-raw-gemini-3.8-flash"},
+    {"arm": "harness", "tier": "weak", "run": "20260911T024434Z-sandbox-harness-gemini-3.8-flash"},
+    {"arm": "raw", "tier": "strong", "run": "20260911T024441Z-sandbox-raw-gpt-6-astra"},
+    {"arm": "harness", "tier": "strong", "run": "20260911T024447Z-sandbox-harness-gpt-6-astra"}
+  ]
+}

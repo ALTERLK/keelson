@@ -1,14 +1,17 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "keelson"
-version = "0.1.0"
-description = "A self-evolving agent harness — Agent Runtime with permission gateway, context folding, long-term memory and self-evolving Skills."
+version = "0.2.0"
+description = "A self-evolving agent harness: permission-gated tool execution, context folding, long-term memory, and skills that only change when a non-inferiority gate lets them."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "lk" }]
+keywords = ["agent", "llm", "tool-calling", "mcp", "benchmark"]
 dependencies = [
     "anthropic>=0.25",
     "openai>=1.0",
@@ -22,6 +25,12 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.6",
+    "httpx>=0.27",          # FastAPI's TestClient
+]
+# The browser console (`keelson web`). Optional: the CLI runs without it.
+web = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
 ]
 # Third-party libs a subset of ToolHop tool bodies import.
 bench = [
@@ -31,30 +40,38 @@ bench = [
     "dicttoxml>=1.7",
 ]
 
+[project.urls]
+Repository = "https://github.com/ALTERLK/keelson"
+Demo = "https://alterlk.github.io/keelson/"
+
 [project.scripts]
 keelson = "agents.main:main"
 
 [tool.setuptools]
-packages = ["agents"]
+packages = ["agents", "agents.bench", "agents.web"]
+
+[tool.setuptools.package-data]
+"agents.web" = ["static/*", "static/**/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
 target-version = "py311"
 # Vendored third-party skill payloads are not part of the harness.
-extend-exclude = [".keelson/skills/*/scripts", "bench/tasks"]
+extend-exclude = [".keelson/skills/*/scripts", "bench/tasks", "_private"]
 
 [tool.ruff.lint]
-# Pragmatic: this is a ported prototype, not greenfield. Keep the signal high.
+# A deliberately small rule set: correctness and import hygiene, no style churn.
 select = ["E", "F", "W", "I", "UP", "B"]
 ignore = [
-    "E501",   # long lines — pragmatic for a ported prototype
+    "E501",   # long lines (line-length above is a soft target)
     "B008",   # function call in arg default — used intentionally
-    "E741",   # ambiguous var name (pre-existing: `l` for line)
-    "E722",   # bare except (pre-existing in legacy tool wrappers)
-    "B023",   # loop-var closure (pre-existing, not hot)
+    "E741",   # ambiguous var name (`l` for line)
+    "E722",   # bare except in tool wrappers, where any failure becomes a tool error string
+    "B023",   # loop-var closure (used with immediate gather)
     "E402",   # import-not-at-top (one deliberate late import)
 ]

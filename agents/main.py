@@ -1,4 +1,4 @@
-"""CLI entry point and interactive REPL — mirrors cli.ts."""
+"""CLI entry point: argument parsing, the interactive REPL, and the ``web`` subcommand."""
 
 from __future__ import annotations
 
@@ -182,7 +182,12 @@ async def run_repl(agent: Agent) -> None:
             print_user_prompt()
 
     signal.signal(signal.SIGINT, handle_sigint)
-    print_welcome()
+    print_welcome(
+        model=agent.model,
+        permission_mode=agent.permission_mode,
+        cwd=os.getcwd(),
+        skill_count=len(discover_skills()),
+    )
 
     while True:
         print_user_prompt()
@@ -361,6 +366,7 @@ async def run_one_shot(agent: Agent, prompt: str) -> None:
 
 
 def main() -> None:
+    """CLI 程序入口：准备运行配置，创建 Agent，并按参数选择一次性执行或交互模式。"""
     # Windows consoles default to a legacy codepage (GBK on zh-CN); force UTF-8
     # so spinner glyphs and non-ASCII tool output never raise UnicodeEncodeError.
     for _stream in (sys.stdout, sys.stderr):
@@ -368,7 +374,13 @@ def main() -> None:
             _stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
-    """CLI 程序入口：准备运行配置，创建 Agent，并按参数选择一次性执行或交互模式。"""
+
+    # `keelson web ...` is a separate front end with its own options.
+    if len(sys.argv) > 1 and sys.argv[1] == "web":
+        from .web.cli import main as web_main
+
+        sys.exit(web_main(sys.argv[2:]))
+
     # 解析命令行参数，例如 --plan、--resume、--model，以及可选的一次性 prompt。
     args = parse_args()
     _load_env_file()
@@ -377,6 +389,7 @@ def main() -> None:
         # 自定义帮助文本，展示 Keelson 支持的启动参数和 REPL 内置命令。
         print("""
 Usage: keelson [options] [prompt]
+       keelson web [--port 8765] [--replay] [--no-open]    start the web console
 
 Options:
   --yolo, -y          Skip all confirmation prompts (bypassPermissions mode)
