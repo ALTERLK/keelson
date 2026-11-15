@@ -15,7 +15,7 @@ from typing import Any
 import anthropic
 import openai
 
-from agents import paths, trace
+from agents import events, paths, trace
 from agents.mcp_client import McpManager
 from agents.memory import MemoryPrefetch, format_memories_for_injection, start_memory_prefetch
 from agents.prompt import build_system_prompt
@@ -463,6 +463,9 @@ class Agent:
                 original_user_message
             )
 
+        if not self.is_sub_agent:
+            events.emit(events.USER_MESSAGE, text=original_user_message)
+
         self._aborted = False
         self._turn_output_buffer = []
         self._loop_window = []
@@ -734,7 +737,14 @@ class Agent:
         if result.get("ok"):
             if result.get("action") in {"add", "merge"}:
                 self._refresh_runtime_system_prompt()
-                print_info(f"Online skill {result.get('action')}: {result.get('skill')}")
+            if result.get("action") in {"add", "merge", "merge_quarantined"}:
+                events.emit(
+                    events.SKILL_EVOLUTION,
+                    action=result.get("action"),
+                    skill=result.get("skill"),
+                    version=result.get("version"),
+                    gate=result.get("gate"),
+                )
         elif result.get("action") not in {"add_denied", "merge_denied"}:
             print_error(f"Online skill evolution failed: {result.get('error') or result}")
 
@@ -971,6 +981,7 @@ class Agent:
         else:
             compacted = await self._compact_anthropic(trigger=trigger)
         if compacted:
+            events.emit(events.CONTEXT_FOLD, trigger=trigger, fold_count=self._fold_count)
             print_info("Conversation compacted.")
         return compacted
 
@@ -1218,6 +1229,30 @@ class Agent:
             return self.permission_mode
         return paths.env_value("KEELSON_SUBAGENT_MODE", default="dontAsk") or "dontAsk"
 
+    def _emit_usage(self) -> None:
+        if self.is_sub_agent:
+            return
+        events.emit(
+            events.USAGE,
+            input_tokens=self.total_input_tokens,
+            output_tokens=self.total_output_tokens,
+            context_tokens=self.last_input_token_count,
+            context_window=self.effective_window,
+            turns=self.current_turns,
+        )
+
+    @staticmethod
+    def _emit_permission(call_id: str | None, name: str, perm: dict, *, speculative: bool = False) -> None:
+        """Publish the gate's verdict for one tool call (allow / deny / confirm)."""
+        events.emit(
+            events.PERMISSION,
+            id=call_id,
+            name=name,
+            action=perm.get("action", "allow"),
+            message=perm.get("message", ""),
+            speculative=speculative,
+        )
+
     async def _execute_tool_call(self, name: str, inp: dict) -> str:
         if name == "compact_context":
             return await self._execute_compact_context_tool(inp)
@@ -1234,6 +1269,7 @@ class Agent:
         guard = self._loop_guard_check(name)
         if guard is not None:
             self._loop_guard_hits += 1
+            events.emit(events.LOOP_GUARD, name=name, hits=self._loop_guard_hits)
             return guard
 
         if name in self._external_tools:
@@ -1525,6 +1561,7 @@ class Agent:
                 if block["name"] in CONCURRENCY_SAFE_TOOLS:
                     perm = check_permission(block["name"], block["input"], self.permission_mode, self._plan_file_path)
                     if perm["action"]=="allow":
+                        self._emit_permission(block["id"], block["name"], perm, speculative=True)
                         task =asyncio.create_task(self._execute_tool_call(block["name"], block["input"]))
                         early_executions[block["id"]] = task
 
@@ -1540,6 +1577,7 @@ class Agent:
             self.total_input_tokens += response.usage.input_tokens
             self.total_output_tokens += response.usage.output_tokens
             self.last_input_token_count = response.usage.input_tokens
+            self._emit_usage()
 
             # Anthropic 的响应内容里可能混有 text block 和 tool_use block，这里只挑出工具调用。
             tool_uses = [b for b in response.content if b.type == "tool_use"]
@@ -1587,7 +1625,7 @@ class Agent:
 
                 # 将工具入参转为普通 dict，便于权限检查、打印和实际执行。
                 inp = dict(tu.input) if hasattr(tu, "items") else tu.input
-                print_tool_call(tu.name, inp)
+                print_tool_call(tu.name, inp, tu.id)
 
                 # 如果这个工具已经在流式阶段提前开始执行，这里只需要等待它完成并收集结果。
                 early_task = early_executions.get(tu.id)
@@ -1598,7 +1636,7 @@ class Agent:
                         raw = f"Error executing tool: {e}"
                     raw = _safe_utf8_text(raw)
                     res = self._persist_large_result(tu.name, raw)
-                    print_tool_result(tu.name, res)
+                    print_tool_result(tu.name, res, tu.id)
                     self._record_tool_outcome(tu.name, not self._looks_like_tool_failure(tu.name, raw, res))
                     tool_results.append({"type": "tool_result", "tool_use_id": tu.id, "content": res})
                     continue
@@ -1606,9 +1644,9 @@ class Agent:
                 # 如果不是提前执行的工具，就在真正执行前做权限检查。
 
                 perm = check_permission(tu.name, inp, self.permission_mode, self._plan_file_path)
+                self._emit_permission(tu.id, tu.name, perm)
                 if perm["action"] == "deny":
                     # 权限拒绝时，也要返回一个 tool_result，让模型知道该工具调用失败的原因。
-                    print_info(f"Denied: {perm.get('message', '')}")
                     self._record_tool_outcome(tu.name, False)
                     tool_results.append({"type": "tool_result", "tool_use_id": tu.id,
                                          "content": f"Action denied: {perm.get('message', '')}"})
@@ -1617,6 +1655,10 @@ class Agent:
                 if perm["action"] == "confirm" and perm.get("message") and perm["message"] not in self._confirmed_paths:
                     # 高风险操作需要用户确认；同一个 message 确认过后会缓存，避免重复询问。
                     confirmed = await self._confirm_dangerous(perm["message"])
+                    self._emit_permission(tu.id, tu.name, {
+                        "action": "allow" if confirmed else "deny",
+                        "message": "approved by user" if confirmed else "denied by user",
+                    })
                     if not confirmed:
                         self._record_tool_outcome(tu.name, False)
                         tool_results.append(
@@ -1631,7 +1673,7 @@ class Agent:
                     raw = f"Error executing tool: {e}"
                 raw = _safe_utf8_text(raw)
                 res = self._persist_large_result(tu.name, raw)
-                print_tool_result(tu.name, res)
+                print_tool_result(tu.name, res, tu.id)
                 self._record_tool_outcome(tu.name, not self._looks_like_tool_failure(tu.name, raw, res))
 
                 if self._context_cleared:
@@ -1806,6 +1848,7 @@ class Agent:
                 self.total_input_tokens += response["usage"]["prompt_tokens"]
                 self.total_output_tokens += response["usage"]["completion_tokens"]
                 self.last_input_token_count = response["usage"]["prompt_tokens"]
+                self._emit_usage()
 
             choice = response.get("choices", [{}])[0] if response.get("choices") else {}
             message = choice.get("message", {})
@@ -1840,18 +1883,22 @@ class Agent:
                 except Exception:
                     inp = {}
 
-                print_tool_call(fn_name, inp)
+                print_tool_call(fn_name, inp, tc.get("id"))
 
                 perm = check_permission(fn_name, inp, self.permission_mode, self._plan_file_path)
+                self._emit_permission(tc.get("id"), fn_name, perm)
 
                 if perm["action"] == "deny":
-                    print_info(f"Denied: {perm.get('message', '')}")
                     self._record_tool_outcome(fn_name, False)
                     oai_checked.append({"tc": tc, "fn": fn_name, "inp": inp, "allowed": False,
                                         "result": f"Action denied: {perm.get('message', '')}"})
                     continue
                 if perm["action"] == "confirm" and perm.get("message") and perm["message"] not in self._confirmed_paths:
                     confirmed = await self._confirm_dangerous(perm["message"])
+                    self._emit_permission(tc.get("id"), fn_name, {
+                        "action": "allow" if confirmed else "deny",
+                        "message": "approved by user" if confirmed else "denied by user",
+                    })
                     if not confirmed:
                         self._record_tool_outcome(fn_name, False)
                         oai_checked.append({"tc": tc, "fn": fn_name, "inp": inp, "allowed": False,
@@ -1878,7 +1925,7 @@ class Agent:
                         raw = await self._execute_tool_call(ct_item["fn"], ct_item["inp"])
                         raw = _safe_utf8_text(raw)
                         res = self._persist_large_result(ct_item["fn"], raw)
-                        print_tool_result(ct_item["fn"], res)
+                        print_tool_result(ct_item["fn"], res, ct_item["tc"].get("id"))
                         return ct_item, res
 
                     results = await asyncio.gather(*[_run_oai_safe(ct) for ct in batch["items"]])
@@ -1899,7 +1946,7 @@ class Agent:
                         raw = await self._execute_tool_call(ct["fn"], ct["inp"])
                         raw = _safe_utf8_text(raw)
                         res = self._persist_large_result(ct["fn"], raw)
-                        print_tool_result(ct["fn"], res)
+                        print_tool_result(ct["fn"], res, ct["tc"].get("id"))
                         self._record_tool_outcome(
                             ct["fn"],
                             not self._looks_like_tool_failure(ct["fn"], raw, res),
