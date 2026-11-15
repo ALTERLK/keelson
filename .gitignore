@@ -269,3 +269,7 @@ paper/
 
 # Playwright MCP runtime cache
 .playwright-mcp/
+
+# Static demo build (scripts/build_pages.py) and the docker-compose workspace mount
+/site/
+/workspace/

@@ -1,0 +1,17 @@
+services:
+  keelson:
+    build: .
+    image: keelson:local
+    # Loopback only: the console has no login and can run shell commands.
+    ports:
+      - "127.0.0.1:8765:8765"
+    # Optional. Without a key the console starts in replay mode.
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./workspace:/workspace      # the directory the agent works on
+      - keelson-data:/data          # sessions, skills, memory
+
+volumes:
+  keelson-data:

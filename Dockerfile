@@ -1,46 +1,34 @@
-FROM python:3.11-slim
+# Keelson in a container: the web console by default, the CLI with arguments.
+#
+#   docker compose up                        web console on http://localhost:8765
+#   docker compose run --rm keelson --help   CLI
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    KEELSON_HOME=/data
 
+# git and ripgrep are what the built-in tools shell out to.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        bash \
-        ca-certificates \
-        curl \
-        git \
-        gnupg \
-        grep \
-        ripgrep \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
-        > /etc/apt/sources.list.d/nodesource.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update \
-    && npx -y playwright@latest install --with-deps chromium \
-    && npm cache clean --force \
+    && apt-get install -y --no-install-recommends git ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
+COPY pyproject.toml README.md LICENSE ./
 COPY agents ./agents
-COPY README.md .
+# Read-only artifacts the console's benchmark, skill-evolution and trace pages show.
+COPY bench ./bench
+COPY docs/self-evolution-demo ./docs/self-evolution-demo
+COPY demo ./demo
 
-RUN mkdir -p /workspace
-COPY .mcp.json /workspace/.mcp.json
+# Editable, so the package keeps resolving those artifacts relative to /app.
+RUN pip install --no-cache-dir -e ".[web]"
 
+# The agent works on whatever is mounted here.
 WORKDIR /workspace
+EXPOSE 8765
 
-ENTRYPOINT ["python", "-m", "agents.main"]
+ENTRYPOINT ["keelson"]
+# Inside a container the server has to listen on all interfaces to be
+# reachable; publish the port to loopback only (see docker-compose.yml).
+CMD ["web", "--host", "0.0.0.0", "--in-container", "--no-open"]
