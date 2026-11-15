@@ -1,0 +1,23 @@
+{"type": "trace_header", "data": {"recorded_at": "2026-11-15T00:22:53Z", "title": "权限门拦下危险命令 · The gate stops a destructive command", "description": "模型想用 shell 删除文件，运行时先停下来询问；用户拒绝后，模型拿到拒绝结果并改用安全的做法。", "model": "gemini-3.8-flash", "scripted": false, "permission_mode": "default"}}
+{"t": 0.0, "type": "session", "data": {"live": true, "busy": false, "version": "0.1.0", "model": "gemini-3.8-flash", "permission_mode": "default", "modes": ["default", "acceptEdits", "dontAsk"], "workspace": "workspace", "recording": "trace.jsonl"}}
+{"t": 0.0, "type": "user_message", "data": {"text": "这个目录里的测试文件我不想要了，用 shell 命令把 test_stats.py 删掉，然后告诉我目录里还剩什么。"}}
+{"t": 0.0, "type": "thinking", "data": {"active": true, "label": "Thinking"}}
+{"t": 19.032, "type": "thinking", "data": {"active": false}}
+{"t": 19.032, "type": "usage", "data": {"input_tokens": 4583, "output_tokens": 873, "context_tokens": 4583, "context_window": 180000, "turns": 0}}
+{"t": 19.032, "type": "tool_call", "data": {"id": "call_f8003f0fd89c4bd38297216b8b77b481", "name": "list_files", "input": {"pattern": "*"}, "summary": "*"}}
+{"t": 19.032, "type": "permission", "data": {"id": "call_f8003f0fd89c4bd38297216b8b77b481", "name": "list_files", "action": "allow", "message": "", "speculative": false}}
+{"t": 19.032, "type": "tool_result", "data": {"id": "call_f8003f0fd89c4bd38297216b8b77b481", "name": "list_files", "ok": true, "preview": "stats.py\ntest_stats.py", "chars": 22}}
+{"t": 19.232, "type": "thinking", "data": {"active": true, "label": "Thinking"}}
+{"t": 41.701, "type": "thinking", "data": {"active": false}}
+{"t": 41.701, "type": "usage", "data": {"input_tokens": 9204, "output_tokens": 2250, "context_tokens": 4621, "context_window": 180000, "turns": 1}}
+{"t": 41.701, "type": "tool_call", "data": {"id": "call_cc59b0f9b2144cf1a247b6486f0a9b94", "name": "run_shell", "input": {"command": "del test_stats.py"}, "summary": "del test_stats.py"}}
+{"t": 41.701, "type": "permission", "data": {"id": "call_cc59b0f9b2144cf1a247b6486f0a9b94", "name": "run_shell", "action": "confirm", "message": "del test_stats.py", "speculative": false}}
+{"t": 41.711, "type": "confirm_request", "data": {"request_id": "0065f26a23ed", "message": "del test_stats.py"}}
+{"t": 43.316, "type": "confirm_resolved", "data": {"request_id": "0065f26a23ed", "allowed": false}}
+{"t": 43.316, "type": "permission", "data": {"id": "call_cc59b0f9b2144cf1a247b6486f0a9b94", "name": "run_shell", "action": "deny", "message": "denied by user", "speculative": false}}
+{"t": 43.517, "type": "thinking", "data": {"active": true, "label": "Thinking"}}
+{"t": 47.857, "type": "assistant_delta", "data": {"text": "\n您拒绝了执行删除命令 `del test_stats.py`。\n\n目前该文件尚未删除，目录中仍包含以下文件：\n- `stats.py`\n- `test_stats.py`\n\n如果您仍然希望删除该文件，您可以手动在终端中执行删除操作，或者允许删除命令的执行。"}}
+{"t": 47.857, "type": "thinking", "data": {"active": false}}
+{"t": 47.857, "type": "usage", "data": {"input_tokens": 13864, "output_tokens": 2319, "context_tokens": 4660, "context_window": 180000, "turns": 2}}
+{"t": 47.857, "type": "usage", "data": {"input_tokens": 13864, "output_tokens": 2319, "cost_usd": 0.076377}}
+{"t": 47.857, "type": "turn_end", "data": {}}
