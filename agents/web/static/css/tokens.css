@@ -1,0 +1,107 @@
+/* Design tokens. Every colour in app.css comes from here, so a theme is one
+   block of variables. The amber brand colour matches the terminal UI
+   (agents/ui.py), and the three --series-* colours are a colour-blind-safe
+   categorical set, checked against both chart surfaces. */
+
+:root {
+  color-scheme: light;
+
+  --bg: #f5f4ef;
+  --surface: #ffffff;
+  --surface-2: #f1efe9;
+  --surface-3: #e9e6de;
+  --border: #e2dfd6;
+  --border-strong: #cfcbbf;
+
+  --text: #1b1b19;
+  --text-2: #55534c;
+  --muted: #86837a;
+
+  --brand: #a8650f;
+  --brand-ink: #ffffff;
+  --brand-soft: #f8ecd9;
+
+  --ok: #1f8a55;
+  --ok-soft: #e2f3ea;
+  --warn: #a86a00;
+  --warn-soft: #fbf0d6;
+  --bad: #c93a3a;
+  --bad-soft: #fbe6e4;
+  --info: #2468c0;
+  --info-soft: #e3eefb;
+
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --grid: #e7e4dc;
+
+  --shadow: 0 1px 2px rgba(20, 18, 10, .06), 0 8px 24px rgba(20, 18, 10, .06);
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  --font: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, "Microsoft YaHei", monospace;
+}
+
+/* Dark values are declared twice on purpose: once for "follow the OS" and once
+   for an explicit choice, so the toggle can override the OS in both directions. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e1014;
+    --surface: #16191f;
+    --surface-2: #1c2028;
+    --surface-3: #252a34;
+    --border: #272c36;
+    --border-strong: #363c48;
+    --text: #ebe9e3;
+    --text-2: #b4b1a7;
+    --muted: #7e7b73;
+    --brand: #f6c177;
+    --brand-ink: #1a1408;
+    --brand-soft: #33291a;
+    --ok: #55c28a;
+    --ok-soft: #17301f;
+    --warn: #e3ac45;
+    --warn-soft: #33290f;
+    --bad: #f07a7a;
+    --bad-soft: #3a1c1c;
+    --info: #6ea9f2;
+    --info-soft: #172840;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --grid: #262b34;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .35);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1014;
+  --surface: #16191f;
+  --surface-2: #1c2028;
+  --surface-3: #252a34;
+  --border: #272c36;
+  --border-strong: #363c48;
+  --text: #ebe9e3;
+  --text-2: #b4b1a7;
+  --muted: #7e7b73;
+  --brand: #f6c177;
+  --brand-ink: #1a1408;
+  --brand-soft: #33291a;
+  --ok: #55c28a;
+  --ok-soft: #17301f;
+  --warn: #e3ac45;
+  --warn-soft: #33290f;
+  --bad: #f07a7a;
+  --bad-soft: #3a1c1c;
+  --info: #6ea9f2;
+  --info-soft: #172840;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --grid: #262b34;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 32px rgba(0, 0, 0, .35);
+}
