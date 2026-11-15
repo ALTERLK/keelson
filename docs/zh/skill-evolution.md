@@ -1,6 +1,6 @@
 # Skills 自进化逻辑与实现思路
 
-这份文档按当前代码重写，目标是说明 Keelson 里的 Skills 是怎么被发现、调用、写入、演化和治理的。
+本文说明 Keelson 里的 Skills 是怎么被发现、调用、写入、演化和治理的。
 
 它不是一个“自动学习”黑盒，而是一条可审计的在线沉淀链路：
 
@@ -442,18 +442,12 @@ skill_evolve
 - 现有 Skill 需要吸收新规则，就用 `/skill-evolve`。
 - 只是记录反馈，不改 Skill，就用 `/skill-feedback`。
 
-## 14. 当前项目可观察状态
+## 14. 可观察的产物
 
-当前项目已有的项目级 Skills 包括：
+项目级 Skills 位于 `.keelson/skills/<name>/SKILL.md`（用户级在 `~/.keelson/skills/`）。
+一条完整的真实记录（一次采纳、一次隔离）见 [`docs/self-evolution-demo.md`](../self-evolution-demo.md)。
 
-```text
-.keelson/skills/Chinese-WebNovel-Skill/SKILL.md
-.keelson/skills/code_review/SKILL.md
-.keelson/skills/zhangxuefeng-skill-main/SKILL.md
-.keelson/skills/政府报告撰写-正式书面化与政策结合/SKILL.md
-```
-
-当前已有的审计产物包括：
+运行后产生的审计产物包括：
 
 ```text
 .keelson/skill-evolution/usage.jsonl

@@ -58,11 +58,11 @@ REPL 命令入口：
 
 总体架构图：
 
-![在线 Skills 评测架构](wiki/assets/architecture/14-online-skill-eval-llm-judge.svg)
+![在线 Skills 评测架构](../assets/architecture/14-online-skill-eval-llm-judge.svg)
 
 完整流程图：
 
-![在线 Skills 评测流程图](wiki/assets/architecture/15-online-skill-eval-flow.svg)
+![在线 Skills 评测流程图](../assets/architecture/15-online-skill-eval-flow.svg)
 
 整体链路：
 

@@ -96,14 +96,14 @@ version; the citation requirement never reached it.
 
 ## What this answers
 
-Mapped to the hardest recurring interview line (`Harness面经.md:425-445`):
+The objections a self-modifying skill system has to meet, and where each is answered:
 
-| # | question | where the answer now lives |
-|---|---|---|
-| 2 | "自进化" of a kind where a user window lets people revise things — does that even count as self-evolution? | Both lineages: extraction keys only on a **user feedback turn** (`extract_online_skill_candidate`'s own rules — "USER turns are the primary evidence"), never on the model grading its own output. |
-| 3 | How do you audit right vs. wrong outcomes — no review loop, how do you keep evolution in check? | The gate is the review loop, now shown firing both ways: `docs/self-evolution-demo/lineage-a-admit/` (passed) and `lineage-b-quarantine/` (rejected + rolled back), each with a full Evolution Card. |
-| 9 | What's the full pipeline for one question-answer round? | Both `run_log.json` files are the literal trace: conversation → Extractor candidate → Maintainer decision → gate (old/new scores) → result. |
-| 11 | If a skill can be rewritten after every single exchange, how is answer stability guaranteed? | It can be rewritten, but not *land* unverified once a second round exists — lineage B shows a real rewrite attempt rejected and the live file unchanged. |
+| objection | where the answer lives |
+|---|---|
+| If a user's follow-up is what triggers a rewrite, is that really *self*-evolution? | Both lineages: extraction keys only on a **user feedback turn** (`extract_online_skill_candidate`'s own rules — "USER turns are the primary evidence"), never on the model grading its own output. |
+| With no human review step, what keeps evolution in check? | The gate is the review loop, now shown firing both ways: `docs/self-evolution-demo/lineage-a-admit/` (passed) and `lineage-b-quarantine/` (rejected + rolled back), each with a full Evolution Card. |
+| What exactly happens between one exchange and a changed skill? | Both `run_log.json` files are the literal trace: conversation → Extractor candidate → Maintainer decision → gate (old/new scores) → result. |
+| If a skill can be rewritten after any exchange, how is behaviour kept stable? | It can be rewritten, but not *land* unverified once a second round exists — lineage B shows a real rewrite attempt rejected and the live file unchanged. |
 
 ## Known limits of this evidence
 

@@ -142,8 +142,8 @@ so it's `ungated`). `scripts/demo_self_evolution.py` drives two independent
 skill lineages through two real rounds each of the actual `online_ingest()` →
 Extractor → Maintainer → `evolve_skill(gate=True)` pipeline: one lands on a
 real `admit`, one on a real `quarantine` (rolled back, quarantine file
-written) — both **naturally**, no scripted fallback needed. Full trace,
-gate scores, and the mapping to specific interview questions:
+written) — both **naturally**, no scripted fallback needed. Full trace and
+gate scores:
 [`docs/self-evolution-demo.md`](self-evolution-demo.md). Building it also
 found and fixed a real gap: a quarantined candidate got no Evolution Card at
 all (`evolution_card.py`, `online_skill_evolution.py`) — now a rejection is as

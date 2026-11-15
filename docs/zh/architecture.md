@@ -1,5 +1,7 @@
 # Keelson 架构设计
 
+[English](../architecture.md) | **中文**
+
 ## 1. 总体定位
 
 Keelson 的核心是 Harness。
@@ -34,11 +36,12 @@ Keelson 更接近：
 
 ## 2. 架构总览
 
-从层次上看，系统可以分成六层：
+从层次上看，系统可以分成七层：
 
 | 层级 | 主要文件 | 职责 |
 |------|----------|------|
-| 入口层 | `agents/main.py`、`agents/ui.py` | 参数解析、REPL、one-shot、终端输出 |
+| 入口层 | `agents/main.py`、`agents/ui.py`、`agents/web/` | 参数解析、REPL、one-shot、终端渲染、Web 控制台 |
+| 事件总线 | `agents/events.py` | 运行时只发布事件，所有前端都订阅同一条事件流 |
 | Harness 层 | `agents/agent.py` | Agent Loop、协议适配、工具调度、上下文压缩、session 保存 |
 | 能力层 | `agents/tools.py`、`agents/skills.py`、`agents/memory.py`、`agents/mcp_client.py`、`agents/subagent.py` | 工具、Skills、Memory、MCP、子 Agent |
 | Prompt 层 | `agents/prompt.py` | 动态构建 system prompt |
@@ -108,6 +111,18 @@ Keelson 更接近：
 | `main()` | 程序总入口 |
 
 入口层不关心工具细节，也不关心 Skills 如何演化。它只负责把配置和输入送进 Runtime。
+
+### 4.1 显示与运行解耦：事件总线
+
+Runtime 不直接打印。它在 `agents/events.py` 的进程内总线上发布带类型的事件（`tool_call`、`permission`、`tool_result`、`context_fold` 等），前端都是订阅者：
+
+```text
+Agent 循环 ──emit──▶ EventBus ──┬─▶ 终端渲染器（agents/ui.py）
+                               ├─▶ SSE 广播（agents/web/server.py）──▶ 浏览器
+                               └─▶ 轨迹录制器（agents/web/recorder.py）──▶ *.jsonl
+```
+
+`ui.py` 里的 `print_*` 只发布事件；真正往终端画的是订阅了总线的 `TerminalRenderer`。因为录制下来的轨迹和实时流是同一种事件，回放可以走与实时运行完全相同的界面代码。细节见 [`web-console.md`](web-console.md)。
 
 ## 5. Harness 层
 
