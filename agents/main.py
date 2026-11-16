@@ -375,11 +375,16 @@ def main() -> None:
         except Exception:
             pass
 
-    # `keelson web ...` is a separate front end with its own options.
+    # Subcommands with their own options.
     if len(sys.argv) > 1 and sys.argv[1] == "web":
         from .web.cli import main as web_main
 
         sys.exit(web_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] in ("doctor", "init"):
+        from . import doctor
+
+        run = doctor.doctor_main if sys.argv[1] == "doctor" else doctor.init_main
+        sys.exit(run(sys.argv[2:]))
 
     # 解析命令行参数，例如 --plan、--resume、--model，以及可选的一次性 prompt。
     args = parse_args()
@@ -390,6 +395,8 @@ def main() -> None:
         print("""
 Usage: keelson [options] [prompt]
        keelson web [--port 8765] [--replay] [--no-open]    start the web console
+       keelson init                                        write a .env interactively
+       keelson doctor [--offline]                          check that this install works
 
 Options:
   --yolo, -y          Skip all confirmation prompts (bypassPermissions mode)
@@ -443,10 +450,10 @@ Examples:
     # 没有可用 API key 时无法调用模型，直接提示配置方式并退出。
     if not resolved_api_key:
         print_error(
-            "API key is required.\n"
-            "  Set APIKEY (+ optional API) in .env for generic config,\n"
-            "  or use ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL,\n"
-            "  or use OPENAI_API_KEY / OPENAI_BASE_URL."
+            "No model is configured.\n"
+            "  keelson init      set one up step by step\n"
+            "  keelson doctor    see what is missing\n"
+            "  keelson web       the web console still works without a key (replay mode)"
         )
         sys.exit(1)
 
