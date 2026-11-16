@@ -32,7 +32,12 @@ def _alive(pid: int) -> bool:
         os.kill(pid, 0)
     except OSError:
         return False
-    return True
+    try:
+        # A killed process that nobody has waited for yet still has a pid.
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as stat:
+            return stat.read().rsplit(")", 1)[-1].split()[0] != "Z"
+    except OSError:
+        return True
 
 
 async def _wait_until(predicate, timeout=5.0):

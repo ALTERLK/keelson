@@ -624,6 +624,10 @@ async def run_shell_async(inp: dict, on_output: Callable[[str], None] | None = N
         )
     except TimeoutError:
         await asyncio.to_thread(_kill_process_tree, proc.pid)
+        try:
+            await asyncio.wait_for(proc.wait(), 5)  # reap it, so no zombie is left behind
+        except (TimeoutError, ProcessLookupError):
+            pass
         return f"Command timed out after {timeout_ms}ms"
     except asyncio.CancelledError:
         # The user stopped the turn: the command must not outlive it.
