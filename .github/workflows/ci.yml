@@ -28,6 +28,8 @@ jobs:
         run: pytest -q
       - name: Static demo builds
         run: python scripts/build_pages.py
+      - name: Diagrams are up to date
+        run: python scripts/build_diagrams.py --check
 
   docker:
     runs-on: ubuntu-latest
