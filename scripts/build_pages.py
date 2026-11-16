@@ -56,6 +56,8 @@ def build(out: Path) -> dict[str, int]:
     lineages = data.evolution_lineages()
     _write_json(out / "data" / "bench.json", bench)
     _write_json(out / "data" / "evolution.json", lineages)
+    _write_json(out / "data" / "casestudy.json", data.case_study())
+    _write_json(out / "data" / "perf.json", data.perf_summary([data.DEMO_TRACES_DIR]))
 
     (out / ".nojekyll").write_text("", encoding="utf-8")  # serve files as they are
     return {"traces": len(traces), "lineages": len(lineages), "bench": int(bool(bench.get("available")))}

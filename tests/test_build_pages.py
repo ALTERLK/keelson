@@ -38,6 +38,13 @@ def test_static_build_is_self_contained(tmp_path):
         assert len(trace["events"]) == row["events"]
     assert json.loads((out / "data" / "bench.json").read_text(encoding="utf-8"))["available"] is True
     assert len(json.loads((out / "data" / "evolution.json").read_text(encoding="utf-8"))) == 2
+    # Pages that only exist when their data does still get a file to read.
+    assert "available" in json.loads((out / "data" / "casestudy.json").read_text(encoding="utf-8"))
+    perf = json.loads((out / "data" / "perf.json").read_text(encoding="utf-8"))
+    assert perf["available"] and "model_stream" in perf["spans"]
+    # The fonts ship with the page: no CDN to reach.
+    assert (out / "fonts" / "InterVariable.woff2").is_file()
+    assert "fonts.googleapis.com" not in index and "cdn." not in index
 
     # Asset URLs must be relative: the site is served from /<repo>/, not /.
     assert 'src="/' not in index and 'href="/' not in index
