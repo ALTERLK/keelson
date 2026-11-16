@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import asyncio
+import codecs
 import fnmatch
 import json
+import locale
 import os
 import re
+import signal
 import subprocess
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from tqdm.utils import IS_WIN
 
-from agents import paths
+from agents import events, paths
 from agents.memory import get_memory_dir
 
 ToolDef = dict  # Anthropic tool schema dict
@@ -494,18 +500,147 @@ def _run_shell(inp: dict) -> str:
             shell=True,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=timeout_s,
         )
-        output = result.stdout or ""
-        if result.returncode != 0:
-            stderr = f"\nStderr: {result.stderr}" if result.stderr else ""
-            stdout = f"\nStdout: {result.stdout}" if result.stdout else ""
-            return f"Command failed (exit code {result.returncode}){stdout}{stderr}"
-        return output or "(no output)"
+        return _format_shell_result(result.returncode, result.stdout or "", result.stderr or "")
     except subprocess.TimeoutExpired:
         return f"Command timed out after {inp.get('timeout', 30000)}ms"
     except Exception as e:
         return f"Error: {e}"
+
+
+def _format_shell_result(returncode: int, stdout: str, stderr: str) -> str:
+    """The text the model sees. Kept identical for the blocking and async paths."""
+    if returncode != 0:
+        err = f"\nStderr: {stderr}" if stderr else ""
+        out = f"\nStdout: {stdout}" if stdout else ""
+        return f"Command failed (exit code {returncode}){out}{err}"
+    return stdout or "(no output)"
+
+
+def _kill_process_tree(pid: int) -> None:
+    """Stop a shell *and everything it started*.
+
+    Killing only the shell would leave its children running (``cmd /c pytest``
+    dies, pytest does not). Windows: ``taskkill /T`` walks the tree. POSIX: the
+    shell was started in its own session, so its process group is the tree.
+    """
+    try:
+        if IS_WIN:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                capture_output=True, timeout=10, check=False,
+            )
+        else:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+    except (OSError, subprocess.SubprocessError):
+        pass  # already gone
+
+
+class _OutputRelay:
+    """Batches a command's live output into ``tool_output`` events.
+
+    A chatty command can print thousands of lines a second; publishing each
+    chunk would flood every subscriber. Chunks are coalesced for a short
+    interval, and the live view is capped — the full output still reaches the
+    model through the tool result.
+    """
+
+    INTERVAL_S = 0.08
+    MAX_CHARS = 40_000
+
+    def __init__(self, sink: Callable[[str], None]) -> None:
+        self._sink = sink
+        self._pending: list[str] = []
+        self._last_flush = 0.0
+        self._sent = 0
+        self._capped = False
+
+    def feed(self, text: str) -> None:
+        if self._capped or not text:
+            return
+        self._pending.append(text)
+        if time.monotonic() - self._last_flush >= self.INTERVAL_S:
+            self.flush()
+
+    def flush(self) -> None:
+        if not self._pending or self._capped:
+            return
+        text = "".join(self._pending)
+        self._pending = []
+        self._last_flush = time.monotonic()
+        room = self.MAX_CHARS - self._sent
+        if len(text) >= room:
+            text = text[:room] + "\n… (live view capped; the full output is in the result)\n"
+            self._capped = True
+        self._sent += len(text)
+        self._sink(text)
+
+
+async def run_shell_async(inp: dict, on_output: Callable[[str], None] | None = None) -> str:
+    """Run a shell command without blocking the event loop.
+
+    Compared with the blocking ``_run_shell``:
+    * other tasks (the event stream, other sessions) keep running meanwhile;
+    * output is relayed while the command runs, through ``on_output``;
+    * a timeout or a cancelled turn kills the whole process tree.
+    """
+    timeout_ms = inp.get("timeout", 30000)
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            inp["command"],
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            **({} if IS_WIN else {"start_new_session": True}),
+        )
+    except NotImplementedError:
+        # An event loop without subprocess support (Windows selector loop).
+        return await asyncio.to_thread(_run_shell, inp)
+    except Exception as e:
+        return f"Error: {e}"
+
+    encoding = locale.getpreferredencoding(False) or "utf-8"
+    relay = _OutputRelay(on_output) if on_output else None
+    captured: dict[str, list[str]] = {"stdout": [], "stderr": []}
+
+    async def pump(stream: asyncio.StreamReader, name: str) -> None:
+        # Incremental decoding: a multi-byte character can be split across reads.
+        decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
+        while True:
+            chunk = await stream.read(4096)
+            text = decoder.decode(chunk, final=not chunk)
+            if text:
+                captured[name].append(text)
+                if relay:
+                    relay.feed(text)
+            if not chunk:
+                return
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(pump(proc.stdout, "stdout"), pump(proc.stderr, "stderr"), proc.wait()),
+            timeout=timeout_ms / 1000,
+        )
+    except TimeoutError:
+        await asyncio.to_thread(_kill_process_tree, proc.pid)
+        return f"Command timed out after {timeout_ms}ms"
+    except asyncio.CancelledError:
+        # The user stopped the turn: the command must not outlive it.
+        await asyncio.shield(asyncio.to_thread(_kill_process_tree, proc.pid))
+        raise
+    finally:
+        if relay:
+            relay.flush()
+
+    # Same newline handling as subprocess.run(text=True), so both paths read alike.
+    stdout = "".join(captured["stdout"]).replace("\r\n", "\n")
+    stderr = "".join(captured["stderr"]).replace("\r\n", "\n")
+    return _format_shell_result(proc.returncode or 0, stdout, stderr)
+
+
+def _publish_tool_output(text: str) -> None:
+    events.emit(events.TOOL_OUTPUT, id=events.current_call_id(), text=text)
 
 
 #危险命令检测模式列表
@@ -690,7 +825,7 @@ async def execute_tool(
     name: str, inp: dict, read_file_state: dict[str, float] | None = None
 ) -> str:
     if name == "read_file":
-        result = _read_file(inp)
+        result = await asyncio.to_thread(_read_file, inp)
         if read_file_state is not None and not result.startswith("Error"):
             abs_path = str(_resolve_tool_path(inp["file_path"]).resolve())
             try:
@@ -755,19 +890,23 @@ async def execute_tool(
         )
         return _truncate_result(json.dumps(result, ensure_ascii=False, indent=2))
 
+    if name == "run_shell":
+        return _truncate_result(await run_shell_async(inp, on_output=_publish_tool_output))
+
     handlers: dict = {
         "write_file": _write_file,
         "edit_file": _edit_file,
         "list_files": _list_files,
         "grep_search": _grep_search,
-        "run_shell": _run_shell,
     }
     handler = handlers.get(name)
 
     if not handler:
         return f"Unknown tool: {name}"
 
-    result = _truncate_result(handler(inp))
+    # File and search tools are synchronous; run them off the event loop so a
+    # slow disk or a large grep never stalls other sessions or the event stream.
+    result = _truncate_result(await asyncio.to_thread(handler, inp))
 
     # 更新时间
     if name in ("write_file", "edit_file") and read_file_state is not None and not result.startswith("Error"):

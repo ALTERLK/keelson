@@ -459,9 +459,10 @@ class Agent:
         self._last_retrieved_skill_hits = []
         if not self.is_sub_agent:
             ready_skill_extraction_window = self._pop_pending_skill_extraction_window(original_user_message)
-            user_message, self._last_retrieved_skill_reference = self._augment_user_message_with_skill_context(
-                original_user_message
-            )
+            with events.span("skill_retrieval"):
+                user_message, self._last_retrieved_skill_reference = self._augment_user_message_with_skill_context(
+                    original_user_message
+                )
 
         if not self.is_sub_agent:
             events.emit(events.USER_MESSAGE, text=original_user_message)
@@ -976,10 +977,11 @@ class Agent:
             await self._compact_conversation(trigger="auto")
 
     async def _compact_conversation(self, *, trigger: str = "manual")->bool:
-        if self.use_openai:
-            compacted = await self._compact_openai(trigger=trigger)
-        else:
-            compacted = await self._compact_anthropic(trigger=trigger)
+        with events.span("fold", trigger=trigger):
+            if self.use_openai:
+                compacted = await self._compact_openai(trigger=trigger)
+            else:
+                compacted = await self._compact_anthropic(trigger=trigger)
         if compacted:
             events.emit(events.CONTEXT_FOLD, trigger=trigger, fold_count=self._fold_count)
             print_info("Conversation compacted.")
@@ -1252,6 +1254,22 @@ class Agent:
             message=perm.get("message", ""),
             speculative=speculative,
         )
+
+    async def _run_tool(self, call_id: str | None, name: str, inp: dict) -> str:
+        """Execute one tool call, tagged and timed.
+
+        The call id travels in a ContextVar rather than as an argument, so
+        anything emitted while the tool runs (live shell output, the span) is
+        attributed to this call — including when several run concurrently,
+        because each task carries its own copy of the context.
+        """
+        with events.tool_call(call_id), events.span("tool", tool=name, id=call_id):
+            return await self._execute_tool_call(name, inp)
+
+    def _gate(self, call_id: str | None, name: str, inp: dict) -> dict:
+        """Ask the permission gate about one call (timed, to show what the gate costs)."""
+        with events.span("permission", tool=name, id=call_id):
+            return check_permission(name, inp, self.permission_mode, self._plan_file_path)
 
     async def _execute_tool_call(self, name: str, inp: dict) -> str:
         if name == "compact_context":
@@ -1559,15 +1577,15 @@ class Agent:
                 if not trace.speculative_enabled():
                     return
                 if block["name"] in CONCURRENCY_SAFE_TOOLS:
-                    perm = check_permission(block["name"], block["input"], self.permission_mode, self._plan_file_path)
+                    perm = self._gate(block["id"], block["name"], block["input"])
                     if perm["action"]=="allow":
                         self._emit_permission(block["id"], block["name"], perm, speculative=True)
-                        task =asyncio.create_task(self._execute_tool_call(block["name"], block["input"]))
+                        task =asyncio.create_task(self._run_tool(block["id"], block["name"], block["input"]))
                         early_executions[block["id"]] = task
 
 
             # 调用 Anthropic 流式接口；流式过程中完成 tool block 时会触发 _on_tool_block。
-            with trace.span("model_stream", turn=self.current_turns, backend="anthropic"):
+            with events.span("model_stream", turn=self.current_turns, backend="anthropic"):
                 response = await self._call_anthropic_stream(on_tool_block_complete=_on_tool_block)
             if not self.is_sub_agent:
                 stop_spinner()
@@ -1643,7 +1661,7 @@ class Agent:
 
                 # 如果不是提前执行的工具，就在真正执行前做权限检查。
 
-                perm = check_permission(tu.name, inp, self.permission_mode, self._plan_file_path)
+                perm = self._gate(tu.id, tu.name, inp)
                 self._emit_permission(tu.id, tu.name, perm)
                 if perm["action"] == "deny":
                     # 权限拒绝时，也要返回一个 tool_result，让模型知道该工具调用失败的原因。
@@ -1668,7 +1686,7 @@ class Agent:
 
                 # 权限通过后执行工具，并把大输出持久化为可回传的摘要或引用。
                 try:
-                    raw = await self._execute_tool_call(tu.name, inp)
+                    raw = await self._run_tool(tu.id, tu.name, inp)
                 except Exception as e:
                     raw = f"Error executing tool: {e}"
                 raw = _safe_utf8_text(raw)
@@ -1837,7 +1855,8 @@ class Agent:
             if not self.is_sub_agent:
                 start_spinner()
 
-            response = await self._call_openai_stream()
+            with events.span("model_stream", turn=self.current_turns, backend="openai"):
+                response = await self._call_openai_stream()
 
             if not self.is_sub_agent:
                 stop_spinner()
@@ -1885,7 +1904,7 @@ class Agent:
 
                 print_tool_call(fn_name, inp, tc.get("id"))
 
-                perm = check_permission(fn_name, inp, self.permission_mode, self._plan_file_path)
+                perm = self._gate(tc.get("id"), fn_name, inp)
                 self._emit_permission(tc.get("id"), fn_name, perm)
 
                 if perm["action"] == "deny":
@@ -1922,7 +1941,7 @@ class Agent:
 
                 if batch["concurrent"]:
                     async def _run_oai_safe(ct_item: dict) -> tuple[dict, str]:
-                        raw = await self._execute_tool_call(ct_item["fn"], ct_item["inp"])
+                        raw = await self._run_tool(ct_item["tc"].get("id"), ct_item["fn"], ct_item["inp"])
                         raw = _safe_utf8_text(raw)
                         res = self._persist_large_result(ct_item["fn"], raw)
                         print_tool_result(ct_item["fn"], res, ct_item["tc"].get("id"))
@@ -1943,7 +1962,7 @@ class Agent:
                                 {"role": "tool", "tool_call_id": ct["tc"]["id"], "content": ct["result"]})
                             continue
 
-                        raw = await self._execute_tool_call(ct["fn"], ct["inp"])
+                        raw = await self._run_tool(ct["tc"].get("id"), ct["fn"], ct["inp"])
                         raw = _safe_utf8_text(raw)
                         res = self._persist_large_result(ct["fn"], raw)
                         print_tool_result(ct["fn"], res, ct["tc"].get("id"))
@@ -2077,7 +2096,10 @@ class Agent:
     async def _confirm_dangerous(self, command: str) -> bool:
         print_confirmation(command)
         if self.confirm_fn:
-            return await self.confirm_fn(command)
+            # Time spent waiting for a person is reported separately, so it is
+            # never mistaken for model or tool latency.
+            with events.span("confirm_wait"):
+                return await self.confirm_fn(command)
         # Fallback: blocking input
         try:
             answer = input("  Allow? (y/n): ")

@@ -15,8 +15,10 @@ Design notes
   tab) must never take the agent loop down with it.
 * A bounded history ring lets a late or reconnecting consumer catch up from a
   known sequence number (this is what backs SSE ``Last-Event-ID``).
-* The bus is process-global, which means one live session per process. Hosting
-  several sessions side by side would need a bus per session (contextvars).
+* ``emit()`` publishes on the *current* bus. By default that is the one
+  process-wide bus (the CLI). The web console gives every session its own bus
+  and binds it with a ``ContextVar``, so a turn running in one session, and
+  every task that turn spawns, publish to that session only.
 """
 
 from __future__ import annotations
@@ -25,7 +27,9 @@ import logging
 import threading
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -41,7 +45,9 @@ PERMISSION = "permission"              # {id, name, action, message, speculative
 CONFIRM_PROMPT = "confirm_prompt"      # {message}            (terminal prompt)
 CONFIRM_REQUEST = "confirm_request"    # {request_id, message} (web prompt)
 CONFIRM_RESOLVED = "confirm_resolved"  # {request_id, allowed}
+TOOL_OUTPUT = "tool_output"            # {id, text}   live output of a running command
 TOOL_RESULT = "tool_result"            # {id, name, ok, preview, chars}
+SPAN = "span"                          # {name, dur_ms, ...}  how long one step of the loop took
 LOOP_GUARD = "loop_guard"              # {name, hits}
 CONTEXT_FOLD = "context_fold"          # {trigger}
 USAGE = "usage"                        # {input_tokens, output_tokens, context_tokens, context_window, turns}
@@ -97,6 +103,10 @@ class EventBus:
         return unsubscribe
 
     def emit(self, type: str, **data: Any) -> Event:
+        return self.publish(type, data)
+
+    def publish(self, type: str, data: dict[str, Any]) -> Event:
+        """Like ``emit``, with the payload as a dict (for replaying stored events)."""
         with self._lock:
             self._seq += 1
             event = Event(seq=self._seq, ts=time.time(), type=type, data=_jsonable(data))
@@ -126,9 +136,66 @@ class EventBus:
             self._seq = 0
 
 
-bus = EventBus()
+bus = EventBus()  # the process-wide default (CLI, benchmarks, tests)
+
+# Which bus `emit()` publishes on, and which tool call is running, in the
+# current execution context. asyncio copies the context into every task it
+# creates and `asyncio.to_thread` copies it into the worker thread, so both
+# follow a turn through concurrent tool calls without being passed around.
+_current_bus: ContextVar[EventBus | None] = ContextVar("keelson_bus", default=None)
+_current_call: ContextVar[str | None] = ContextVar("keelson_call", default=None)
+
+
+def current_bus() -> EventBus:
+    return _current_bus.get() or bus
+
+
+def bind_bus(target: EventBus) -> None:
+    """Make ``target`` the current bus for the rest of this context."""
+    _current_bus.set(target)
+
+
+@contextmanager
+def use_bus(target: EventBus) -> Iterator[EventBus]:
+    token = _current_bus.set(target)
+    try:
+        yield target
+    finally:
+        _current_bus.reset(token)
+
+
+@contextmanager
+def tool_call(call_id: str | None) -> Iterator[None]:
+    """Mark everything emitted inside the block as belonging to one tool call."""
+    token = _current_call.set(call_id)
+    try:
+        yield
+    finally:
+        _current_call.reset(token)
+
+
+def current_call_id() -> str | None:
+    return _current_call.get()
 
 
 def emit(type: str, **data: Any) -> Event:
-    """Publish on the process-wide bus."""
-    return bus.emit(type, **data)
+    """Publish on the current bus."""
+    return current_bus().emit(type, **data)
+
+
+@contextmanager
+def span(name: str, **meta: Any) -> Iterator[None]:
+    """Time a step of the loop and publish it as a ``span`` event.
+
+    Also written through ``agents.trace`` when ``KEELSON_TRACE=1``, so the
+    file-based profile and the live view come from the same measurement.
+    """
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dur_ms = round((time.perf_counter() - start) * 1000, 2)
+        emit(SPAN, name=name, dur_ms=dur_ms, **meta)
+        from . import trace
+
+        trace.emit(name, dur_ms, **meta)

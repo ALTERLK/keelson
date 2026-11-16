@@ -130,6 +130,7 @@ def run_pytest(work: Path, timeout: int = 60) -> dict[str, Any]:
         [sys.executable, "-m", "pytest", "-q", "--no-header", str(work)],
         capture_output=True,
         text=True,
+        errors="replace",  # pytest may print bytes the console code page cannot decode
         timeout=timeout,
         cwd=str(work),
     )

@@ -422,6 +422,11 @@ _renderer = TerminalRenderer()
 _unsubscribe = events.bus.subscribe(_renderer)
 
 
+def attach_terminal(bus: events.EventBus):
+    """Render another bus (a web session's, say) in this terminal as well."""
+    return bus.subscribe(_renderer)
+
+
 def set_terminal_enabled(enabled: bool) -> None:
     """Attach or detach the terminal renderer (the web server runs headless)."""
     global _unsubscribe

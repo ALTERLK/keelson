@@ -149,7 +149,7 @@ async def test_a_turn_is_published_as_an_ordered_event_sequence(monkeypatch, in_
 
     await agent.chat("go")
 
-    types = [e.type for e in collected if e.type != events.THINKING]
+    types = [e.type for e in collected if e.type not in (events.THINKING, events.SPAN)]
     assert types == [
         events.USER_MESSAGE,
         events.USAGE,
@@ -161,6 +161,12 @@ async def test_a_turn_is_published_as_an_ordered_event_sequence(monkeypatch, in_
     assert permission.data == {"id": "c1", "name": "read_file", "action": "allow", "message": "", "speculative": False}
     usage = [e for e in collected if e.type == events.USAGE][1]
     assert usage.data["input_tokens"] == 220 and usage.data["context_window"] > 0
+
+    # Each step of the loop is also timed. Two model calls, one gate check, one tool.
+    spans = [e.data["name"] for e in collected if e.type == events.SPAN]
+    assert spans == ["skill_retrieval", "model_stream", "permission", "tool", "model_stream"]
+    tool_span = next(e for e in collected if e.type == events.SPAN and e.data["name"] == "tool")
+    assert (tool_span.data["tool"], tool_span.data["id"]) == ("read_file", "c1")
 
 
 async def test_a_denied_call_publishes_the_verdict_and_never_reaches_a_tool(monkeypatch, in_tmp_cwd, collected):
