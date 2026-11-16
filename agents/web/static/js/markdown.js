@@ -4,11 +4,9 @@
 // then add back only the tags this file writes itself. There is no code path
 // from input text to raw HTML, and links are limited to http(s).
 
-const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+import { escapeHtml } from "./dom.js";
 
-export function escapeHtml(text) {
-  return String(text).replace(/[&<>"']/g, (ch) => ESCAPES[ch]);
-}
+export { escapeHtml };
 
 function inline(text) {
   // Pull inline code out first so its contents are not treated as markup.

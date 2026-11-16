@@ -41,6 +41,12 @@ export function svg(tag, attrs, ...children) {
   return el;
 }
 
+const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+export function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (ch) => ESCAPES[ch]);
+}
+
 export function clear(el) {
   while (el.firstChild) el.removeChild(el.firstChild);
   return el;

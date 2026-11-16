@@ -14,12 +14,12 @@ export async function getJSON(name) {
   return response.json();
 }
 
-export async function post(name, body = {}) {
+async function send(method, name, body) {
   if (isStatic) throw new Error("read-only demo");
   const response = await fetch(`api/${name}`, {
-    method: "POST",
+    method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body ?? {}),
   });
   if (!response.ok) {
     let detail = String(response.status);
@@ -28,3 +28,6 @@ export async function post(name, body = {}) {
   }
   return response.json();
 }
+
+export const post = (name, body) => send("POST", name, body);
+export const del = (name) => send("DELETE", name);

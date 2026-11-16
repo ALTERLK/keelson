@@ -5,18 +5,7 @@ import { getJSON, isStatic } from "../api.js";
 import { clear, fmtPct, h } from "../dom.js";
 import { t } from "../i18n.js";
 import { renderMarkdown } from "../markdown.js";
-
-function diffView(text) {
-  const lines = String(text || "").split("\n").filter((line, i, all) => !(i === all.length - 1 && line === ""));
-  return h("pre", { class: "diff" }, lines.map((line) => {
-    let kind = "";
-    if (line.startsWith("+++") || line.startsWith("---")) kind = "file";
-    else if (line.startsWith("@@")) kind = "hunk";
-    else if (line.startsWith("+")) kind = "add";
-    else if (line.startsWith("-")) kind = "del";
-    return h("span", { class: `diff-line ${kind}` }, line || " ");
-  }));
-}
+import { diffView } from "../toolview.js";
 
 function gateTable(gate) {
   if (!gate || !gate.old || !gate.new) {

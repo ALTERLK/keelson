@@ -18,11 +18,33 @@ function card(title, note, ...body) {
   return h("section", { class: "card" }, h("h2", {}, title), note ? h("p", { class: "card-note" }, note) : null, ...body);
 }
 
+const SPAN_ORDER = ["model_stream", "tool", "permission", "skill_retrieval", "fold", "confirm_wait"];
+const ms = (value) => (value >= 1000 ? `${(value / 1000).toFixed(1)} s` : value >= 10 ? `${value.toFixed(0)} ms` : `${value.toFixed(2)} ms`);
+
+function perfCard(perf) {
+  if (!perf?.available) return null;
+  const names = SPAN_ORDER.filter((name) => perf.spans[name]);
+  return card(t("bench.perf.title"), `${t("bench.perf.note")} (n = ${perf.traces})`,
+    h("div", { class: "table-wrap" },
+      h("table", { class: "grid-table" },
+        h("thead", {}, h("tr", {}, ["bench.perf.span", "bench.perf.count", "bench.perf.p50", "bench.perf.p95", "bench.perf.share"].map((key) => h("th", {}, t(key))))),
+        h("tbody", {}, names.map((name) => {
+          const span = perf.spans[name];
+          return h("tr", {},
+            h("td", {}, t(`span.${name}`)),
+            h("td", {}, span.count),
+            h("td", {}, ms(span.p50_ms)),
+            h("td", {}, ms(span.p95_ms)),
+            h("td", {}, name === "confirm_wait" ? "—" : h("div", { class: "share" },
+              h("span", { class: "share-bar", style: `width:${Math.max(1, span.share * 100)}%` }), fmtPct(span.share))));
+        })))));
+}
+
 export function mount(root) {
   root.append(h("div", { class: "page" }, h("p", { class: "muted" }, t("common.loading"))));
   let alive = true;
 
-  getJSON("bench").then((bench) => {
+  Promise.all([getJSON("bench"), getJSON("perf").catch(() => null)]).then(([bench, perf]) => {
     if (!alive) return;
     const page = clear(root.querySelector(".page"));
     page.append(h("header", { class: "page-head" }, h("h1", {}, t("bench.title")), h("p", {}, t("bench.lead"))));
@@ -108,6 +130,9 @@ export function mount(root) {
             h("td", {}, cell.avg_turns.toFixed(1)),
             h("td", {}, fmtCount(Math.round(cell.avg_input_tokens))),
           )))))));
+
+    const overhead = perfCard(perf);
+    if (overhead) page.append(overhead);
   }).catch((error) => {
     if (alive) clear(root.querySelector(".page")).append(h("p", { class: "notice error" }, `${t("common.error")}: ${error.message}`));
   });
