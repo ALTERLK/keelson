@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any
 
+from .jsonutil import loads_lenient
+
 MAX_TRANSCRIPT_CHARS = 80_000
 MAX_BLOCK_CHARS = 12_000
 
@@ -158,7 +160,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def parse_folded_memory(text: str) -> dict[str, Any]:
-    parsed = json.loads(_extract_json_text(text))
+    parsed = loads_lenient(_extract_json_text(text))
     if not isinstance(parsed, dict):
         raise ValueError("folded memory is not a JSON object")
 

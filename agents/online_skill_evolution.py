@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from .jsonutil import parse_json_object as _parse_json_object
+
 SideQuery = Callable[[str, str], Awaitable[str]]
 ConfirmWrite = Callable[[str], Awaitable[bool]]
 
@@ -18,24 +20,6 @@ class OnlineSkillCandidate:
     instructions: str = ""
     evidence: str = ""
     tags: list[str] = field(default_factory=list)
-
-
-def _parse_json_object(text: str) -> dict[str, Any]:
-    raw = str(text or "").strip()
-    if not raw:
-        return {}
-    try:
-        return json.loads(raw)
-    except Exception:
-        pass
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            return json.loads(raw[start : end + 1])
-        except Exception:
-            return {}
-    return {}
 
 
 def _normalize_identity(text: str) -> str:

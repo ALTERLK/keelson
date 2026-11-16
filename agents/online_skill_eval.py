@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from .jsonutil import parse_json_object as _parse_json_object
 from .skill_evolution import (
     ONLINE_PROVENANCE_INDEX,
     ONLINE_PROVENANCE_LOG,
@@ -121,26 +122,6 @@ def _lineage_champion_dir(lineage_id: str) -> Path:
 
 def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", str(text or "").strip().lower())
-
-
-def _parse_json_object(text: str) -> dict[str, Any]:
-    raw = str(text or "").strip()
-    if not raw:
-        return {}
-    try:
-        obj = json.loads(raw)
-        return obj if isinstance(obj, dict) else {}
-    except Exception:
-        pass
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            obj = json.loads(raw[start : end + 1])
-            return obj if isinstance(obj, dict) else {}
-        except Exception:
-            return {}
-    return {}
 
 
 def _action_bucket(action: str) -> str:
