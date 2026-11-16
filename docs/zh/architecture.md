@@ -36,12 +36,16 @@ Keelson 更接近：
 
 ## 2. 架构总览
 
+![系统总览](../assets/diagrams/overview.zh.svg)
+
+本页的图都由 `scripts/build_diagrams.py` 生成；要改图请改脚本，不要直接改 SVG。
+
 从层次上看，系统可以分成七层：
 
 | 层级 | 主要文件 | 职责 |
 |------|----------|------|
-| 入口层 | `agents/main.py`、`agents/ui.py`、`agents/web/` | 参数解析、REPL、one-shot、终端渲染、Web 控制台 |
-| 事件总线 | `agents/events.py` | 运行时只发布事件，所有前端都订阅同一条事件流 |
+| 入口层 | `agents/main.py`、`agents/ui.py`、`agents/web/`、`agents/doctor.py` | 参数解析、REPL、one-shot、终端渲染、Web 控制台与多会话、`doctor` / `init` |
+| 事件总线 | `agents/events.py` | 运行时只发布事件，所有前端都订阅同一条事件流；耗时 span；按会话绑定总线 |
 | Harness 层 | `agents/agent.py` | Agent Loop、协议适配、工具调度、上下文压缩、session 保存 |
 | 能力层 | `agents/tools.py`、`agents/skills.py`、`agents/memory.py`、`agents/mcp_client.py`、`agents/subagent.py` | 工具、Skills、Memory、MCP、子 Agent |
 | Prompt 层 | `agents/prompt.py` | 动态构建 system prompt |
@@ -59,6 +63,8 @@ Keelson 更接近：
 - `subagent.py` 只管隔离上下文任务。
 
 ## 3. 一次请求的主链路
+
+![一轮对话的完整路径](../assets/diagrams/turn.zh.svg)
 
 主链路从 `agents/main.py` 进入，最终落到 `Agent.chat()`。
 
@@ -116,13 +122,15 @@ Keelson 更接近：
 
 Runtime 不直接打印。它在 `agents/events.py` 的进程内总线上发布带类型的事件（`tool_call`、`permission`、`tool_result`、`context_fold` 等），前端都是订阅者：
 
-```text
-Agent 循环 ──emit──▶ EventBus ──┬─▶ 终端渲染器（agents/ui.py）
-                               ├─▶ SSE 广播（agents/web/server.py）──▶ 浏览器
-                               └─▶ 轨迹录制器（agents/web/recorder.py）──▶ *.jsonl
-```
+![一条事件流，三个消费者](../assets/diagrams/events.zh.svg)
 
-`ui.py` 里的 `print_*` 只发布事件；真正往终端画的是订阅了总线的 `TerminalRenderer`。因为录制下来的轨迹和实时流是同一种事件，回放可以走与实时运行完全相同的界面代码。细节见 [`web-console.md`](web-console.md)。
+`ui.py` 里的 `print_*` 只发布事件；真正往终端画的是订阅了总线的 `TerminalRenderer`。因为录制下来的轨迹和实时流是同一种事件，回放可以走与实时运行完全相同的界面代码。
+
+**按会话隔离。** `events.emit()` 发布到当前 `contextvars` 上下文里绑定的那条总线。Web 控制台给每个会话一条自己的总线，并在绑定了这条总线的上下文里启动每一轮对话；这一轮派生出的任务（并发工具调用、后台技能提取）会继承这个绑定。于是运行时可以同时服务多个互不串台的对话，而它自己的代码完全不知道“会话”的存在。
+
+**耗时 span。** 循环的每一步都包在 `events.span(name)` 里，发布一个带耗时的 `span` 事件：`model_stream`、`tool`、`permission`、`skill_retrieval`、`fold`、`confirm_wait`。控制台据此画出每一轮的耗时瀑布图，`scripts/perf_report.py` 汇总 P50 / P95。
+
+细节见 [`web-console.md`](web-console.md)。
 
 ## 5. Harness 层
 
@@ -236,6 +244,15 @@ else:
 - 危险 Shell、Skill 创建和演化需要确认。
 
 这一层的目标不是阻止 Agent 工作，而是把风险动作显式化。
+
+### 7.1 Shell 的执行方式
+
+`run_shell` 走 `run_shell_async`（`asyncio.create_subprocess_shell`），而不是阻塞式的 `subprocess.run`：
+
+- **不阻塞事件循环。** 长命令运行期间，其他会话、事件流和“停止”按钮都保持响应。其余同步工具通过 `asyncio.to_thread` 放到工作线程。
+- **输出实时流出。** 边读边增量解码，按小批量发布为 `tool_output` 事件（`_OutputRelay`：约 80ms 一批，单条命令最多 40000 字符）。输出属于哪一次调用，通过 `ContextVar` 里的“当前调用 id”得知，所以 `_execute_tool_call` 的签名没有变。
+- **超时或取消时杀掉整棵进程树。** Windows 用 `taskkill /F /T`，POSIX 杀进程组。只杀 shell 的话，它启动的 `pytest` 之类会变成孤儿进程继续跑。
+- **返回给模型的字符串不变**（`Command failed (exit code N)…`），所以模型行为和已有评测结果不受影响。
 
 ## 8. Skills 架构
 
@@ -447,6 +464,10 @@ Prompt 在 `agents/prompt.py` 中动态构建。
 | `_persist_large_result()` | 大工具结果写文件，只把引用留在上下文中 |
 
 这部分保证 Keelson 不只是一轮任务工具，而是能支撑长程任务的 runtime。
+
+![上下文管理三层](../assets/diagrams/context.zh.svg)
+
+Web 控制台在此之上提供了会话的浏览与恢复：每个会话的事件流录在 `.keelson/traces/`，消息列表由 `save_session()` 保存；“继续这个会话”就是把旧事件重放到新会话的总线上（界面可见），再用 `Agent.restore_session()` 恢复消息列表（模型可见）。
 
 ## 15. 存储架构
 

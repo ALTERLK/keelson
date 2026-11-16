@@ -22,8 +22,9 @@ Concretely:
   `_to_openai_tools`. LiteLLM would remove ~60 lines and add a dependency whose
   failure modes I would then have to learn.
 
-The cost of this choice is real: no built-in tracing UI, no ecosystem of
-pre-built nodes, and two loop implementations to keep in sync. It is the right cost for a project whose value *is* the loop.
+The cost of this choice is real: no ecosystem of pre-built nodes, two loop
+implementations to keep in sync, and tracing had to be built (the event bus,
+the trace recorder and the console's timing view). It is the right cost for a project whose value *is* the loop.
 
 ## How the agent is evaluated
 
@@ -174,6 +175,13 @@ auditable as an acceptance.
 | sub-agents | now bounded by the parent's permission mode (`_subagent_permission_mode`, default `dontAsk`) — previously forced to `bypassPermissions` | **fixed** |
 | self-evolution cost | Extractor+Maintainer ran ~every turn (2 model calls); now pre-gated by `skill_gating.looks_like_feedback` (`KEELSON_SKILL_GATING`) | **fixed** — token-savings % pending a run |
 | evolution auditability | add/merge decisions were spread across 5 JSONL files | **fixed** — one Evolution Card per event (`agents/evolution_card.py`) |
+| `run_shell` blocked the event loop | `subprocess.run` held the loop for the whole command: no events flowed, Stop did nothing, and a timeout killed the shell but left its children running | **fixed** (v0.3.0) — `run_shell_async`: asyncio subprocess, live `tool_output` events, process-tree kill on timeout/cancel; `tests/test_async_shell.py`, `scripts/smoke_live.py` |
+| one session per process | the event bus was a module global, so two conversations in one server would have shared a stream | **fixed** (v0.3.0) — the current bus is a `ContextVar`; `agents/web/sessions.py` binds one bus per session; `tests/test_web_server.py` |
+| sessions were not browsable | messages and traces were saved but nothing listed or reopened them | **fixed** (v0.3.0) — history in the console; resume replays the trace and restores the message list, also after a restart |
+| side-model JSON with raw line breaks | an OpenAI-compatible gateway in non-streaming mode re-chunked replies and left a literal newline inside JSON strings, once inside a key (`{"action\n": "add"}`); the Maintainer's decision failed to parse and a good skill candidate was silently discarded | **fixed** (v0.3.0) — `agents/jsonutil.py` retries with raw newlines inside string literals removed (never valid JSON, so the repair cannot change a valid document); found while re-recording the demo traces; `tests/test_jsonutil.py` |
+| trace scrubber missed nested JSON | a path inside a tool result that was itself JSON (backslashes escaped twice) was not rewritten; the leak check caught it and refused to save | **fixed** (v0.3.0) — `agents/web/scrub.py` tries every escaping depth; `tests/test_scrub.py` |
+| web sessions share a working directory | sessions isolate conversations, not files; two sessions editing one file will collide | by design for a local tool; a per-session worktree would be the next step |
+| runtime overhead was asserted, not measured | "the gate is cheap" had no number behind it | **measured** (v0.3.0) — spans on every step; permission checks + skill retrieval are under 0.01% of wall time on the recorded runs (`scripts/perf_report.py`), small sample |
 
 ## Positioning vs. Claude Code / Superpowers
 
