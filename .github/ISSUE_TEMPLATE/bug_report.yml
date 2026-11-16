@@ -1,0 +1,48 @@
+name: Bug report
+description: Something does not work the way the docs say it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        English or Chinese are both fine. 中文也可以。
+        For a security problem, please use the private form linked in SECURITY.md instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The command you ran or the message you sent. The smaller the example, the faster the fix.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `keelson doctor`
+      description: It never prints your API key, only its length.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Terminal (keelson)
+        - Web console (keelson web)
+        - Replay / hosted demo
+        - Benchmarks or scripts
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: For the web console, the session's trace (.keelson/traces/*.jsonl) helps a lot. Check it for private content first.

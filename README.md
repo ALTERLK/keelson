@@ -1,237 +1,180 @@
-# Keelson
+<p align="center">
+  <img src="docs/assets/diagrams/banner.zh.svg" alt="Keelson：模型只管提议，执行由运行时把关" width="100%">
+</p>
 
-**English** | [中文](README.zh-CN.md)
+<p align="center">
+  <b>中文</b> · <a href="README.en.md">English</a>
+</p>
 
-[![CI](https://github.com/ALTERLK/keelson/actions/workflows/ci.yml/badge.svg)](https://github.com/ALTERLK/keelson/actions/workflows/ci.yml)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Live demo](https://img.shields.io/badge/demo-replay%20in%20your%20browser-f6c177)](https://alterlk.github.io/keelson/)
+<p align="center">
+  <a href="https://github.com/ALTERLK/keelson/actions/workflows/ci.yml"><img src="https://github.com/ALTERLK/keelson/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT"></a>
+  <a href="https://alterlk.github.io/keelson/?lang=zh"><img src="https://img.shields.io/badge/demo-%E6%B5%8F%E8%A7%88%E5%99%A8%E9%87%8C%E7%9B%B4%E6%8E%A5%E7%9C%8B-f6c177" alt="在线演示"></a>
+</p>
 
-> A keelson is the beam that locks a ship's keel to its ribs. The model is the sail; Keelson is what carries that force through the rest of the hull.
+Keelson 是一个用 Python 写的 **Agent 运行时**（harness）。大模型只会输出文字；要让它真的读文件、跑命令、改代码，中间得有一个程序替它执行——并且决定哪些能执行。Keelson 就是这个程序。
 
-A **self-evolving agent harness** in Python. The model only reasons and proposes tool calls. The runtime owns everything that touches the environment: **permission checks, tool execution, writing results back, context folding, and skill accumulation**.
+底层没有用任何 Agent 框架（不用 LangGraph，也不用 AutoGen）：循环、权限、上下文、技能演化都是自己实现的，因为这些正是这个项目要研究的东西。
 
-There is no agent framework underneath (no LangGraph, no AutoGen). The loop is the project; see [`docs/design-tradeoffs.md`](docs/design-tradeoffs.md) for why.
+<p align="center">
+  <a href="https://alterlk.github.io/keelson/?lang=zh"><img src="docs/assets/screenshots/replay-zh.gif" alt="控制台回放一次真实运行：读代码、跑测试、定位 bug、修改、验证" width="92%"></a>
+</p>
+<p align="center"><sub>控制台回放一次真实录制的运行：每个工具调用都先过权限门，右侧实时统计。<a href="https://alterlk.github.io/keelson/?lang=zh">在浏览器里自己点开看 →</a></sub></p>
 
-[![Keelson console replaying a run in which the permission gate stops a destructive shell command](docs/assets/screenshots/console-en.png)](https://alterlk.github.io/keelson/)
+## 它替你做了什么
 
-## Try it
+| 模型自己做不到的事 | Keelson 的做法 | 代码 |
+|---|---|---|
+| 判断一个操作危不危险 | **权限门**：每个工具调用执行前先裁决——放行、问你、或拒绝。拒绝的原因会返回给模型，它会换一种做法而不是硬闯 | `agents/tools.py` |
+| 发现自己在原地打转 | **循环保护**：同一个工具反复调用且结果不再变化时叫停 | `agents/agent.py` |
+| 在很长的任务里不“失忆” | **上下文折叠**：三层手段，最后一层把历史改写成结构化记忆 | `agents/session_memory.py` |
+| 记住你说过的偏好 | **技能自进化**：从你的反馈里提取规则；更新必须通过“不比旧版本差”的门禁，否则隔离 | `agents/skill_gate.py` |
+| 事后说清楚做了什么 | **事件流与回放**：每一步都是一个事件，可以录下来原样重放 | `agents/events.py` |
 
-**In the browser, nothing to install:** <https://alterlk.github.io/keelson/> replays three recorded runs — a bug fix, the permission gate stopping `del`, and a skill being extracted from user feedback. A replay drives the console through the same code as a live run.
+## 三步上手
 
-**Locally, one command:**
+**1. 先看，不用装任何东西。** 打开[在线演示](https://alterlk.github.io/keelson/?lang=zh)，点“看一次带讲解的回放”。它会播放一次真实录制的运行，并在每个关键步骤停下来解释。
+
+**2. 本地一条命令启动。** 需要 Python 3.11+ 和 git：
 
 ```bash
 git clone https://github.com/ALTERLK/keelson.git
 cd keelson
-start.bat          # Windows (double-click works too)
+start.bat          # Windows（双击也可以）
 ./start.sh         # macOS / Linux
 ```
 
-The script finds Python 3.11+, creates `.venv`, installs, and opens the console at <http://127.0.0.1:8765>. With an API key in `.env` it is live; without one it starts in replay mode, so a demo never depends on the network.
+脚本会创建虚拟环境、安装依赖并打开控制台。没有 API Key 时进入回放模式，所以演示不依赖网络。
 
-## Evidence, not design intent
+**3. 接上模型，给它任务。**
 
-The question a project like this gets asked hardest is "how do you know it helps?" Three evidence chains, with the numbers and artifacts committed in the repo:
-
-| | What was done | Result |
-|---|---|---|
-| **[ToolHop benchmark](bench/REPORT.md)** | A four-arm comparison (raw API / bare harness / hand-written skill / self-evolved skill); n=60, paired bootstrap 95% CI | The benchmark caught a real bug in the harness itself: an injected prompt sent a small model into a tool-call loop. [Root-caused](bench/spiral-diagnosis.md), fixed and re-measured: accuracy 72.8% → 79.4%, turn-cap hits 15/180 → 0/180, CI on the delta excludes zero |
-| **[Sandbox coding benchmark](bench/REPORT.md#sandbox-coding-benchmark--round-3)** | 14 coding tasks (bugfix / feature / refactor / traceback-only / two adversarial traps), two model tiers | Zero test tampering and zero out-of-scope edits across all 56 runs; one "shipped without verifying" failure caught and re-run to check it was not a fluke |
-| **[Self-evolution, live-fired](docs/self-evolution-demo.md)** | Two skill lineages driven through the real pipeline against a real model | One **admit** (passed the gate, written live) and one **quarantine** (blocked, live file rolled back), each with an audit card |
-
-The benchmarks page of the console recomputes these figures from the raw result rows:
-
-![Benchmarks page](docs/assets/screenshots/bench-en.png)
-
-Known defects are listed too, including two found and not yet fixed: [`docs/design-tradeoffs.md`](docs/design-tradeoffs.md).
-
-## What's inside
-
-**Runtime (`agents/`)**
-
-- **Agent loop** — streaming, tool-call parsing, the permission gate, tool execution, writing results back; OpenAI and Anthropic protocols
-- **Permission gate** (`tools.py::check_permission`) — five modes, `settings.json` allow/deny rules, destructive-shell-command detection; a sub-agent never exceeds its parent; MCP and unclassified tools are not trusted by default
-- **Context folding** (`session_memory.py`) — long tasks get their history rewritten into three structured slices (episodic / working / tool memory), after two cheaper tiers (per-result budget, stale-result pruning)
-- **Loop guard** — stops a model that keeps hammering one tool without the results changing; keyed on the tool *name* because the failure actually observed was argument fuzzing, not exact repetition
-- **Skills** — project- and user-level `SKILL.md`, BM25 retrieval, inline or forked execution
-- **Skill self-evolution** — extracts reusable rules from the user's next-turn feedback, decides `add` / `merge` / `discard`, and lets a merge land only if it clears a non-inferiority gate
-- **Long-term memory** (per project), **MCP** (a hand-written stdio JSON-RPC client), **sub-agents** (`explore` / `plan` / `general`)
-
-**Observability (`agents/events.py`, `agents/web/`)**
-
-- **Event bus** — the loop publishes typed events instead of printing; the terminal, the web console and the trace recorder subscribe to the same stream
-- **Web console** — streaming conversation, per-call gate verdicts, permission prompts answered from the browser, and a run inspector. Plain HTML/CSS/JS with no build step; SSE from server to browser. [`docs/web-console.md`](docs/web-console.md)
-- **Trace recording and replay** — a run is saved as JSON lines and replayed through the same reducer that consumes the live stream
-
-**Evidence (`agents/bench/`, `bench/`)**
-
-- **ToolHop benchmark** — every task ships executable tool bodies and a gold answer, so scoring is deterministic; train/test split, paired bootstrap CI and McNemar
-- **Sandbox coding benchmark** — a grader that restores the pristine tests before scoring, so tampering cannot buy a pass
-- **Non-inferiority gate** (`skill_gate.py`), version history and rollback, and an Evolution Card for every add, merge and quarantine
-
-216 tests, all runnable without an API key.
-
-## Architecture
-
-![Keelson overall architecture](docs/assets/architecture/01-overall-architecture.svg)
-
-```text
-user input
-  -> Agent.chat()
-  -> build prompt · retrieve skills · prefetch memory · connect MCP
-  -> call the model
-  -> tool call?  permission gate -> loop guard -> execute -> write result back -> loop
-  -> save the session
-  -> background: skill-usage tracking, skill extraction from the next user turn
-
-every step above is published on the event bus
-  -> terminal renderer · web console (SSE) · trace recorder
+```bash
+keelson init       # 一步步生成 .env：服务商、接口地址、模型、Key
+keelson doctor     # 逐项检查，哪里不对会告诉你怎么修
+keelson web        # 浏览器控制台；或者直接用 keelson 进入终端界面
 ```
 
-More in [`docs/architecture.md`](docs/architecture.md).
+任何 OpenAI 兼容或 Anthropic 兼容的服务商都可以。第一次用请看 **[上手指南](docs/zh/getting-started.md)**——从“Agent 运行时是什么”讲起，二十分钟跟完。
 
-## Using it
+## 控制台
 
-### Install
+| | |
+|---|---|
+| [![概览页](docs/assets/screenshots/home-zh.png)](docs/assets/screenshots/home-zh.png) | [![权限确认](docs/assets/screenshots/gate-zh.png)](docs/assets/screenshots/gate-zh.png) |
+| **概览**：这是什么、一轮对话怎么跑、当前安装状态 | **权限门**：模型想删文件，运行时停下来等你决定 |
+| [![运行中的会话](docs/assets/screenshots/console-zh.png)](docs/assets/screenshots/console-zh.png) | [![评测页](docs/assets/screenshots/bench-zh.png)](docs/assets/screenshots/bench-zh.png) |
+| **会话**：工具卡片、命令实时输出、右侧检查器与耗时瀑布图 | **评测**：数字由提交在仓库里的原始结果重新计算 |
+
+多个会话可以并行，结束的会话能重新打开继续；长命令的输出实时滚动，点“停止”会杀掉整棵进程树。原生 HTML/CSS/JS，没有构建步骤，不依赖 CDN。实现细节见 [Web 控制台](docs/zh/web-console.md)。
+
+## 架构
+
+![系统总览](docs/assets/diagrams/overview.zh.svg)
+
+运行时自己不打印任何东西，只发布事件；终端、浏览器和轨迹录制器订阅的是同一条事件流。所以录下来的运行可以用和实时运行完全相同的界面代码回放——在线演示页就是这么来的，背后没有服务器。
+
+<details>
+<summary><b>一轮对话的完整路径</b></summary>
+
+![一轮对话的完整路径](docs/assets/diagrams/turn.zh.svg)
+</details>
+
+<details>
+<summary><b>技能是怎么演化的</b></summary>
+
+![技能是怎么演化的](docs/assets/diagrams/evolution.zh.svg)
+</details>
+
+<details>
+<summary><b>事件流与三个消费者</b></summary>
+
+![一条事件流，三个消费者](docs/assets/diagrams/events.zh.svg)
+</details>
+
+<details>
+<summary><b>上下文管理的三层</b></summary>
+
+![上下文管理三层](docs/assets/diagrams/context.zh.svg)
+</details>
+
+这些图由 [`scripts/build_diagrams.py`](scripts/build_diagrams.py) 生成，CI 会检查它们与脚本是否一致。完整说明见 [架构文档](docs/zh/architecture.md)。
+
+## 证据，而不是设计意图
+
+“你怎么知道它真的有用？”——下面每一条的数字和原始产物都提交在仓库里，可以复算。
+
+| | 做了什么 | 结果 |
+|---|---|---|
+| **[ToolHop 评测](bench/REPORT.md)** | 多跳工具调用；n=60，三组对照，配对 bootstrap 95% 置信区间 | 评测抓到了运行时自己的一个真实缺陷：一段提示词让小模型陷入工具调用死循环。[定位根因](bench/spiral-diagnosis.md)、修复、重测：准确率 72.8% → 79.4%，撞轮次上限 15/180 → 0/180，差值的置信区间不含 0 |
+| **[沙箱编码评测](bench/REPORT.md#sandbox-coding-benchmark--round-3)** | 14 个编码任务（含两道诱导“改测试”的陷阱题），两档模型 | 56 次运行中篡改测试 0 次、越界修改 0 次；抓到一次“没验证就交付”的失败，并重跑确认不是偶然 |
+| **[自进化实弹演示](docs/self-evolution-demo.md)** | 用真实模型把两条技能血缘跑过完整流水线 | 一次**采纳**、一次**隔离**（被门禁拦下，线上文件回滚），各有一张审计卡片 |
+| **运行时开销** | 循环每一步都带计时（`python scripts/perf_report.py`） | 录制的运行里，权限检查 + 技能检索占总耗时不到 0.01%；94% 的时间在等模型。样本很小，说明的是数量级 |
+| **端到端实测** | [`scripts/smoke_live.py`](scripts/smoke_live.py) 用真实模型验证三件事 | 60 秒的命令在约 3 秒时被停止且子进程消失；两个并行会话的事件互不串台；服务重启后恢复会话，模型仍记得之前的内容 |
+
+255 个测试，全部不需要 API Key。已知的问题和取舍——包括发现了但还没修的——都写在 [设计取舍](docs/design-tradeoffs.md) 里。
+
+## 文档
+
+| 我想…… | 中文 | English |
+|---|---|---|
+| 从零开始用起来 | [上手指南](docs/zh/getting-started.md) | [Getting started](docs/getting-started.md) |
+| 查某个功能怎么用、全部命令 | [功能手册](docs/zh/features.md) | [Feature guide](docs/features.md) |
+| 了解代码怎么组织 | [架构](docs/zh/architecture.md) | [Architecture](docs/architecture.md) |
+| 了解事件流、多会话、回放的实现 | [Web 控制台](docs/zh/web-console.md) | [Web console](docs/web-console.md) |
+| 了解技能自进化的细节 | [技能进化详解](docs/zh/skill-evolution.md) · [在线评测](docs/zh/online-skill-eval.md) | [Self-evolution demo](docs/self-evolution-demo.md) |
+| 看做了哪些妥协、还有哪些已知问题 | | [Design trade-offs](docs/design-tradeoffs.md) |
+| 看评测的完整数字 | | [bench/REPORT.md](bench/REPORT.md) |
+| 看每个版本改了什么 | | [CHANGELOG.md](CHANGELOG.md) |
+
+## 开发
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate             # Windows: .venv\Scripts\activate
 pip install -e ".[dev,bench,web]"
-pytest -q                             # 216 passed; no API key needed
+
+pytest -q                             # 255 passed，不需要 API Key
+ruff check .
+python scripts/build_diagrams.py      # 重新生成架构图
+python scripts/record_demo.py --all   # 重新录制演示轨迹（需要 API Key）
+python scripts/build_pages.py         # 导出静态演示站到 ./site
+docker compose up                     # 或者用 Docker：控制台在 http://localhost:8765
 ```
 
-### Configure a model
-
-Copy `.env.example` to `.env`. It is read from the current directory or a parent.
-
-```env
-# OpenAI-compatible
-OPENAI_API_KEY=sk-your-api-key
-OPENAI_BASE_URL=https://your-host/v1
-MODEL=gpt-4o
-
-# or Anthropic-compatible
-APIKEY=sk-your-api-key
-API=https://your-host/anthropic
-MODEL=claude-sonnet-4-6
-```
-
-A base URL whose path contains `/anthropic` is called with the Anthropic protocol; anything else with the OpenAI protocol. `--model` overrides `MODEL`.
-
-### Command line
-
-```bash
-keelson                                   # interactive REPL
-keelson "summarise this repo's modules"   # one-shot
-keelson --plan "how should skill retrieval be optimised?"   # read-only analysis, then a plan to approve
-keelson --resume                          # continue the last session
-keelson --help                            # all options and REPL commands
-```
-
-### Web console
-
-```bash
-keelson web                # live; records the session to .keelson/traces/
-keelson web --replay       # recorded traces only
-```
-
-It listens on loopback only and cannot switch the permission gate off; the reasons are in [`docs/web-console.md`](docs/web-console.md#security).
-
-### Docker
-
-```bash
-docker compose up          # console on http://localhost:8765, agent works in ./workspace
-```
-
-### MCP servers
-
-MCP is opt-in. Copy `.mcp.example.json` to `.mcp.json` (the servers in it need Node.js).
-
-## Skill self-evolution
-
-Keelson extracts durable rules from explicit user feedback, adds or merges them into `SKILL.md` files, and only lets a merge go live after it clears a non-inferiority gate.
-
-```text
-turn N    task -> answer -> remember the exchange
-turn N+1  feedback that reads as a lasting rule
-            -> Extractor  pulls a candidate out of the user's words (never the model's self-assessment)
-            -> Maintainer decides add / merge / discard
-            -> merge: replay the skill's own history against the candidate
-                 not worse -> write SKILL.md, snapshot the old version, write an Evolution Card
-                 worse     -> quarantine the candidate, restore the live file, write a REJECTED card
-```
-
-"Write me a 500-word report" is a one-off and is ignored. "From now on, reports open with a one-line summary and use formal language" is a rule and is captured; `agents/skill_gating.py::looks_like_feedback` is the filter.
-
-```bash
-keelson --accept-edits                     # background skill writes need a mode that allows edits
-python scripts/demo_self_evolution.py      # the two-lineage demo (needs an API key; --dry-run does not)
-```
-
-The skill-evolution page of the console shows both recorded lineages with the gate's before/after figures and the diff. Full write-up: [`docs/self-evolution-demo.md`](docs/self-evolution-demo.md).
-
-## Reproducing the evaluation
-
-```bash
-# ToolHop, one arm at a time (each isolated)
-python -m agents.bench.runner --arm raw_api  --n 60
-python -m agents.bench.runner --arm no_skill --n 60
-python -m agents.bench.runner --arm skill_v1 --n 60
-python -m agents.bench.runner --arm no_skill --dry-run     # build only, no model calls
-
-python scripts/bench_report.py                             # regenerate the report tables
-
-# Sandbox coding benchmark
-python -m agents.bench.sandbox_runner --validate           # check the tasks; no API key
-python -m agents.bench.sandbox_runner --arm harness --model <model-name>
-
-# Re-record the demo traces
-python scripts/record_demo.py --all
-```
-
-`bench/toolhop_subset.json` is a fixed 120-task subset, enough to reproduce every number in `bench/REPORT.md`. `python scripts/fetch_data.py toolhop` pulls the full dataset.
-
-## Repository layout
+<details>
+<summary><b>目录结构</b></summary>
 
 ```text
 keelson/
-├── agents/                 the package
-│   ├── agent.py            the loop: model calls, tool dispatch, context compression, loop guard
-│   ├── tools.py            built-in tools and the permission gate
-│   ├── events.py           event bus between the runtime and its front ends
-│   ├── ui.py               terminal renderer
-│   ├── web/                web console: server, trace recorder, static front end
+├── agents/                 Python 包
+│   ├── agent.py            循环：模型调用、工具调度、上下文压缩、循环保护
+│   ├── tools.py            内置工具、权限门、异步 shell
+│   ├── events.py           事件总线、耗时 span、按会话绑定
+│   ├── ui.py               终端渲染器
+│   ├── doctor.py           keelson doctor / keelson init
+│   ├── web/                Web 控制台：服务端、会话管理、轨迹录制与脱敏、静态前端
 │   ├── skills.py · online_skill_evolution.py · skill_gate.py · skill_history.py · evolution_card.py
 │   ├── memory.py · session.py · session_memory.py · mcp_client.py · subagent.py · prompt.py · paths.py
-│   └── bench/              ToolHop and sandbox benchmark runners, metrics
-├── bench/                  tasks, splits, REPORT.md, committed run artifacts
-├── demo/traces/            recorded runs the console replays
-├── docs/                   architecture, web console, design trade-offs, self-evolution record (en + zh)
-├── scripts/                start script, demo recorder, static-site build, report generator
-├── tests/                  216 tests
-├── start.bat · start.sh    one-command start
+│   └── bench/              ToolHop 与沙箱评测的运行器和指标
+├── bench/                  任务、数据划分、REPORT.md、提交入库的运行产物
+├── demo/traces/            控制台回放用的录制轨迹
+├── docs/                   文档（中英）与生成的架构图
+├── scripts/                启动脚本、演示录制、架构图生成、静态站构建、实测脚本
+├── tests/                  255 个测试
+├── start.bat · start.sh    一键启动
 └── Dockerfile · docker-compose.yml
 ```
+</details>
 
-## Documentation
+参与贡献请看 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题请看 [SECURITY.md](SECURITY.md)。
 
-| | English | 中文 |
-|---|---|---|
-| Architecture | [architecture.md](docs/architecture.md) | [architecture.md](docs/zh/architecture.md) |
-| Web console, event bus, replay | [web-console.md](docs/web-console.md) | [web-console.md](docs/zh/web-console.md) |
-| Design trade-offs and known issues | [design-tradeoffs.md](docs/design-tradeoffs.md) | |
-| Self-evolution, live-fired | [self-evolution-demo.md](docs/self-evolution-demo.md) | |
-| Skill evolution in depth | | [skill-evolution.md](docs/zh/skill-evolution.md) |
-| Online skill evaluation | | [online-skill-eval.md](docs/zh/online-skill-eval.md) |
-| Benchmark report | [bench/REPORT.md](bench/REPORT.md) | |
-| Changelog and what is not done yet | [CHANGELOG.md](CHANGELOG.md) | |
+## 致谢
 
-## Acknowledgements
+工具集、权限模式，以及 `SKILL.md` 和 `.mcp.json` 的约定沿用了 Claude Code 的设计；本项目通过用 Python 重新实现这套运行时来研究它。多跳评测使用 [ToolHop](https://huggingface.co/datasets/bytedance-research/ToolHop) 数据集。界面字体为 [Inter](https://rsms.me/inter/) 与 [JetBrains Mono](https://www.jetbrains.com/lp/mono/)（SIL OFL）。
 
-The tool set, permission modes, and the `SKILL.md` and `.mcp.json` conventions follow the design of Claude Code, which this project studies by re-implementing the harness in Python. The multi-hop benchmark uses the [ToolHop](https://huggingface.co/datasets/bytedance-research/ToolHop) dataset.
+> Keelson（内龙骨）是把船的龙骨和肋骨锁在一起的那根梁。模型是帆；Keelson 负责把帆上的力传到整条船身。
 
-## License
+## 许可证
 
 [MIT](LICENSE)

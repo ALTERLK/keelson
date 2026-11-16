@@ -5,4 +5,4 @@ gateway, context folding, long-term memory, retrievable + self-evolving Skills,
 MCP tools and sub-agents.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

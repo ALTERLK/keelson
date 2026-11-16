@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Getting started / 上手指南
+    url: https://github.com/ALTERLK/keelson/blob/main/docs/zh/getting-started.md
+    about: Setup problems are usually answered here, or by running `keelson doctor`.
+  - name: Report a security problem privately
+    url: https://github.com/ALTERLK/keelson/security/advisories/new
+    about: Please do not open a public issue for a vulnerability.

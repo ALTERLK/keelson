@@ -9,6 +9,7 @@
 *.svg   text eol=lf
 *.png   binary
 *.gif   binary
+*.woff2 binary
 *.pdf   binary
 *.jpg   binary
 *.sh    text eol=lf
