@@ -28,7 +28,6 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -152,53 +151,13 @@ def _make_workspace(task: str, base: Path) -> Path:
     return ws
 
 
-def _scrub(text: str, replacements: list[tuple[str, str]]) -> str:
-    """Rewrite machine-specific paths in the serialised trace."""
-    for raw, alias in replacements:
-        variants = {raw, raw.replace("\\", "/"), raw.replace("\\", "\\\\")}
-        short = _short_path(raw)
-        if short:
-            variants |= {short, short.replace("\\", "/"), short.replace("\\", "\\\\")}
-        for variant in sorted(variants, key=len, reverse=True):
-            text = re.sub(re.escape(variant), alias, text, flags=re.IGNORECASE)
-    return text
-
-
-def _short_path(path: str) -> str:
-    """Windows 8.3 form of a path (temp dirs often show up in that form)."""
-    if os.name != "nt":
-        return ""
-    try:
-        import ctypes
-
-        buf = ctypes.create_unicode_buffer(1024)
-        if ctypes.windll.kernel32.GetShortPathNameW(path, buf, 1024):
-            return buf.value
-    except Exception:
-        pass
-    return ""
-
-
-def _leaks(text: str) -> list[str]:
-    found = []
-    home = str(Path.home())
-    for needle in (home, home.replace("\\", "/"), home.replace("\\", "\\\\"), os.environ.get("USERNAME", "") or "\0"):
-        if needle and needle.lower() in text.lower():
-            found.append(needle)
-    if re.search(r"sk-[A-Za-z0-9]{16,}", text):
-        found.append("something shaped like an API key")
-    drive_path = re.search(r"[A-Za-z]:\{1,2}[^\\\"]+\\", text)
-    if drive_path:
-        found.append(f"an absolute Windows path ({drive_path.group(0)[:40]}...)")
-    return found
-
-
 async def _run(name: str, scenario: dict, *, scripted: bool = False) -> Path:
     from agents import events, ui
     from agents.agent import Agent
     from agents.main import _load_env_file, _resolve_api_config
     from agents.web.recorder import TraceRecorder
-    from agents.web.server import Session
+    from agents.web.scrub import leaks, scrub
+    from agents.web.sessions import Session
 
     os.chdir(ROOT)
     _load_env_file()
@@ -243,7 +202,8 @@ async def _run(name: str, scenario: dict, *, scripted: bool = False) -> Path:
         "permission_mode": scenario["mode"],
     })
     session = Session(agent, recorder=recorder)
-    ui.set_terminal_enabled(True)
+    ui.set_terminal_enabled(False)
+    ui.attach_terminal(session.bus)  # watch the run in this terminal too
 
     loop = asyncio.get_running_loop()
     allow = scenario["confirm"] == "allow"
@@ -252,27 +212,30 @@ async def _run(name: str, scenario: dict, *, scripted: bool = False) -> Path:
         if event.type == events.CONFIRM_REQUEST:
             loop.call_later(CONFIRM_PAUSE_S, session.resolve_confirm, event.data["request_id"], allow)
 
-    events.bus.subscribe(answer_confirms)
-    events.emit(events.SESSION, **{**session.describe(), "workspace": "workspace"})
+    session.bus.subscribe(answer_confirms)
+    session.bus.emit(events.SESSION, **{**session.describe(), "workspace": "workspace"})
 
     try:
-        for prompt in scenario["turns"]:
-            await agent.chat(prompt)
-            await agent.drain_background_skill_tasks()
-            await asyncio.sleep(0.4)
+        # The same binding a web session uses: everything the turn publishes,
+        # background skill tasks included, goes to this session's bus.
+        with events.use_bus(session.bus):
+            for prompt in scenario["turns"]:
+                await agent.chat(prompt)
+                await agent.drain_background_skill_tasks()
+                await asyncio.sleep(0.4)
     finally:
         session.close()
         os.chdir(ROOT)
 
     text = raw_path.read_text(encoding="utf-8")
-    text = _scrub(text, [
+    text = scrub(text, [
         (str(workspace), "/workspace"),
         (str(base), "/tmp/keelson-demo"),
         (str(ROOT), "/keelson"),          # e.g. the interpreter path in pytest's banner
     ])
-    leaks = _leaks(text)
-    if leaks:
-        raise SystemExit(f"Refusing to save {name}: trace still contains {leaks}. Raw trace kept at {raw_path}")
+    found = leaks(text)
+    if found:
+        raise SystemExit(f"Refusing to save {name}: trace still contains {found}. Raw trace kept at {raw_path}")
     for line in text.splitlines():
         json.loads(line)  # the scrub must leave valid JSON behind
 
