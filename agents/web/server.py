@@ -1,11 +1,12 @@
 """HTTP layer for the web console.
 
-Server → browser is one long-lived SSE stream of bus events; browser → server
-is a handful of small JSON POSTs. SSE (rather than a WebSocket) because the
-traffic is one-directional and bursty, it is plain HTTP, and the browser
-reconnects on its own and tells us where it left off via ``Last-Event-ID``.
+Server → browser is one long-lived SSE stream of bus events per session;
+browser → server is a handful of small JSON POSTs. SSE (rather than a
+WebSocket) because the traffic is one-directional and bursty, it is plain
+HTTP, and the browser reconnects on its own and tells us where it left off via
+``Last-Event-ID``.
 
-The server holds one ``Session`` (one agent). With no agent it still serves
+Sessions live in ``sessions.py``. With no agent factory the server still serves
 the read-only views and recorded traces — that is "replay mode".
 """
 
@@ -14,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -26,112 +26,15 @@ from pydantic import BaseModel
 
 from .. import __version__, events, paths
 from . import data
-from .recorder import TraceRecorder, find_trace, list_traces, load_trace
+from .recorder import find_trace, list_traces, load_trace
+from .sessions import SWITCHABLE_MODES, Session, SessionLimitError, SessionManager
 
 STATIC_DIR = Path(__file__).parent / "static"
-
-# Modes the console may switch between. bypassPermissions is deliberately not
-# offered: a browser tab should not be able to turn the gate off.
-SWITCHABLE_MODES = ("default", "acceptEdits", "dontAsk")
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 _KEEPALIVE_SECONDS = 15
 
-
-class Session:
-    """One agent plus the web-side state around it."""
-
-    def __init__(self, agent: Any | None = None, *, recorder: TraceRecorder | None = None) -> None:
-        self.agent = agent
-        self.recorder = recorder
-        self.busy = False
-        self.since = 0  # a fresh page load replays bus history from here
-        self._task: asyncio.Task | None = None
-        self._confirms: dict[str, asyncio.Future[bool]] = {}
-        if agent is not None:
-            agent.set_confirm_fn(self.confirm)
-        self._stop_recording = events.bus.subscribe(recorder) if recorder is not None else None
-
-    @property
-    def live(self) -> bool:
-        return self.agent is not None
-
-    # -- permission confirmation -------------------------------------------
-    # The agent loop awaits ``confirm()``; the browser answers through
-    # POST /api/confirm, which resolves the matching future. This reuses the
-    # runtime's existing confirm hook, so the loop itself is unchanged.
-
-    async def confirm(self, message: str) -> bool:
-        request_id = uuid.uuid4().hex[:12]
-        future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
-        self._confirms[request_id] = future
-        events.emit(events.CONFIRM_REQUEST, request_id=request_id, message=message)
-        try:
-            allowed = await future
-        except asyncio.CancelledError:
-            allowed = False
-            raise
-        finally:
-            self._confirms.pop(request_id, None)
-            events.emit(events.CONFIRM_RESOLVED, request_id=request_id, allowed=allowed)
-        return allowed
-
-    def resolve_confirm(self, request_id: str, allowed: bool) -> bool:
-        future = self._confirms.get(request_id)
-        if future is None or future.done():
-            return False
-        future.set_result(allowed)
-        return True
-
-    # -- turns --------------------------------------------------------------
-
-    def start_turn(self, message: str) -> None:
-        self.busy = True
-        self._task = asyncio.create_task(self._run_turn(message))
-
-    async def _run_turn(self, message: str) -> None:
-        ended_cleanly = False
-        try:
-            await self.agent.chat(message)
-            ended_cleanly = True
-        except Exception as exc:
-            events.emit(events.NOTICE, level="error", message=str(exc))
-        finally:
-            self.busy = False
-            if not ended_cleanly:
-                events.emit(events.TURN_END)  # the loop only emits this on a normal exit
-
-    def abort(self) -> None:
-        for future in list(self._confirms.values()):
-            if not future.done():
-                future.set_result(False)
-        if self.agent is not None:
-            self.agent.abort()
-
-    def reset(self) -> None:
-        self.abort()
-        if self.agent is not None:
-            self.agent.clear_history()
-        self.since = events.bus.last_seq
-        events.emit(events.SESSION, **self.describe(), reset=True)
-
-    def describe(self) -> dict[str, Any]:
-        agent = self.agent
-        return {
-            "live": self.live,
-            "busy": self.busy,
-            "version": __version__,
-            "model": getattr(agent, "model", ""),
-            "permission_mode": getattr(agent, "permission_mode", ""),
-            "modes": list(SWITCHABLE_MODES),
-            "workspace": Path(os.getcwd()).name,
-            "recording": self.recorder.path.name if self.recorder else "",
-        }
-
-    def close(self) -> None:
-        if self._stop_recording is not None:
-            self._stop_recording()
-            self.recorder.close()
+__all__ = ["STATIC_DIR", "Session", "SessionManager", "create_app"]
 
 
 class ChatBody(BaseModel):
@@ -147,6 +50,10 @@ class ModeBody(BaseModel):
     mode: str
 
 
+class CreateBody(BaseModel):
+    resume: str | None = None
+
+
 def _trace_dirs() -> list[Path]:
     return [data.DEMO_TRACES_DIR, paths.project_dir() / "traces"]
 
@@ -155,10 +62,10 @@ def _sse(event: events.Event) -> str:
     return f"id: {event.seq}\ndata: {json.dumps(event.to_dict(), ensure_ascii=False)}\n\n"
 
 
-def create_app(session: Session | None = None) -> FastAPI:
-    session = session or Session()
+def create_app(manager: SessionManager | None = None) -> FastAPI:
+    manager = manager or SessionManager()
     app = FastAPI(title="Keelson console", version=__version__, docs_url=None, redoc_url=None)
-    app.state.session = session
+    app.state.manager = manager
 
     @app.middleware("http")
     async def same_origin_only(request: Request, call_next):
@@ -184,17 +91,58 @@ def create_app(session: Session | None = None) -> FastAPI:
             response.headers["Cache-Control"] = "no-cache"
         return response
 
-    # -- event stream ---------------------------------------------------------
+    def session_or_404(session_id: str) -> Session:
+        session = manager.get(session_id)
+        if session is None:
+            raise HTTPException(404, "no such session")
+        return session
 
-    @app.get("/api/events")
-    async def stream(request: Request, since: int | None = None) -> StreamingResponse:
+    # -- server and sessions ----------------------------------------------------
+
+    @app.get("/api/state")
+    async def state() -> dict[str, Any]:
+        return {
+            "live": manager.live,
+            "version": __version__,
+            "modes": list(SWITCHABLE_MODES),
+            "workspace": Path(os.getcwd()).name,
+            "sessions": [s.describe() for s in manager.sessions()],
+        }
+
+    @app.get("/api/sessions")
+    async def sessions() -> dict[str, Any]:
+        return {"live": [s.describe() for s in manager.sessions()], "history": manager.history()}
+
+    @app.post("/api/sessions")
+    async def create_session(body: CreateBody) -> dict[str, Any]:
+        if not manager.live:
+            raise HTTPException(409, "replay mode: no model is configured")
+        try:
+            return manager.create(resume=body.resume).describe()
+        except KeyError:
+            raise HTTPException(404, "no saved session with that id") from None
+        except SessionLimitError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.get("/api/sessions/{session_id}")
+    async def describe_session(session_id: str) -> dict[str, Any]:
+        return session_or_404(session_id).describe()
+
+    @app.delete("/api/sessions/{session_id}")
+    async def close_session(session_id: str) -> dict[str, Any]:
+        if not manager.close(session_id):
+            raise HTTPException(404, "no such session")
+        return {"ok": True}
+
+    # -- one session: event stream ----------------------------------------------
+
+    @app.get("/api/sessions/{session_id}/events")
+    async def stream(session_id: str, request: Request, since: int = 0) -> StreamingResponse:
+        bus = session_or_404(session_id).bus
         last_id = request.headers.get("last-event-id")
-        if last_id and last_id.isdigit():
-            start = int(last_id)          # automatic reconnect: resume where it dropped
-        elif since is not None:
-            start = since
-        else:
-            start = session.since         # fresh page load: current session only
+        # Automatic reconnect: resume where the stream dropped. A fresh page
+        # load starts from the beginning of the session.
+        start = int(last_id) if last_id and last_id.isdigit() else since
 
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[events.Event] = asyncio.Queue()
@@ -205,8 +153,8 @@ def create_app(session: Session | None = None) -> FastAPI:
         # Subscribe first, then read the backlog: an event published in between
         # shows up in both, and the seq check below drops the duplicate. The
         # other order would leave a window where an event is lost.
-        unsubscribe = events.bus.subscribe(on_event)
-        backlog = events.bus.history(start)
+        unsubscribe = bus.subscribe(on_event)
+        backlog = bus.history(start)
 
         async def body():
             sent = start
@@ -233,15 +181,11 @@ def create_app(session: Session | None = None) -> FastAPI:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    # -- user actions ---------------------------------------------------------
+    # -- one session: user actions ----------------------------------------------
 
-    def require_agent() -> None:
-        if not session.live:
-            raise HTTPException(409, "replay mode: no model is configured")
-
-    @app.post("/api/chat")
-    async def chat(body: ChatBody) -> dict[str, Any]:
-        require_agent()
+    @app.post("/api/sessions/{session_id}/chat")
+    async def chat(session_id: str, body: ChatBody) -> dict[str, Any]:
+        session = session_or_404(session_id)
         message = body.message.strip()
         if not message:
             raise HTTPException(422, "empty message")
@@ -250,40 +194,27 @@ def create_app(session: Session | None = None) -> FastAPI:
         session.start_turn(message)
         return {"ok": True}
 
-    @app.post("/api/confirm")
-    async def confirm(body: ConfirmBody) -> dict[str, Any]:
-        if not session.resolve_confirm(body.request_id, body.allow):
+    @app.post("/api/sessions/{session_id}/confirm")
+    async def confirm(session_id: str, body: ConfirmBody) -> dict[str, Any]:
+        if not session_or_404(session_id).resolve_confirm(body.request_id, body.allow):
             raise HTTPException(404, "no pending confirmation with that id")
         return {"ok": True}
 
-    @app.post("/api/abort")
-    async def abort() -> dict[str, Any]:
-        require_agent()
-        session.abort()
+    @app.post("/api/sessions/{session_id}/abort")
+    async def abort(session_id: str) -> dict[str, Any]:
+        session_or_404(session_id).abort()
         return {"ok": True}
 
-    @app.post("/api/reset")
-    async def reset() -> dict[str, Any]:
-        require_agent()
-        if session.busy:
-            raise HTTPException(409, "a turn is running; stop it first")
-        session.reset()
-        return {"ok": True}
-
-    @app.post("/api/mode")
-    async def set_mode(body: ModeBody) -> dict[str, Any]:
-        require_agent()
-        if body.mode not in SWITCHABLE_MODES:
-            raise HTTPException(422, f"mode must be one of {', '.join(SWITCHABLE_MODES)}")
-        session.agent.permission_mode = body.mode
-        events.emit(events.SESSION, **session.describe())
+    @app.post("/api/sessions/{session_id}/mode")
+    async def set_mode(session_id: str, body: ModeBody) -> dict[str, Any]:
+        session = session_or_404(session_id)
+        try:
+            session.set_mode(body.mode)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
         return {"ok": True, "permission_mode": body.mode}
 
-    # -- read-only views ------------------------------------------------------
-
-    @app.get("/api/state")
-    async def state() -> dict[str, Any]:
-        return session.describe()
+    # -- read-only views ----------------------------------------------------------
 
     @app.get("/api/bench")
     async def bench() -> dict[str, Any]:
@@ -297,9 +228,23 @@ def create_app(session: Session | None = None) -> FastAPI:
     async def skills() -> list[dict[str, Any]]:
         return data.live_skills()
 
+    @app.get("/api/casestudy")
+    async def casestudy() -> dict[str, Any]:
+        return data.case_study()
+
+    @app.get("/api/perf")
+    async def perf() -> dict[str, Any]:
+        return data.perf_summary(_trace_dirs())
+
+    @app.get("/api/doctor")
+    async def doctor() -> dict[str, Any]:
+        from ..doctor import run_checks
+
+        return {"checks": await run_checks(ping_model=False)}
+
     @app.get("/api/traces")
     async def traces() -> list[dict[str, Any]]:
-        return list_traces(_trace_dirs())
+        return list_traces([data.DEMO_TRACES_DIR])
 
     @app.get("/api/traces/{trace_id}")
     async def trace(trace_id: str) -> dict[str, Any]:
@@ -308,11 +253,11 @@ def create_app(session: Session | None = None) -> FastAPI:
             raise HTTPException(404, "trace not found")
         return load_trace(path)
 
-    # -- front end ------------------------------------------------------------
+    # -- front end ----------------------------------------------------------------
 
     @app.get("/")
     async def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+        return FileResponse(STATIC_DIR / "index.html")
 
     app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")
     return app

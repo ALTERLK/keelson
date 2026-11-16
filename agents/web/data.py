@@ -223,3 +223,65 @@ def live_skills() -> list[dict[str, Any]]:
             "history": history,
         })
     return out
+
+
+# ─── Performance ────────────────────────────────────────────
+
+
+def _percentile(values: list[float], q: float) -> float:
+    """Nearest-rank percentile; ``values`` must be sorted and non-empty."""
+    index = min(len(values) - 1, max(0, round(q * (len(values) - 1))))
+    return values[index]
+
+
+def summarize_spans(rows: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
+    """Per span name: count, total, p50 and p95 in milliseconds."""
+    buckets: dict[str, list[float]] = {}
+    for row in rows:
+        if row.get("type") == "span":
+            buckets.setdefault(row["data"].get("name", "?"), []).append(float(row["data"].get("dur_ms", 0.0)))
+    out = {}
+    for name, durations in buckets.items():
+        durations.sort()
+        out[name] = {
+            "count": len(durations),
+            "total_ms": round(sum(durations), 2),
+            "p50_ms": round(_percentile(durations, 0.50), 2),
+            "p95_ms": round(_percentile(durations, 0.95), 2),
+            "max_ms": round(durations[-1], 2),
+        }
+    return out
+
+
+def perf_summary(directories: list[Path]) -> dict[str, Any]:
+    """Where the time goes, over every recorded trace that carries spans."""
+    from .recorder import load_trace
+
+    rows: list[dict[str, Any]] = []
+    traces = 0
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.jsonl")):
+            events_ = load_trace(path)["events"]
+            if any(e["type"] == "span" for e in events_):
+                traces += 1
+                rows.extend(events_)
+    spans = summarize_spans(rows)
+    # Time the loop itself accounts for; waiting on a person is listed but not counted.
+    accounted = sum(v["total_ms"] for k, v in spans.items() if k != "confirm_wait")
+    for value in spans.values():
+        value["share"] = round(value["total_ms"] / accounted, 4) if accounted else 0.0
+    return {"available": bool(spans), "traces": traces, "spans": spans}
+
+
+# ─── Case study ─────────────────────────────────────────────
+
+
+@lru_cache(maxsize=1)
+def case_study() -> dict[str, Any]:
+    """Results of running Keelson on real issues from real projects."""
+    results = _read_json(BENCH_DIR / "casestudy" / "results.json")
+    if not results:
+        return {"available": False}
+    return {"available": True, **results}
