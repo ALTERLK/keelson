@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import signal
 import sys
@@ -14,9 +15,10 @@ from dotenv import load_dotenv
 
 from . import models, paths
 from .agent import Agent
+from .i18n import t
 from .memory import list_memories
 from .online_skill_eval import format_online_skill_eval_async
-from .session import get_latest_session_id, load_session
+from .session import get_latest_session_id
 from .skill_history import diff_current_vs_snapshot, format_history
 from .skill_history import rollback as rollback_skill
 from .skills import (
@@ -30,6 +32,7 @@ from .skills import (
     skill_stats,
 )
 from .ui import (
+    print_diff,
     print_error,
     print_goodbye,
     print_info,
@@ -37,6 +40,8 @@ from .ui import (
     print_memory_entries,
     print_plan_approval_options,
     print_plan_for_approval,
+    print_review,
+    print_rows,
     print_skill_entries,
     print_user_prompt,
     print_warning,
@@ -59,6 +64,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", "-m", default=None, help="Model to use")
     parser.add_argument("--api-base", default=None, help="OpenAI-compatible API base URL")
     parser.add_argument("--resume", action="store_true", help="Resume last session")
+    parser.add_argument("--print", "-p", dest="print_mode", action="store_true",
+                        help="Answer one request without asking anything and print only the result")
+    parser.add_argument("--output-format", choices=("text", "json"), default="text",
+                        help="With -p: plain text or one JSON object")
     parser.add_argument("--max-cost", type=float, default=None, help="Max USD spend")
     parser.add_argument("--max-turns", type=int, default=None, help="Max agentic turns")
     parser.add_argument("--help", "-h", action="store_true", help="Show help")
@@ -167,15 +176,24 @@ def _resolve_api_config(cli_api_base: str | None) -> tuple[str | None, str | Non
     return None, None, False
 
 
+_CONFIRM_KEYS = {"once": "y", "session": "s", "project": "p", "deny": "n"}
+
+
+def confirm_prompt(options: list[str]) -> str:
+    return t("confirm_ask", keys="/".join(_CONFIRM_KEYS[o] for o in options if o in _CONFIRM_KEYS))
+
+
 def read_confirm_answer(options: list[str], read=input) -> dict:
     """Read one answer to a permission prompt: y / s / p / n, or `n: reason`."""
-    prompt = "  Allow? [" + "/".join({"once": "y", "session": "s", "project": "p", "deny": "n"}[o]
-                                     for o in options if o in ("once", "session", "project", "deny")) + "]: "
     try:
-        answer = read(prompt).strip()
+        answer = read(confirm_prompt(options))
     except EOFError:
         return {"choice": "deny"}
-    head, _, reason = answer.partition(":")
+    return parse_confirm_answer(answer, options)
+
+
+def parse_confirm_answer(answer: str, options: list[str]) -> dict:
+    head, _, reason = answer.strip().partition(":")
     key = head.strip().lower()[:1]
     choice = {"y": "once", "s": "session", "p": "project"}.get(key, "deny")
     if choice not in options:
@@ -370,7 +388,7 @@ def _confirm_trust() -> None:
                   + "\n  ".join(pending)
                   + "\nThey stay off until you trust the folder. Its deny rules apply either way.")
     try:
-        answer = input("  Trust this folder? [y/N]: ").strip().lower()
+        answer = input(t("trust_q")).strip().lower()
     except EOFError:
         answer = ""
     if answer.startswith("y"):
@@ -381,11 +399,194 @@ def _confirm_trust() -> None:
         print_info("Trusted. (`keelson trust --revoke` takes it back.)")
 
 
+def handle_help_command(inp: str) -> bool:
+    if inp.strip() not in ("/help", "/?", "help"):
+        return False
+    from . import commands
+
+    print_info(commands.help_text())
+    return True
+
+
+def handle_status_command(agent: Agent, inp: str) -> bool:
+    if inp.strip() != "/status":
+        return False
+    from . import profiles
+    from . import verify as verify_mod
+
+    profile = profiles.active_profile()
+    checks, source = verify_mod.commands_for()
+    window = agent.effective_window or 1
+    used = agent.last_input_token_count
+    rows = [
+        (t("model"), agent.model + (f"  ({profile})" if profile else "")),
+        (t("mode"), t(f"mode.{agent.permission_mode}")),
+        (t("workspace"), os.getcwd()),
+        (t("status.session"), agent.session_id),
+        (t("status.context"), f"{used:,} / {window:,} ({used / window:.0%})"),
+        (t("status.cost"), f"${agent._get_current_cost_usd():.4f} · "
+         + t("turn.tokens", tin=f"{agent.total_input_tokens:,}", tout=f"{agent.total_output_tokens:,}")
+         + (" · " + t("turn.cache", rate=min(agent.total_cache_hit_tokens, agent.total_input_tokens)
+                      / agent.total_input_tokens) if agent.total_input_tokens else "")),
+        (t("checks"), (" · ".join(checks) + f"  ({source})") if checks else t("checks_none")),
+    ]
+    if agent.context_files:
+        rows.append((t("status.files"), ", ".join(agent.context_files)))
+    store = agent.checkpoint_store()
+    if store is not None:
+        n = len(store.describe())
+        rows.append((t("status.undo"), t("status.undo_full", n=n) if store.covers_shell
+                     else t("status.undo_partial", n=n, reason=store.reason or "")))
+    print_rows(rows)
+    return True
+
+
+def handle_mode_command(agent: Agent, inp: str) -> bool:
+    words = inp.split()
+    if not words or words[0] != "/mode":
+        return False
+    choices = ("default", "acceptEdits", "plan", "dontAsk", "bypassPermissions")
+    if len(words) > 1:
+        wanted = {c.lower(): c for c in choices}.get(words[1].lower())
+        if wanted is None:
+            print_warning(t("mode.bad", mode=words[1], choices=" / ".join(choices)))
+            return True
+        agent.set_permission_mode(wanted)
+    print_info(t("mode_now", mode=t(f"mode.{agent.permission_mode}")))
+    return True
+
+
+def handle_diff_command(agent: Agent, inp: str) -> bool:
+    words = inp.split()
+    if not words or words[0] != "/diff":
+        return False
+    steps = int(words[1]) if len(words) > 1 and words[1].isdigit() else 1
+    store = agent.checkpoint_store()
+    if store is None:
+        print_warning(t("diff.off"))
+        return True
+    text, files = store.diff(steps)
+    if not text.strip():
+        print_info(t("diff.none", n=steps))
+        return True
+    print_diff(text)
+    print_info(f"{t('review.files')} ({len(files)}): " + ", ".join(files[:20]))
+    return True
+
+
+def handle_review_command(agent: Agent, inp: str) -> bool:
+    if inp.strip() != "/review":
+        return False
+    outcome = agent.last_outcome
+    store = agent.checkpoint_store()
+    files: list[str] = []
+    if store is not None:
+        rows = store.describe()
+        files = rows[0]["files"] if rows else []
+    if outcome is None and not files:
+        print_info(t("review.none"))
+        return True
+    data = outcome.event() if outcome is not None else {"status": "unverified", "detail": ""}
+    print_review(data, files or data.get("changed") or [])
+    return True
+
+
+def handle_context_command(agent: Agent, inp: str) -> bool:
+    """/add FILE..., /drop [FILE...]."""
+    words = inp.split()
+    if not words or words[0] not in ("/add", "/drop"):
+        return False
+    names = [w.lstrip("@") for w in words[1:]]
+    if words[0] == "/add":
+        if not names:
+            print_info(t("add.now", files=", ".join(agent.context_files)) if agent.context_files
+                       else t("add.usage"))
+            return True
+        added, missing = agent.add_context_files(names)
+        if added:
+            print_info(t("add.added", files=", ".join(added)))
+        if missing:
+            print_warning(t("add.missing", files=", ".join(missing)))
+        return True
+    dropped = agent.drop_context_files(names or None)
+    print_info(t("drop.done", files=", ".join(dropped)) if dropped else t("drop.none"))
+    return True
+
+
+def handle_init_command(inp: str) -> bool:
+    """/init: KEELSON.md with the detected check commands and a Rules section to fill in."""
+    if inp.strip() != "/init":
+        return False
+    from . import verify as verify_mod
+
+    md = verify_mod.keelson_md()
+    if md.exists():
+        print_info(t("init.exists", path=md))
+        return True
+    md.write_text("# KEELSON.md\n\nNotes for Keelson about this project. It reads this file every session.\n\n"
+                  "## Rules\n\n- (things that must not change, style, commands to avoid)\n\n",
+                  encoding="utf-8", newline="\n")
+    verify_mod.write_verify_section(verify_mod.detect())
+    print_info(t("init.done", path=md))
+    return True
+
+
+def recent_sessions(limit: int = 10) -> list[dict]:
+    from .session import list_sessions
+
+    rows = [s for s in list_sessions() if s.get("id") and s.get("messageCount", 0)]
+    rows.sort(key=lambda s: s.get("updated") or s.get("startTime", ""), reverse=True)
+    return rows[:limit]
+
+
+def handle_resume_command(agent: Agent, inp: str) -> bool:
+    words = inp.split()
+    if not words or words[0] != "/resume":
+        return False
+    rows = [r for r in recent_sessions() if r.get("id") != agent.session_id]
+    if not rows:
+        print_info(t("resume.none"))
+        return True
+    if len(words) == 1:
+        lines = [f"  {i}. {r.get('updated') or str(r.get('startTime', ''))[:16]}  "
+                 f"{(r.get('title') or '').splitlines()[0][:60] if r.get('title') else '—'}  "
+                 f"({r.get('messageCount', 0)})" for i, r in enumerate(rows, 1)]
+        print_info("\n".join(lines) + "\n" + t("resume.pick"))
+        return True
+    pick = words[1]
+    row = rows[int(pick) - 1] if pick.isdigit() and 1 <= int(pick) <= len(rows) else next(
+        (r for r in rows if r.get("id") == pick), None)
+    if row is None or not agent.resume(row["id"]):
+        print_warning(t("resume.bad", n=pick))
+        return True
+    print_info(t("resume.done", id=row["id"], n=row.get("messageCount", 0)))
+    return True
+
+
+def handle_terminal_command(agent: Agent, inp: str) -> bool:
+    """The commands added for the terminal in 0.4: /help /status /mode /diff /review /add /drop /init /resume."""
+    return (handle_help_command(inp) or handle_status_command(agent, inp) or handle_mode_command(agent, inp)
+            or handle_diff_command(agent, inp) or handle_review_command(agent, inp)
+            or handle_context_command(agent, inp) or handle_init_command(inp) or handle_resume_command(agent, inp))
+
+
 async def run_repl(agent: Agent) -> None:
     """Interactive REPL loop."""
+    from .terminal_input import TerminalInput
+    from .verify import commands_for
+
+    term = TerminalInput(agent)
+
+    async def ask(prompt: str) -> str:
+        return await term.ask(prompt)
 
     async def confirm_fn(message: str, request: dict | None = None) -> dict:
-        return read_confirm_answer((request or {}).get("options") or ["once", "deny"])
+        options = (request or {}).get("options") or ["once", "deny"]
+        try:
+            answer = await ask(confirm_prompt(options))
+        except EOFError:
+            return {"choice": "deny"}
+        return parse_confirm_answer(answer, options)
 
     agent.set_confirm_fn(confirm_fn)
 
@@ -394,7 +595,7 @@ async def run_repl(agent: Agent) -> None:
         print_plan_approval_options()
         while True:
             try:
-                choice = input("  Enter choice (1-4): ").strip()
+                choice = (await ask("  Enter choice (1-4): ")).strip()
             except EOFError:
                 return {"choice": "manual-execute"}
             if choice == "1":
@@ -405,7 +606,7 @@ async def run_repl(agent: Agent) -> None:
                 return {"choice": "manual-execute"}
             elif choice == "4":
                 try:
-                    feedback = input("  Feedback (what to change): ").strip()
+                    feedback = (await ask("  Feedback (what to change): ")).strip()
                 except EOFError:
                     feedback = ""
                 return {"choice": "keep-planning", "feedback": feedback or None}
@@ -418,10 +619,11 @@ async def run_repl(agent: Agent) -> None:
     loop = asyncio.get_running_loop()
 
     def handle_sigint(sig, frame):
+        # Reached while a turn runs (prompt_toolkit reads Ctrl+C itself at the prompt).
         nonlocal sigint_count
         if agent.is_processing:
-            # Stop the running turn. Scheduled through the loop so a loop that is
-            # waiting on the network wakes up to see the cancellation.
+            # Stop the running turn: the model call and any shell command it started.
+            # Scheduled through the loop so a loop waiting on the network wakes up.
             loop.call_soon_threadsafe(agent.abort)
             print_interrupted()
             sigint_count = 0
@@ -430,23 +632,35 @@ async def run_repl(agent: Agent) -> None:
             if sigint_count >= 2:
                 print_goodbye()
                 sys.exit(0)
-            print_warning("Press Ctrl+C again to exit.")
-            print_user_prompt()
+            print_warning(t("ctrl_c_again"))
+            if not term.rich:
+                print_user_prompt()
 
     signal.signal(signal.SIGINT, handle_sigint)
     _confirm_trust()
+    from . import profiles
+
     print_welcome(
         model=agent.model,
         permission_mode=agent.permission_mode,
         cwd=os.getcwd(),
         skill_count=len(discover_skills()),
+        checks=commands_for()[0],
+        profile=profiles.active_profile(),
     )
 
     while True:
-        print_user_prompt()
         try:
-            line = input()
-        except (EOFError, KeyboardInterrupt):
+            line = await term.read()
+        except KeyboardInterrupt:
+            # Ctrl+C at the prompt: the first one warns, the second one exits.
+            sigint_count += 1
+            if sigint_count >= 2:
+                print_goodbye()
+                break
+            print_warning(t("ctrl_c_again"))
+            continue
+        if line is None:
             print_goodbye()
             break
 
@@ -455,7 +669,7 @@ async def run_repl(agent: Agent) -> None:
 
         if not inp:
             continue
-        if inp in ("exit", "quit"):
+        if inp in ("exit", "quit", "/exit", "/quit"):
             offer_rules_for_keelson_md(agent)
             print_goodbye()
             break
@@ -469,6 +683,8 @@ async def run_repl(agent: Agent) -> None:
             continue
         if inp == "/cost":
             agent.show_cost()
+            continue
+        if handle_terminal_command(agent, inp):
             continue
         if handle_checkpoint_command(agent, inp):
             continue
@@ -626,6 +842,9 @@ async def run_repl(agent: Agent) -> None:
                     if "abort" not in str(e).lower():
                         print_error(str(e))
                 continue
+            if "/" not in cmd_name and "\\" not in cmd_name:
+                print_warning(t("unknown_command", cmd="/" + cmd_name))
+                continue
 
         # Normal chat
         try:
@@ -637,8 +856,64 @@ async def run_repl(agent: Agent) -> None:
 
 
 async def run_one_shot(agent: Agent, prompt: str) -> None:
+    async def confirm_fn(message: str, request: dict | None = None) -> dict:
+        return read_confirm_answer((request or {}).get("options") or ["once", "deny"])
+
+    agent.set_confirm_fn(confirm_fn)
     await agent.chat(prompt)
     await agent.drain_background_skill_tasks()
+
+
+async def run_print(agent: Agent, prompt: str, output_format: str = "text", out=None) -> int:
+    """``keelson -p``: run one request without asking anything, print only the answer.
+
+    Progress, warnings and errors go to stderr; stdout gets the final answer (or one JSON
+    object with ``--output-format json``). Anything that would need a confirmation is denied
+    and the model is told why. Exit code: 0 done, 1 the end-of-turn checks failed, 2 error.
+    """
+    from . import ui
+
+    out = out or sys.stdout
+    ui.set_terminal_enabled(False)
+    ui.console.file = sys.stderr
+
+    async def deny(message: str, request: dict | None = None) -> dict:
+        return {"choice": "deny", "reason": t("print.denied")}
+
+    async def no_plan_approval(plan_content: str) -> dict:
+        return {"choice": "manual-execute"}
+
+    agent.set_confirm_fn(deny)
+    agent.set_plan_approval_fn(no_plan_approval)
+    code, error = 0, None
+    try:
+        await agent.chat(prompt)
+    except Exception as e:  # noqa: BLE001 - reported, then the exit code says it failed
+        code, error = 2, str(e)
+        print(f"error: {e}", file=sys.stderr)
+    try:
+        await agent.drain_background_skill_tasks()
+    except Exception:
+        pass
+    outcome = agent.last_outcome
+    if code == 0 and outcome is not None and outcome.status == "failed":
+        code = 1
+    answer = agent.last_answer()
+    if output_format == "json":
+        hit = min(agent.total_cache_hit_tokens, agent.total_input_tokens)
+        out.write(json.dumps({
+            "result": answer,
+            "verify": outcome.event() if outcome is not None else None,
+            "usage": {"input_tokens": agent.total_input_tokens, "output_tokens": agent.total_output_tokens,
+                      "cache_hit_tokens": hit, "cost_usd": round(agent._get_current_cost_usd(), 6)},
+            "model": agent.model,
+            "session_id": agent.session_id,
+            "error": error,
+        }, ensure_ascii=False) + "\n")
+    elif answer:
+        out.write(answer.rstrip("\n") + "\n")
+    out.flush()
+    return code
 
 
 def main() -> None:
@@ -696,37 +971,16 @@ Options:
   --thinking          Turn on the model's thinking mode (Claude, DeepSeek)
   --model, -m         Model to use (default: deepseek-flash, or MODEL from the config)
   --api-base URL      Override the API base URL from the config
-  --resume            Resume the last session
+  --resume            Resume the last session (messages, task ledger, folded memory)
+  -p, --print         Answer one request without asking anything; print only the answer.
+                      The prompt comes from the arguments, stdin, or both. Exit code 1 if the
+                      end-of-turn checks failed, 2 on an error.
+  --output-format F   With -p: text (default) or json {result, verify, usage, session_id}
   --max-cost USD      Stop when estimated cost exceeds this amount
   --max-turns N       Stop after N agentic turns
   --help, -h          Show this help
 
-REPL commands:
-  /clear              Clear conversation history
-  /plan               Toggle plan mode (read-only <-> normal)
-  /cost               Show token usage and cost
-  /model [NAME]       Show or switch the model (same endpoint), e.g. /model deepseek-v4-pro
-  /compact            Manually compact conversation
-  /undo [--force]     Put back every file the last turn changed, shell changes included
-  /rewind N           Undo the last N turns
-  /redo               Reverse the last /undo
-  /revert FILE [N]    Put one file back as it was N turns ago (default 1)
-  /checkpoints        List the turns that can be undone
-  /verify [init|run]  Show the checks run after each turn; init saves them to KEELSON.md; run runs them now
-  /task               Show the task ledger (goal, your rules word for word, plan, files); /task add|drop|goal|clear
-  /usage              Tokens, cache hit rate and estimated cost: this session, today, last 7 days
-  /memory             List saved memories
-  /skills             List available skills
-  /skill-stats        Show skill usage and evolution stats
-  /skill-eval         Evaluate online skill evolution quality
-  /extract_now        Extract the current pending online skill window: /extract_now [hint]
-  /skill-feedback     Record feedback: /skill-feedback <skill> <rating> [note]
-  /skill-evolve       Evolve a skill: /skill-evolve <skill> <durable lesson>
-  /skill-create       Create a skill: /skill-create <name> | <description> | <when-to-use> | <instructions>
-  /skill-history      Show a skill's evolution snapshots: /skill-history <skill>
-  /skill-diff         Diff a skill against its last snapshot: /skill-diff <skill> [version]
-  /skill-rollback     Restore a skill to a snapshot: /skill-rollback <skill> [version]
-  /<skill-name>       Invoke a skill (e.g. /commit "fix types")
+REPL commands: type /help inside keelson.
 
 Examples:
   keelson "fix the bug in src/app.ts"
@@ -736,6 +990,8 @@ Examples:
   MODEL=deepseek-flash APIKEY=sk-xxx API=https://api.deepseek.com keelson "hello"
   MODEL=gpt-4o OPENAI_API_KEY=sk-xxx OPENAI_BASE_URL=https://aihubmix.com/v1 keelson "hello"
   keelson --resume
+  keelson -p "explain src/app.ts"
+  git diff | keelson -p --output-format json "review this change"
   keelson  # starts interactive REPL
 """)
         sys.exit(0)
@@ -774,20 +1030,21 @@ Examples:
     # --resume 会加载最近一次会话，把历史消息恢复到新建的 Agent 中。
     if args.resume:
         session_id = get_latest_session_id()
-        if session_id:
-            session = load_session(session_id)
-            if session:
-                agent.restore_session({
-                    "anthropicMessages": session.get("anthropicMessages"),
-                    "openaiMessages": session.get("openaiMessages"),
-                })
-            else:
-                print_info("No session found to resume.")
-        else:
+        if not session_id:
             print_info("No previous sessions found.")
+        elif not agent.resume(session_id):
+            print_info("No session found to resume.")
 
     # 如果命令行后面带了普通文本参数，就拼成一次性 prompt；否则进入交互式 REPL。
     prompt = " ".join(args.prompt) if args.prompt else None
+
+    if args.print_mode:
+        piped = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+        text = "\n\n".join(part for part in (prompt, piped.strip()) if part)
+        if not text:
+            print(t("print.empty"), file=sys.stderr)
+            sys.exit(2)
+        sys.exit(asyncio.run(run_print(agent, text, args.output_format)))
 
     if prompt:
         # One-shot mode

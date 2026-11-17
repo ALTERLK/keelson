@@ -15,6 +15,7 @@ keywords = ["agent", "llm", "tool-calling", "mcp", "benchmark"]
 dependencies = [
     "anthropic>=0.25",
     "openai>=1.0",
+    "prompt_toolkit>=3.0.43",  # the REPL's input line: history, completion, Shift+Tab
     "python-dotenv>=1.0",
     "rich>=13.0",
     "send2trash>=1.8",      # delete_files moves things to the Recycle Bin / Trash

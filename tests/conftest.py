@@ -31,6 +31,9 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("KEELSON_CHECKPOINTS", "0")
     # Same for end-of-turn checks, which would run the project's tests; tests/test_verify.py turns them on.
     monkeypatch.setenv("KEELSON_VERIFY", "0")
+    # Interface text in English whatever the machine's language; tests/test_terminal_ux.py covers Chinese.
+    monkeypatch.setenv("KEELSON_LANG", "en")
+    monkeypatch.setenv("KEELSON_SIMPLE_INPUT", "1")
     import keelson.checkpoints as checkpoints
 
     checkpoints.reset()

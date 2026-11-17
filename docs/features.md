@@ -437,6 +437,60 @@ code, run the tests and show the output" is a skill.
 through the gate). `/memory` shows what it has. The files live under
 `~/.keelson/memory/` and can be edited or deleted by hand.
 
+## The terminal
+
+**What it is.** The interactive `keelson` session: an input line with history
+and completion, a status bar, the answer rendered as Markdown while it streams,
+and commands for the pieces you want to see or change.
+
+**How to use it.**
+
+- **Enter** sends; **Alt+Enter** (or Ctrl+J) starts a new line; a pasted block
+  stays one message. **↑/↓** walk the history, kept in `~/.keelson/history.txt`.
+- **Tab** completes `/commands` (with what each does), `@files` anywhere in a
+  message, and the file names after `/add`, `/drop` and `/revert`. A bare name
+  such as `@calc` also finds `src/util/calc.py`.
+- **Shift+Tab** switches mode: default → accept edits → plan → default.
+- **Ctrl+C** stops the turn and kills a command it started; at the prompt, twice
+  exits. **Ctrl+D** (Ctrl+Z then Enter on Windows) exits too.
+- The bar at the bottom shows model │ mode │ context used │ cost │ cache hit
+  rate │ files added with `/add`.
+- `/add FILE...` puts files in the conversation: their contents go to the model
+  once, they count as in scope for the scope guard, and later turns only name
+  them. `/drop` takes them out.
+- `/diff [N]` shows what the last N turns changed, shell changes included;
+  `/review` shows the last turn's verification badge, flags and files.
+- `/status` shows model, mode, workspace, session, context, cost, checks and
+  how far `/undo` reaches; `/resume` lists recent sessions and `/resume N`
+  reopens one; `/init` writes a starter `KEELSON.md`.
+- Interface text is Chinese on a Chinese system and English otherwise;
+  `KEELSON_LANG=zh|en` chooses. Command names stay English.
+
+**Worth knowing.** Without a real terminal (a pipe, CI) or with
+`KEELSON_SIMPLE_INPUT=1`, input falls back to a plain line read and the answer
+is printed as raw text. `KEELSON_MARKDOWN=0` turns off the Markdown rendering.
+
+## One-shot and scripted use: `keelson -p`
+
+**What it is.** One request, no questions, only the answer on stdout — for
+scripts, git hooks and editors.
+
+**How to use it.**
+
+```bash
+keelson -p "explain src/app.ts"
+git diff | keelson -p "review this change"
+keelson -p --output-format json "fix the failing test" > result.json
+```
+
+The prompt comes from the arguments, stdin, or both (stdin is appended).
+Anything that would need a confirmation is denied and the model is told why,
+so pick the mode up front (`--accept-edits`, `--yolo`). Progress and warnings
+go to stderr. `--output-format json` prints one object: `result`, `verify`
+(the end-of-turn badge), `usage` (tokens, cache hits, cost), `model`,
+`session_id`, `error`. The exit code is 0 when done, 1 when the end-of-turn
+checks failed, 2 on an error.
+
 ## Sessions
 
 **What it is.** One conversation and its history. The terminal has one at a
@@ -445,8 +499,9 @@ and permission mode.
 
 **How to use it.**
 
-- Terminal: `keelson --resume` reopens the last session; `/clear` empties the
-  current one.
+- Terminal: `keelson --resume` reopens the last session, `/resume` lists recent
+  ones and `/resume N` opens one — messages, task ledger and folded memory
+  together. `/clear` empties the current one.
 - Console: the *Sessions* list on the left; `+` creates one, a click switches.
   *Earlier* below lists finished sessions: opening one is a read-only replay,
   and "Continue this session" picks it up again — also after a server restart.
@@ -546,7 +601,8 @@ shows the same checks.
 | Command | What it does |
 |---|---|
 | `keelson` | Interactive terminal session |
-| `keelson "task"` | Run one task and exit |
+| `keelson "task"` | Run one task and exit (asks as usual) |
+| `keelson -p "task"` | Run one task without asking; print only the answer (`--output-format json`) |
 | `keelson web` | Start the web console (`--port`, `--replay`, `--no-open`, `--no-record`) |
 | `keelson init` / `keelson doctor` | Configure / check the install |
 | `keelson use [NAME]` | List profiles, or switch to one |
@@ -567,6 +623,15 @@ shows the same checks.
 
 | Command | What it does |
 |---|---|
+| `/help` | All commands, grouped |
+| `/status` | Model, mode, workspace, session, context, cost, checks, undo coverage |
+| `/mode [default\|acceptEdits\|plan]` | Show or switch the permission mode (also Shift+Tab) |
+| `/add FILE...` · `/drop [FILE...]` | Put files in the conversation (and the scope) · take them out |
+| `/diff [N]` | What the last N turns changed, shell changes included |
+| `/review` | The last turn: verification badge, flags, files changed |
+| `/init` | Write a starter `KEELSON.md` with the detected checks |
+| `/resume [N]` | List recent sessions · reopen one |
+| `/exit` | Quit (also `exit`, `quit`, Ctrl+D) |
 | `/clear` | Clear the conversation |
 | `/plan` | Toggle plan mode |
 | `/cost` | Tokens and cost |
@@ -620,3 +685,6 @@ Set them in `.env` or in the environment.
 | `KEELSON_LOOP_GUARD` | Loop guard | `1` |
 | `KEELSON_OPENAI_STREAM` | Stream on the OpenAI protocol; set `0` if a gateway's streaming is unreliable | `1` |
 | `KEELSON_TRACE` | Write timings to a local log file | `0` |
+| `KEELSON_LANG` | Interface language: `zh` or `en` | the system's |
+| `KEELSON_MARKDOWN` | Render the answer as Markdown in a terminal | `1` |
+| `KEELSON_SIMPLE_INPUT` | Plain line input instead of the completing input line | `0` |

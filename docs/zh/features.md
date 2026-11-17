@@ -307,13 +307,45 @@ when_to_use: The user asks to commit, or asks for a commit message
 
 **怎么用。** 由 Agent 在对话中自己判断并写入（写新文件会经过权限门）。`/memory` 查看它记了什么。文件在 `~/.keelson/memory/` 下，可以直接编辑或删除。
 
+## 终端界面
+
+**是什么。** 交互式的 `keelson`：带历史和补全的输入行、底部状态栏、边流式输出边按 Markdown 排版的回答，以及查看和调整各项状态的命令。
+
+**怎么用。**
+
+- **Enter** 发送；**Alt+Enter**（或 Ctrl+J）换行；粘贴的一整段算一条消息。**↑/↓** 翻历史，历史保存在 `~/.keelson/history.txt`。
+- **Tab** 补全 `/命令`（附说明）、消息里任意位置的 `@文件`，以及 `/add`、`/drop`、`/revert` 后面的文件名。只写文件名也行，比如 `@calc` 能找到 `src/util/calc.py`。
+- **Shift+Tab** 切换模式：默认 → 自动接受改动 → 计划 → 默认。
+- **Ctrl+C** 打断本轮，并结束它启动的命令；在输入行连按两次退出。**Ctrl+D**（Windows 上 Ctrl+Z 再回车）也能退出。
+- 底部状态栏：模型 │ 模式 │ 上下文占用 │ 花费 │ 缓存命中率 │ 用 `/add` 加入的文件。
+- `/add 文件...` 把文件加入对话：内容只发给模型一次，文件算在范围护栏的范围内，之后的轮次只提文件名。`/drop` 移出。
+- `/diff [N]` 查看最近 N 轮的改动，包括 shell 造成的；`/review` 回顾上一轮的验证徽章、警示和改动的文件。
+- `/status` 显示模型、模式、工作区、会话、上下文、花费、验证命令和 `/undo` 能撤销到哪；`/resume` 列出最近的会话，`/resume N` 重新打开；`/init` 生成一份初始的 `KEELSON.md`。
+- 系统语言是中文时界面用中文，否则用英文；`KEELSON_LANG=zh|en` 可以指定。命令名保持英文。
+
+**值得知道的细节。** 没有真正的终端时（管道、CI），或设置了 `KEELSON_SIMPLE_INPUT=1`，输入退回到普通的整行读取，回答按原文输出。`KEELSON_MARKDOWN=0` 关闭 Markdown 排版。
+
+## 一次性与脚本调用：`keelson -p`
+
+**是什么。** 执行一个请求，不问任何问题，stdout 上只输出回答——给脚本、git 钩子和编辑器用。
+
+**怎么用。**
+
+```bash
+keelson -p "解释一下 src/app.ts"
+git diff | keelson -p "审一下这个改动"
+keelson -p --output-format json "修好失败的测试" > result.json
+```
+
+提示可以来自参数、stdin，或两者都有（stdin 内容接在后面）。需要确认的操作一律拒绝，并告诉模型原因，所以要事先选好模式（`--accept-edits`、`--yolo`）。进度和警告写到 stderr。`--output-format json` 输出一个对象：`result`、`verify`（轮末验证徽章）、`usage`（token、缓存命中、花费）、`model`、`session_id`、`error`。退出码：0 完成，1 轮末验证未通过，2 出错。
+
 ## 会话
 
 **是什么。** 一场对话及其历史。终端里一次只有一个；Web 控制台可以同时开多个，各有各的历史、事件流和权限模式。
 
 **怎么用。**
 
-- 终端：`keelson --resume` 恢复上一次会话；`/clear` 清空当前对话。
+- 终端：`keelson --resume` 恢复上一次会话，`/resume` 列出最近的会话，`/resume N` 打开其中一个——消息、任务账本和折叠记忆一起恢复。`/clear` 清空当前对话。
 - 控制台：左侧“会话”列表，`+` 新建，点击切换。下方“历史”里是已结束的会话，点开是只读回放，“继续这个会话”可以接着聊——服务重启之后也可以。
 
 **值得知道的细节。** 多个会话**共用同一个工作目录**：隔离的是对话，不是文件。同时最多 8 个活跃会话，超出时最久没用的空闲会话会被收进历史。
@@ -386,7 +418,8 @@ when_to_use: The user asks to commit, or asks for a commit message
 | 命令 | 作用 |
 |---|---|
 | `keelson` | 进入终端交互界面 |
-| `keelson "任务"` | 执行一个任务后退出 |
+| `keelson "任务"` | 执行一个任务后退出（照常询问） |
+| `keelson -p "任务"` | 执行一个任务，不询问，只输出回答（`--output-format json`） |
 | `keelson web` | 启动 Web 控制台（`--port`、`--replay`、`--no-open`、`--no-record`） |
 | `keelson init` / `keelson doctor` | 配置 / 检查安装 |
 | `keelson use [名字]` | 列出配置档，或切换到某一个 |
@@ -407,6 +440,15 @@ when_to_use: The user asks to commit, or asks for a commit message
 
 | 命令 | 作用 |
 |---|---|
+| `/help` | 分组列出所有命令 |
+| `/status` | 模型、模式、工作区、会话、上下文、花费、验证命令、撤销范围 |
+| `/mode [default\|acceptEdits\|plan]` | 查看或切换权限模式（也可按 Shift+Tab） |
+| `/add 文件...` · `/drop [文件...]` | 把文件加入对话（并纳入范围）· 移出 |
+| `/diff [N]` | 最近 N 轮的改动，包括 shell 造成的 |
+| `/review` | 回顾上一轮：验证徽章、警示、改动的文件 |
+| `/init` | 生成初始的 `KEELSON.md`，写入识别出的验证命令 |
+| `/resume [N]` | 列出最近的会话 · 重新打开一个 |
+| `/exit` | 退出（也可输入 `exit`、`quit` 或按 Ctrl+D） |
 | `/clear` | 清空对话 |
 | `/plan` | 切换计划模式 |
 | `/cost` | Token 用量与成本 |
@@ -459,3 +501,6 @@ when_to_use: The user asks to commit, or asks for a commit message
 | `KEELSON_LOOP_GUARD` | 循环保护 | `1` |
 | `KEELSON_OPENAI_STREAM` | OpenAI 协议下是否流式；网关流式不稳定时设为 `0` | `1` |
 | `KEELSON_TRACE` | 把计时写到本地日志文件 | `0` |
+| `KEELSON_LANG` | 界面语言：`zh` 或 `en` | 跟随系统 |
+| `KEELSON_MARKDOWN` | 在终端里把回答按 Markdown 排版 | `1` |
+| `KEELSON_SIMPLE_INPUT` | 用普通整行输入代替带补全的输入行 | `0` |

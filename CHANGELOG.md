@@ -6,6 +6,22 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
 ## Unreleased — 0.4.0 (in progress)
 
 ### Added
+- **A terminal you can work in** (phase 5). The input line (prompt_toolkit)
+  sends on Enter, adds a line on Alt+Enter, keeps pasted blocks whole, keeps
+  history across sessions and completes `/commands`, `@files` and paths; a
+  status bar shows model, mode, context, cost, cache hit rate and added files;
+  Shift+Tab cycles default / accept edits / plan. The answer streams as
+  rendered Markdown. Interface text is Chinese or English (`KEELSON_LANG`,
+  else the system language), from one string table (`keelson/i18n.py`) and one
+  command registry (`keelson/commands.py`) that `/help` and completion share.
+- New commands: `/status`, `/mode`, `/add` and `/drop` (files in the
+  conversation, sent once and counted in scope), `/diff [N]` (the last N turns'
+  changes, shell changes included), `/review`, `/init`, `/resume [N]`, `/exit`.
+  Unknown `/commands` say so instead of going to the model.
+- **`keelson -p`**: one request without questions (confirmations are denied
+  with the reason), only the answer on stdout, prompt from arguments and/or
+  stdin; `--output-format json` adds the verification result, usage and session
+  id; exit code 1 when the end-of-turn checks failed, 2 on an error.
 - **Task ledger** (`keelson/ledger.py`): the goal, the user's rules word for
   word, the plan (`update_task`), decisions, files changed and the last
   verification, saved each turn, put back verbatim after a context fold,
@@ -61,6 +77,12 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
 - Windows: PowerShell is the default shell (bash habits are caught before they
   run), files keep their encoding (UTF-8/GBK, BOM) and line endings, edits are
   atomic.
+
+### Fixed
+- `--resume` restored only the messages; it now brings back the task ledger and
+  folded memory too and keeps the session's id.
+- Entering plan mode on an OpenAI-compatible provider did not update the system
+  message the model saw.
 
 ### Changed
 - **Permissions are decided by reversibility.** What `/undo` covers (edits and

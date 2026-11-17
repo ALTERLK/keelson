@@ -293,6 +293,8 @@ class Agent:
         self._turn_request = ""
         self._last_git_note: str | None = None
         self._fold_hints: set[str] = set()     # fold-hint conditions already reported (see _maybe_fold_hint)
+        self.context_files: list[str] = []      # /add: files in the conversation (always in scope)
+        self._context_unsent: set[str] = set()
 
 
         # 计划模式”（Plan Mode）状态的变量
@@ -522,8 +524,106 @@ class Agent:
             self.permission_mode = "plan"
             self._plan_file_path = self._generate_plan_file_path()
             self._system_prompt = self._base_system_prompt + self._build_plan_mode_prompt()
+            if self.use_openai and self._openai_messages:
+                self._openai_messages[0]["content"] = self._system_prompt
             print_info(f"Entered plan mode. Plan file: {self._plan_file_path}")
             return "plan"
+
+    MODES_CYCLE = ("default", "acceptEdits", "plan")
+
+    def set_permission_mode(self, mode: str) -> str:
+        """Switch mode (Shift+Tab, /mode). Entering or leaving plan mode also changes the system prompt."""
+        if mode not in ("default", "acceptEdits", "plan", "dontAsk", "bypassPermissions") or mode == self.permission_mode:
+            return self.permission_mode
+        if mode == "plan" or self.permission_mode == "plan":
+            if self.permission_mode == "plan":
+                self._pre_plan_mode = mode
+            self.toggle_plan_mode()
+            if mode != "plan":
+                self.permission_mode = mode
+            return self.permission_mode
+        self.permission_mode = mode
+        return mode
+
+    def next_permission_mode(self) -> str:
+        cycle = self.MODES_CYCLE
+        current = self.permission_mode if self.permission_mode in cycle else cycle[-1]
+        return self.set_permission_mode(cycle[(cycle.index(current) + 1) % len(cycle)])
+
+    def last_answer(self) -> str:
+        """The text of the last assistant message: what `keelson -p` prints."""
+        for msg in reversed(self._openai_messages if self.use_openai else self._anthropic_messages):
+            if msg.get("role") != "assistant":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str):
+                if content.strip():
+                    return content
+            elif isinstance(content, list):
+                text = "".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+                if text.strip():
+                    return text
+        return ""
+
+    # ── files in the conversation (/add, /drop) ─────────────────
+
+    CONTEXT_FILE_CHARS = 60_000
+
+    def add_context_files(self, names: list[str]) -> tuple[list[str], list[str]]:
+        added, missing = [], []
+        for name in names:
+            p = Path(name)
+            if not p.is_file():
+                missing.append(name)
+                continue
+            norm = scope_mod.normalize(name)
+            if norm not in self.context_files:
+                self.context_files.append(norm)
+                self._context_unsent.add(norm)
+                added.append(norm)
+        return added, missing
+
+    def drop_context_files(self, names: list[str] | None = None) -> list[str]:
+        if not names:
+            dropped, self.context_files = list(self.context_files), []
+        else:
+            wanted = {scope_mod.normalize(n) for n in names}
+            dropped = [f for f in self.context_files if f in wanted]
+            self.context_files = [f for f in self.context_files if f not in wanted]
+        self._context_unsent -= set(dropped)
+        return dropped
+
+    def _context_files_note(self) -> str:
+        """Contents of files added since the last message, sent once; later turns only name them."""
+        if not self.context_files:
+            return ""
+        parts = []
+        for name in self.context_files:
+            if name not in self._context_unsent:
+                continue
+            try:
+                text = Path(name).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if len(text) > self.CONTEXT_FILE_CHARS:
+                text = text[:self.CONTEXT_FILE_CHARS] + "\n… (cut; read_file shows the rest)"
+            parts.append(f'<file path="{name}">\n{text}\n</file>')
+        self._context_unsent.clear()
+        head = ("The user added these files to the conversation (they are in scope): "
+                + ", ".join(self.context_files) + ".")
+        return "<keelson-context-files>\n" + head + ("\n" + "\n".join(parts) if parts else "") + \
+            "\n</keelson-context-files>"
+
+    def resume(self, session_id: str) -> bool:
+        """Reopen a saved session: its messages, folded memories and task ledger, under its own id."""
+        from .session import load_session
+
+        data = load_session(session_id)
+        if not data:
+            return False
+        self.restore_session(data)
+        self.session_id = session_id
+        return True
 
     def get_token_usage(self) -> dict:
         return {"input":self.total_input_tokens, "output":self.total_output_tokens}
@@ -569,6 +669,9 @@ class Agent:
 
         if not self.is_sub_agent:
             self._start_request(original_user_message)
+            note = self._context_files_note()
+            if note:
+                user_message = f"{note}\n\n{user_message}"
             if self._custom_system_prompt is None:
                 # Git status rides on the user message, not the system prompt, so the cached prefix holds.
                 git = await asyncio.to_thread(get_git_context)
@@ -624,11 +727,12 @@ class Agent:
         """A new request: note what the user said, and set its scope to the files they @-mentioned."""
         self._ledger.note_user_message(text)
         self._turn_request = text
-        self._ledger.scope = scope_mod.mentioned_paths(text)
+        mentioned = scope_mod.mentioned_paths(text)
+        self._ledger.scope = list(dict.fromkeys(self.context_files + mentioned))
         self._scope_reasons = ["mentioned by you"] if self._ledger.scope else []
         self._out_of_scope = []
-        if self._ledger.scope:
-            events.emit(events.SCOPE, paths=list(self._ledger.scope), reason="mentioned by you", added=True)
+        if mentioned:
+            events.emit(events.SCOPE, paths=mentioned, reason="mentioned by you", added=True)
 
     def _finish_request(self, start: tuple[int, int, int, float]) -> None:
         changed = self.last_outcome.changed if self.last_outcome else list(dict.fromkeys(self._evidence.tool_paths))
@@ -1573,6 +1677,8 @@ class Agent:
                     "cwd": str(Path.cwd()),
                     "startTime": self.session_start_time,
                     "messageCount": self._get_message_count(),
+                    "title": (self._ledger.goal or "")[:80],
+                    "updated": time.strftime("%Y-%m-%d %H:%M"),
                 },
                 "anthropicMessages": _sanitize_for_utf8(self._anthropic_messages) if not self.use_openai else None,
                 "openaiMessages": _sanitize_for_utf8(self._openai_messages) if self.use_openai else None,

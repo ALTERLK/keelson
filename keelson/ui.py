@@ -27,13 +27,16 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from rich import box
-from rich.align import Align
 from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.segment import Segment, Segments
 from rich.table import Table
 from rich.text import Text
 
 from . import events
+from .i18n import t
 
 
 def _env_on(name: str) -> bool:
@@ -181,6 +184,75 @@ def stop_spinner() -> None:
     events.emit(events.THINKING, active=False)
 
 
+# ─── Streaming Markdown ─────────────────────────────────────
+
+
+class _MarkdownStream:
+    """The model's answer rendered as Markdown while it streams.
+
+    While text arrives, a live area shows the last screenful of the rendered
+    answer; when the answer ends (a tool call, the end of the turn, anything
+    else drawn), the live area is removed and the whole answer is printed once,
+    so the scrollback holds it exactly once. Without a real terminal (pipes,
+    tests, ``KEELSON_MARKDOWN=0``) the raw text is written as it comes.
+    """
+
+    MIN_INTERVAL = 0.08
+
+    def __init__(self) -> None:
+        self.buf = ""
+        self.live: Live | None = None
+        self.last = 0.0
+
+    @staticmethod
+    def enabled() -> bool:
+        return console.is_terminal and os.environ.get("KEELSON_MARKDOWN", "1").strip() not in ("0", "false", "off")
+
+    @property
+    def active(self) -> bool:
+        return bool(self.buf)
+
+    def feed(self, text: str) -> None:
+        if not self.enabled():
+            _safe_stdout_write(text)
+            return
+        if not self.buf:
+            text = text.lstrip("\n")
+            if not text:
+                return
+        self.buf += text
+        if self.live is None:
+            self.live = Live(console=console, auto_refresh=False, transient=True, vertical_overflow="crop")
+            self.live.start()
+        now = time.monotonic()
+        if now - self.last >= self.MIN_INTERVAL:
+            self.last = now
+            self._refresh()
+
+    def _refresh(self) -> None:
+        if self.live is None:
+            return
+        lines = console.render_lines(Markdown(self.buf), console.options, pad=False)
+        keep = max(3, console.size.height - 3)
+        segments: list[Segment] = []
+        for line in lines[-keep:]:
+            segments.extend(line)
+            segments.append(Segment.line())
+        self.live.update(Segments(segments), refresh=True)
+
+    def finish(self) -> None:
+        if self.live is not None:
+            self.live.stop()
+            self.live = None
+        if self.buf:
+            if self.enabled():
+                console.print(Markdown(self.buf))
+            self.buf = ""
+
+
+_markdown = _MarkdownStream()
+
+
 # ─── Terminal renderer: one bus subscriber ──────────────────
 
 
@@ -215,8 +287,12 @@ class TerminalRenderer:
 
     def __call__(self, event: events.Event) -> None:
         handler = self._handlers.get(event.type)
-        if handler is not None:
-            handler(event.data)
+        if handler is None:
+            return
+        if event.type != events.ASSISTANT_DELTA and _markdown.active and event.type not in (
+                events.USAGE, events.SPAN, events.TOOL_OUTPUT):
+            _markdown.finish()          # anything else drawn ends the streamed answer first
+        handler(event.data)
 
     # -- conversation ------------------------------------------------------
 
@@ -224,13 +300,14 @@ class TerminalRenderer:
         self._turn_started = time.time()
 
     def _on_assistant_delta(self, data: dict) -> None:
-        _safe_stdout_write(data.get("text", ""))
+        _markdown.feed(data.get("text", ""))
 
     def _on_thinking(self, data: dict) -> None:
         if _QUIET:
             return
         if data.get("active"):
-            _spinner.start(data.get("label") or "Thinking")
+            label = data.get("label") or "Thinking"
+            _spinner.start(t("thinking") if label == "Thinking" else label)
         else:
             _spinner.stop()
 
@@ -268,7 +345,7 @@ class TerminalRenderer:
         line = Text("    ")
         if ok:
             line.append("✓ ", style=OK)
-            line.append(f"{label}{elapsed}{_fmt_count(int(data.get('chars', 0)))} chars", style=MUTED)
+            line.append(f"{label}{elapsed}{_fmt_count(int(data.get('chars', 0)))} {t('chars')}", style=MUTED)
         else:
             line.append("✗ ", style=BAD)
             first = preview.strip().splitlines()[0] if preview.strip() else "failed"
@@ -300,7 +377,7 @@ class TerminalRenderer:
                 style = MUTED
             console.print(Text("      " + line, style=style))
         if len(body) > max_display:
-            console.print(Text(f"      … {len(body) - max_display} more lines", style=MUTED))
+            console.print(Text("      " + t("more_lines", n=len(body) - max_display), style=MUTED))
 
     # -- runtime guards ----------------------------------------------------
 
@@ -309,19 +386,18 @@ class TerminalRenderer:
         # speaks up when the gate actually intervened.
         if _QUIET or data.get("action") != "deny":
             return
-        console.print(Text(f"    ⛔ denied by permission gate — {data.get('message', '')}", style=BAD))
+        console.print(Text(f"    ⛔ {t('denied')} — {data.get('message', '')}", style=BAD))
 
     def _on_confirm_prompt(self, data: dict) -> None:
         body = Text(data.get("message", ""), style="bold")
         if data.get("reason"):
             body.append("\n" + data["reason"], style="")
         options = data.get("options") or ["once", "deny"]
-        keys = {"once": "y = once", "session": "s = this session", "project": "p = always in this project",
-                "deny": "n = deny (n: reason = deny and say why)"}
+        keys = {o: t(f"confirm.{o}") for o in ("once", "session", "project", "deny")}
         console.print()
         console.print(Panel(
             body,
-            title=f"[bold {WARN}]Permission required[/bold {WARN}]",
+            title=f"[bold {WARN}]{t('confirm_title')}[/bold {WARN}]",
             subtitle="[dim]" + " · ".join(keys[o] for o in options if o in keys) + "[/dim]",
             border_style=WARN,
             box=box.ROUNDED,
@@ -330,21 +406,21 @@ class TerminalRenderer:
 
     def _on_verify(self, data: dict) -> None:
         if data.get("phase") == "running":
-            console.print(Text("  ⧗ verifying: " + " · ".join(data.get("commands") or []), style=MUTED))
+            console.print(Text(f"  ⧗ {t('verify.running')}: " + " · ".join(data.get("commands") or []), style=MUTED))
             return
         status = data.get("status")
-        label, style = {"passed": ("✓ Verified", OK), "failed": ("✗ Checks fail", BAD)}.get(
-            status, ("! Not verified", WARN))
+        label, style = {"passed": (t("verify.passed"), OK), "failed": (t("verify.failed"), BAD)}.get(
+            status, (t("verify.unverified"), WARN))
         line = Text(f"  {label}", style=f"bold {style}")
         line.append(f"  {data.get('detail', '')}", style="")
         console.print(line)
         for item in data.get("weakened") or []:
-            console.print(Text(f"    ! tests weakened — {item}", style=WARN))
+            console.print(Text(f"    ! {t('verify.weakened')} — {item}", style=WARN))
         for claim in data.get("unproven") or []:
-            console.print(Text(f"    ! unproven claim — “{claim}” (no passing check backs it)", style=WARN))
+            console.print(Text("    ! " + t("verify.unproven", claim=claim), style=WARN))
         out = data.get("out_of_scope") or []
         if out:
-            console.print(Text("    ! changed outside the request's scope — " + ", ".join(out), style=WARN))
+            console.print(Text(f"    ! {t('verify.out_of_scope')} — " + ", ".join(out), style=WARN))
         for warning in data.get("warnings") or []:
             console.print(Text(f"    ! {warning}", style=WARN))
 
@@ -352,7 +428,7 @@ class TerminalRenderer:
         if _QUIET:
             return
         reason = data.get("reason") or ""
-        console.print(Text("  ◇ scope: " + ", ".join(data.get("paths") or []) + (f"  — {reason}" if reason else ""),
+        console.print(Text(f"  ◇ {t('scope')}: " + ", ".join(data.get("paths") or []) + (f"  — {reason}" if reason else ""),
                            style=ACCENT))
 
     def _on_task(self, data: dict) -> None:
@@ -361,12 +437,12 @@ class TerminalRenderer:
         marks = {"done": ("✓", OK), "in_progress": ("▸", ACCENT), "blocked": ("!", WARN), "pending": ("○", MUTED)}
         plan = data.get("plan") or []
         if plan:
-            console.print(Text("  Plan", style="bold"))
+            console.print(Text("  " + t("plan"), style="bold"))
         for step in plan:
             mark, style = marks.get(step.get("status"), ("○", MUTED))
             console.print(Text(f"    {mark} {step.get('step', '')}", style=style))
         if data.get("decision"):
-            console.print(Text(f"    decision: {data['decision']}", style=MUTED))
+            console.print(Text(f"    {t('decision')}: {data['decision']}", style=MUTED))
 
     def _on_loop_guard(self, data: dict) -> None:
         if _QUIET:
@@ -376,9 +452,9 @@ class TerminalRenderer:
     def _on_context_fold(self, data: dict) -> None:
         if _QUIET:
             return
-        console.print(Text(f"\n  ⇲ context folded ({data.get('trigger', 'manual')})", style=ACCENT))
+        console.print(Text("\n  ⇲ " + t("folded", trigger=data.get("trigger", "manual")), style=ACCENT))
         if data.get("kept"):
-            console.print(Text(f"    kept word for word: {data['kept']}", style=MUTED))
+            console.print(Text("    " + t("folded_kept", kept=data["kept"]), style=MUTED))
 
     def _on_skill_evolution(self, data: dict) -> None:
         action = data.get("action", "")
@@ -424,20 +500,20 @@ class TerminalRenderer:
         usage = self._usage
         if usage.get("input_tokens") is not None:
             tin, tout = int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
-            parts.append(f"{_fmt_count(tin)} in / {_fmt_count(tout)} out")
+            parts.append(t("turn.tokens", tin=_fmt_count(tin), tout=_fmt_count(tout)))
             cost = usage.get("cost_usd")
-            parts.append(f"est. ${float(cost) if cost is not None else estimate_cost_usd(tin, tout):.4f}")
+            parts.append(t("turn.cost", cost=float(cost) if cost is not None else estimate_cost_usd(tin, tout)))
             hit = usage.get("cache_hit_tokens")
             if hit is not None and tin > 0:
-                parts.append(f"cache {int(hit) / tin:.0%}")
+                parts.append(t("turn.cache", rate=int(hit) / tin))
         if self._turn_started is not None:
             parts.append(f"{time.time() - self._turn_started:.1f}s")
             self._turn_started = None
         window = int(usage.get("context_window") or 0)
         if window > 0:
             frac = min(1.0, int(usage.get("context_tokens") or 0) / window)
-            parts.append(f"ctx {_bar(frac)} {frac * 100:.0f}%")
-        label = "  ·  ".join(parts) if parts else "turn complete"
+            parts.append(f"{t('turn.ctx')} {_bar(frac)} {frac * 100:.0f}%")
+        label = "  ·  ".join(parts) if parts else t("turn.done")
         console.print()
         console.rule(f"[dim]{label}[/dim]", style=MUTED)
 
@@ -498,57 +574,110 @@ def set_terminal_enabled(enabled: bool) -> None:
 # ─── REPL chrome (terminal only, drawn directly) ────────────
 
 
+def print_diff(text: str) -> None:
+    """A unified diff, coloured: file headers, hunks, additions, removals."""
+    for line in text.splitlines():
+        if line.startswith(("diff --git", "+++", "---", "index ")):
+            style = "bold"
+        elif line.startswith("@@"):
+            style = ACCENT
+        elif line.startswith("+"):
+            style = OK
+        elif line.startswith("-"):
+            style = BAD
+        else:
+            style = MUTED
+        console.print(Text(line, style=style), soft_wrap=True)
+
+
+def print_review(outcome: dict, files: list[str]) -> None:
+    """/review: the last turn's verification badge and flags, then the files it changed."""
+    console.print()
+    _renderer._on_verify({"phase": "done", **outcome})
+    if files:
+        console.print(Text(f"  {t('review.files')} ({len(files)})", style="bold"))
+        for f in files[:40]:
+            console.print(Text(f"    {f}", style=MUTED))
+        if len(files) > 40:
+            console.print(Text("    " + t("more_lines", n=len(files) - 40), style=MUTED))
+    console.print(Text("  " + t("review.hint"), style=MUTED))
+
+
+def print_rows(rows: list[tuple[str, str]]) -> None:
+    """Two aligned columns (label, value): /status and the like."""
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style=MUTED, no_wrap=True)
+    table.add_column()
+    for label, value in rows:
+        table.add_row(label, value)
+    console.print()
+    console.print(table)
+
+
+_WELCOME_HINT_RUNS = 5
+
+
+def _welcome_hint_due() -> bool:
+    """The key hints show for the first few sessions, then stay out of the way."""
+    import json
+
+    from . import paths
+
+    f = paths.user_home() / "ui.json"
+    try:
+        data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    except (OSError, ValueError):
+        data = {}
+    runs = int(data.get("welcome_runs", 0))
+    if runs >= _WELCOME_HINT_RUNS:
+        return False
+    data["welcome_runs"] = runs + 1
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(data), encoding="utf-8")
+    except OSError:
+        pass
+    return True
+
+
 def print_welcome(
     *,
     model: str | None = None,
     permission_mode: str | None = None,
     cwd: str | None = None,
     skill_count: int | None = None,
+    checks: list[str] | None = None,
+    profile: str | None = None,
 ) -> None:
     title = Text("Keelson", style=f"bold {BRAND}")
-    subtitle = Text("self-evolving agent harness", style=MUTED)
+    title.append("  " + t("tagline"), style=MUTED)
 
     status = Table.grid(padding=(0, 2))
     status.add_column(style=MUTED, no_wrap=True)
-    status.add_column(style="bold")
+    status.add_column()
     if model:
-        status.add_row("model", model)
+        status.add_row(t("model"), Text(model + (f"  ({profile})" if profile else ""), style="bold"))
     if permission_mode:
-        status.add_row("permissions", permission_mode)
+        status.add_row(t("mode"), Text(t(f"mode.{permission_mode}"), style="bold"))
     if cwd:
-        status.add_row("workspace", cwd)
-    if skill_count is not None:
-        status.add_row("skills", f"{skill_count} loaded")
-
-    commands = Table.grid(padding=(0, 2))
-    commands.add_column(style=f"bold {ACCENT}", no_wrap=True)
-    commands.add_column(style=MUTED)
-    commands.add_row("/undo", "take back the last turn, shell changes too")
-    commands.add_row("/plan", "read-only planning workflow")
-    commands.add_row("/skills", "list reusable skills")
-    commands.add_row("/skill-history", "show a skill's evolution")
-    commands.add_row("/memory", "list long-term memories")
-    commands.add_row("/cost", "token usage so far")
-    commands.add_row("exit", "quit the session")
+        status.add_row(t("workspace"), Text(cwd, style="bold"))
+    if checks is not None:
+        status.add_row(t("checks"), Text(" · ".join(checks) if checks else t("checks_none"),
+                                         style="bold" if checks else WARN))
 
     body = Table.grid()
-    body.add_row(Align.center(title))
-    body.add_row(Align.center(subtitle))
+    body.add_row(title)
     if status.row_count:
         body.add_row("")
         body.add_row(status)
-    body.add_row("")
-    body.add_row(commands)
+    if _welcome_hint_due():
+        body.add_row("")
+        body.add_row(Text(t("hint_keys"), style=ACCENT))
+        body.add_row(Text(t("hint_first"), style=MUTED))
 
     console.print()
-    console.print(Panel(
-        body,
-        subtitle="[dim]type a request · --help for all options[/dim]",
-        border_style=BRAND_DIM,
-        box=box.ROUNDED,
-        padding=(1, 3),
-    ))
-    console.print()
+    console.print(Panel(body, subtitle=f"[dim]{t('type_request')}[/dim]", border_style=BRAND_DIM,
+                        box=box.ROUNDED, padding=(1, 2)))
 
 
 def print_user_prompt() -> None:
@@ -556,11 +685,11 @@ def print_user_prompt() -> None:
 
 
 def print_goodbye() -> None:
-    console.print(Text("\n  Session saved. Bye.", style=BRAND))
+    console.print(Text("\n  " + t("goodbye"), style=BRAND))
 
 
 def print_interrupted() -> None:
-    print_warning("Interrupted. Press Ctrl+C again to exit.")
+    print_warning(t("interrupted"))
 
 
 def print_plan_for_approval(plan_content: str) -> None:

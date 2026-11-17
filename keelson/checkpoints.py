@@ -34,6 +34,7 @@ layer asks before running them.
 from __future__ import annotations
 
 import contextlib
+import difflib
 import hashlib
 import json
 import os
@@ -71,6 +72,18 @@ Thumbs.db
 
 # Highest-priority attributes: store every file as raw bytes, no filters (git-lfs and the like).
 NO_FILTERS = "* -text -filter -eol -ident -diff -merge -working-tree-encoding\n"
+
+
+def _collapse_binary(diff: str) -> str:
+    """Replace the body of each file section that holds NUL bytes with one line."""
+    sections = diff.split("\ndiff --git ")
+    out = []
+    for i, section in enumerate(sections):
+        if "\x00" in section:
+            header = section.split("\n", 1)[0]
+            section = f"{header}\nBinary file changed"
+        out.append(section if i == 0 else "diff --git " + section)
+    return "\n".join(out)
 
 
 @dataclass
@@ -497,6 +510,48 @@ class Checkpoints:
                 self._restore_paths(first["start"], [rel], report)
             report.message = f"Put {file} back as it was before \"{first['label']}\"."
             return report
+
+    def diff(self, steps: int = 1, *, max_chars: int = 200_000) -> tuple[str, list[str]]:
+        """A unified diff of what the last ``steps`` turns changed (shell changes included), and the files."""
+        with self._lock:
+            turns = self._load()["turns"]
+            if steps < 1 or not turns:
+                return "", []
+            chosen = turns[-steps:]
+            first, last = chosen[0], chosen[-1]
+            parts: list[str] = []
+            files: list[str] = []
+            if self.mode == GIT and first["start"]:
+                end = last["end"] or self._safe_snapshot()
+                if end:
+                    with contextlib.suppress(RuntimeError, subprocess.TimeoutExpired):
+                        files = self._changed(first["start"], end)
+                        # The shadow repo marks every file -diff (byte-exact snapshots), so --text is needed
+                        # for a readable diff; files that really are binary are collapsed afterwards.
+                        out = self._git("diff", "--no-color", "--no-ext-diff", "--no-renames", "--text",
+                                        first["start"], end, check=False).stdout
+                        parts.append(_collapse_binary(out.decode("utf-8", "replace")))
+            # Ignored or outside files Keelson's tools changed: compare the saved copy with the file now.
+            extras: dict = {}
+            for turn in chosen:
+                for key, item in turn["extras"].items():
+                    extras.setdefault(key, item)
+            for key, item in extras.items():
+                shown = self._display(Path(key))
+                files.append(shown)
+                before = (self.blob_dir / item["before"]).read_bytes() if item.get("before") else b""
+                try:
+                    after = Path(key).read_bytes()
+                except OSError:
+                    after = b""
+                parts.append("".join(difflib.unified_diff(
+                    before.decode("utf-8", "replace").splitlines(keepends=True),
+                    after.decode("utf-8", "replace").splitlines(keepends=True),
+                    f"a/{shown}", f"b/{shown}")))
+            text = "\n".join(p for p in parts if p)
+            if len(text) > max_chars:
+                text = text[:max_chars] + f"\n… (diff cut at {max_chars} characters)\n"
+            return text, list(dict.fromkeys(files))
 
     def describe(self) -> list[dict]:
         """One row per undoable turn, newest first: label, time, files changed."""
