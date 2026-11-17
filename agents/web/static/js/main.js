@@ -84,7 +84,7 @@ function renderSessions() {
   sessionsKey = key;
 
   const openSession = (id) => { openLive(id); location.hash = "#/console"; };
-  clear(sessionsEl).append(
+  clear(sessionsEl).append(...[
     h("div", { class: "sessions-head" },
       h("span", {}, t("sessions.title")),
       h("button", { type: "button", class: "ghost small", title: t("sessions.new"), onclick: () => attempt(async () => { await newSession(); location.hash = "#/console"; }) }, "+")),
@@ -101,7 +101,7 @@ function renderSessions() {
         h("button", { type: "button", class: "session-open",
           onclick: async () => { await loadReplay(row.id, { autoplay: false }); session.player.finish(); location.hash = "#/console"; } },
           h("span", { class: "session-title" }, row.title || row.id))))) : null,
-  );
+  ].filter(Boolean));  // Element.append(null) would print the text "null"
 }
 
 function firstPrompt() {
