@@ -121,7 +121,8 @@ def tidy_powershell_errors(text: str, script: Path) -> str:
 
     # Matched by file name, not full path: PowerShell may print the long form of a
     # folder that Python's TEMP holds in 8.3 form (C:\Users\RUNNER~1\... on CI).
-    pattern = r"""[^\s'"]*""" + re.escape(script.name) + r"(?::(\d+))?"
+    name = re.split(r"[\\/]", str(script))[-1]
+    pattern = r"""[^\s'"]*""" + re.escape(name) + r"(?::(\d+))?"
     return re.sub(pattern, replace, text)
 
 
