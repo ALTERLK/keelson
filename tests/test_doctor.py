@@ -6,7 +6,7 @@ import builtins
 
 import pytest
 
-from agents import doctor
+from keelson import doctor
 
 
 def _by_id(checks):

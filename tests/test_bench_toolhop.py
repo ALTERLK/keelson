@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.bench.toolhop import (
+from keelson.bench.toolhop import (
     ToolHopTask,
     _defs_only,
     build_callables,

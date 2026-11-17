@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from agents import trace
+from keelson import trace
 
 
 @pytest.fixture(autouse=True)

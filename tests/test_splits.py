@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from agents.bench.splits import build_split, load_split, save_split
+from keelson.bench.splits import build_split, load_split, save_split
 
 
 def test_split_is_deterministic_disjoint_and_sized(toolhop_tasks):

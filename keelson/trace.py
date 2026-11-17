@@ -42,7 +42,7 @@ def _sink(session_id: str = "session") -> Path | None:
     if override:
         _SINK = Path(override)
     else:
-        from agents import paths
+        from keelson import paths
 
         _SINK = paths.user_home() / "trace" / f"{session_id}.jsonl"
     _SINK.parent.mkdir(parents=True, exist_ok=True)

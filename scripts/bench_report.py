@@ -12,7 +12,7 @@ Two modes:
 
 Repeat-aware: when a series has >1 row per task_id (from --repeats or from
 multiple run dirs), accuracy and the paired comparison use the per-task mean
-hit rate (agents.bench.metrics.pooled_arm_accuracy /
+hit rate (keelson.bench.metrics.pooled_arm_accuracy /
 paired_bootstrap_delta_pooled), not raw-row counts.
 
 Prints to stdout; paste into bench/REPORT.md (prose is written by hand). Cost
@@ -34,7 +34,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from agents.bench import metrics  # noqa: E402
+from keelson.bench import metrics  # noqa: E402
 
 ARMS = ("raw_api", "no_skill", "skill_v1", "skill_evolved")
 

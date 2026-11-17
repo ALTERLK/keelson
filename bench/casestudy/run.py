@@ -334,11 +334,11 @@ def cmd_validate(cases: list[dict], work: Path) -> int:
 
 
 async def _agent_main(case: dict, work: Path) -> None:
-    from agents import events, ui
-    from agents.agent import Agent
-    from agents.main import _load_env_file, _resolve_api_config
-    from agents.web.recorder import TraceRecorder
-    from agents.web.sessions import Session
+    from keelson import events, ui
+    from keelson.agent import Agent
+    from keelson.main import _load_env_file, _resolve_api_config
+    from keelson.web.recorder import TraceRecorder
+    from keelson.web.sessions import Session
 
     directory = case_dir(case, work)
     repo = directory / "repo"
@@ -472,7 +472,7 @@ def grade(case: dict, work: Path, validated: dict) -> dict:
 
 def publish_trace(case: dict, work: Path, order: int, round_number: int | None = None) -> str:
     """Scrub the recorded trace and copy it to demo/traces. Returns its id, or '' if it had to be withheld."""
-    from agents.web.scrub import leaks, scrub, scrub_home_fragments, scrub_username
+    from keelson.web.scrub import leaks, scrub, scrub_home_fragments, scrub_username
 
     directory = case_dir(case, work)
     raw = directory / "trace.jsonl"

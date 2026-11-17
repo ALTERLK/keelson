@@ -15,12 +15,12 @@ from typing import Any
 import anthropic
 import openai
 
-from agents import events, paths, trace
-from agents.mcp_client import McpManager
-from agents.memory import MemoryPrefetch, format_memories_for_injection, start_memory_prefetch
-from agents.prompt import build_system_prompt
-from agents.session import save_folded_session_memory, save_session
-from agents.session_memory import (
+from keelson import events, paths, trace
+from keelson.mcp_client import McpManager
+from keelson.memory import MemoryPrefetch, format_memories_for_injection, start_memory_prefetch
+from keelson.prompt import build_system_prompt
+from keelson.session import save_folded_session_memory, save_session
+from keelson.session_memory import (
     FOLD_SESSION_MEMORY_SYSTEM,
     build_anthropic_transcript,
     build_folding_user_prompt,
@@ -29,8 +29,8 @@ from agents.session_memory import (
     format_folded_memory,
     parse_folded_memory,
 )
-from agents.subagent import get_sub_agent_config
-from agents.tools import (
+from keelson.subagent import get_sub_agent_config
+from keelson.tools import (
     CONCURRENCY_SAFE_TOOLS,
     ToolDef,
     check_permission,
@@ -38,7 +38,7 @@ from agents.tools import (
     get_active_tool_definitions,
     tool_definitions,
 )
-from agents.ui import (
+from keelson.ui import (
     print_assistant_text,
     print_confirmation,
     print_cost,

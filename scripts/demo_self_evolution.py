@@ -122,13 +122,13 @@ async def _yes(_summary: str) -> bool:
 
 
 def _resolve_api() -> tuple[str | None, str | None, bool]:
-    from agents.main import _resolve_api_config
+    from keelson.main import _resolve_api_config
 
     return _resolve_api_config(None)
 
 
 def _build_side_query(model: str, api_base: str | None, api_key: str, use_openai: bool):
-    from agents.agent import Agent
+    from keelson.agent import Agent
 
     agent = Agent(
         permission_mode="bypassPermissions",
@@ -143,8 +143,8 @@ def _build_side_query(model: str, api_base: str | None, api_key: str, use_openai
 def _copy_evolution_dir_for(skill_name: str, dest: Path) -> None:
     """Curate: the live SKILL.md, its history snapshots, the evolution cards,
     and any quarantine files that mention this skill, into dest/."""
-    from agents.skill_evolution import _safe_skill_slug, get_evolution_dir, resolve_skill_file
-    from agents.skill_history import list_history
+    from keelson.skill_evolution import _safe_skill_slug, get_evolution_dir, resolve_skill_file
+    from keelson.skill_history import list_history
 
     dest.mkdir(parents=True, exist_ok=True)
     slug = _safe_skill_slug(skill_name)
@@ -184,9 +184,9 @@ def _copy_evolution_dir_for(skill_name: str, dest: Path) -> None:
 # ------------------------------------------------------------------ lineage ---
 
 async def run_lineage(spec: dict, *, side_query, dry_run: bool) -> dict:
-    from agents import skills as skills_mod
-    from agents.evolution_card import write_card
-    from agents.online_skill_evolution import online_ingest
+    from keelson import skills as skills_mod
+    from keelson.evolution_card import write_card
+    from keelson.online_skill_evolution import online_ingest
 
     log: dict = {"label": spec["label"], "intent": spec["intent"], "steps": []}
 
@@ -296,14 +296,14 @@ async def run(dry_run: bool) -> int:
         # lineage A's freshly-created skill and merge lineage B's unrelated
         # round-1 feedback into it instead of creating a second skill --
         # observed once while building this script; isolating per lineage is
-        # the fix, matching agents/bench/runner.py::_setup_arm_env's pattern.
+        # the fix, matching keelson/bench/runner.py::_setup_arm_env's pattern.
         home = tempfile.mkdtemp(prefix=f"keelson-demo-{spec['label']}-home-")
         work = tempfile.mkdtemp(prefix=f"keelson-demo-{spec['label']}-cwd-")
         os.environ["KEELSON_HOME"] = home
         os.chdir(work)
         try:
-            from agents.skills import reset_skill_cache
-            from agents.tools import reset_permission_cache
+            from keelson.skills import reset_skill_cache
+            from keelson.tools import reset_permission_cache
 
             reset_skill_cache()
             reset_permission_cache()

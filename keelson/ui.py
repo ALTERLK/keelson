@@ -4,7 +4,7 @@ Two halves:
 
 * ``print_*`` / ``start_spinner`` — the facade the runtime calls. Runtime-facing
   functions do not draw anything themselves; they publish a typed event on the
-  bus (``agents/events.py``).
+  bus (``keelson/events.py``).
 * The terminal renderer — one bus subscriber that turns those events into Rich
   output. The web console and the trace recorder are other subscribers of the
   same stream, so every front end sees an identical run.

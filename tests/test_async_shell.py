@@ -10,9 +10,9 @@ import time
 
 import pytest
 
-from agents import events
-from agents.events import EventBus
-from agents.tools import _OutputRelay, _run_shell, execute_tool, run_shell_async
+from keelson import events
+from keelson.events import EventBus
+from keelson.tools import _OutputRelay, _run_shell, execute_tool, run_shell_async
 
 pytestmark = pytest.mark.skipif(" " in sys.executable, reason="interpreter path needs quoting")
 

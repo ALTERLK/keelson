@@ -18,7 +18,7 @@ keelson web --replay     # 只回放录制的轨迹，不调用模型
 
 改造之前，循环里直接调用 `print_*` 函数往终端画，“发生了什么”和“怎么显示”是同一段代码。现在 `ui.py` 里的 `print_*` 只负责发布事件，终端渲染器只是订阅者之一。
 
-事件总线（`agents/events.py`）的几个性质：
+事件总线（`keelson/events.py`）的几个性质：
 
 - **同步、有序分发。** 订阅者看到的顺序与循环产生的顺序完全一致，终端的流式输出依赖这一点。
 - **订阅者隔离。** 某个订阅者抛异常只会被记录并吞掉。关掉一个浏览器标签页，不应该让 Agent 停下来。
@@ -27,7 +27,7 @@ keelson web --replay     # 只回放录制的轨迹，不调用模型
 
 ## 会话
 
-一个服务进程里可以有多个互相独立的对话（`agents/web/sessions.py`）。每个 `Session` 拥有自己的 `EventBus`、`Agent`、轨迹录制器和待回答的权限询问。
+一个服务进程里可以有多个互相独立的对话（`keelson/web/sessions.py`）。每个 `Session` 拥有自己的 `EventBus`、`Agent`、轨迹录制器和待回答的权限询问。
 
 运行时本身完全不知道“会话”这个概念。一轮对话开始时，会话复制当前上下文，在副本里绑定自己的总线，然后在这个上下文里创建这一轮的任务：
 
@@ -102,7 +102,7 @@ data: {"seq": 42, "ts": 1731640000.1, "type": "tool_call", "data": {...}}
 
 ## 回放
 
-一条轨迹就是按行写成 JSON 的事件流（`agents/web/recorder.py`）。回放发生在**浏览器里**：播放器读入轨迹，把事件按原有节奏喂给消费实时 SSE 流的同一个 reducer（`static/js/store.js`）。控制台的状态只由事件折叠而来，所以回放走的渲染代码和当初那次运行完全相同。
+一条轨迹就是按行写成 JSON 的事件流（`keelson/web/recorder.py`）。回放发生在**浏览器里**：播放器读入轨迹，把事件按原有节奏喂给消费实时 SSE 流的同一个 reducer（`static/js/store.js`）。控制台的状态只由事件折叠而来，所以回放走的渲染代码和当初那次运行完全相同。
 
 由此带来两点：
 
@@ -111,11 +111,11 @@ data: {"seq": 42, "ts": 1731640000.1, "type": "tool_call", "data": {...}}
 
 **讲解模式**会在值得解释的事件上停下来——第一次权限判定、一次权限询问、一次拒绝、一次循环保护命中——高亮页面上对应的元素并显示一句说明。这些说明是按事件类型匹配的规则（`static/js/guide.js`），不是为某一条录像写的脚本，所以任何轨迹都能讲解，包括你自己的会话。
 
-`scripts/record_demo.py` 在一次性工作区里运行真实任务来录制随仓库发布的轨迹。保存前会改写本机路径（`agents/web/scrub.py`）；如果轨迹里仍然含有用户名、Windows 绝对路径或形似 API Key 的内容，就拒绝保存。
+`scripts/record_demo.py` 在一次性工作区里运行真实任务来录制随仓库发布的轨迹。保存前会改写本机路径（`keelson/web/scrub.py`）；如果轨迹里仍然含有用户名、Windows 绝对路径或形似 API Key 的内容，就拒绝保存。
 
 ## 前端
 
-`agents/web/static/` 下是原生 HTML、CSS 和 ES 模块——没有框架、没有构建步骤、不依赖 CDN，因此离线可用，并且随 Python 包一起分发（字体也在内：Inter 和 JetBrains Mono，均为 SIL 开源字体许可）。
+`keelson/web/static/` 下是原生 HTML、CSS 和 ES 模块——没有框架、没有构建步骤、不依赖 CDN，因此离线可用，并且随 Python 包一起分发（字体也在内：Inter 和 JetBrains Mono，均为 SIL 开源字体许可）。
 
 - `store.js` —— `apply(state, event)`，唯一修改状态的地方。
 - `stream.js` —— `LiveStream`（SSE）和 `ReplayPlayer`，输出同一种事件结构。

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agents import skill_gate
+from keelson import skill_gate
 
 _OLD = (
     "---\nname: rpt\ndescription: government report writing\n"
@@ -67,7 +67,7 @@ def test_score_text_counts_hard_and_soft(stub_samples):
 # which is what the online evolution pipeline actually calls.
 
 def test_evolve_skill_gate_true_admits_and_updates_live_file(in_tmp_cwd, monkeypatch):
-    from agents import skills
+    from keelson import skills
 
     created = skills.create_skill(
         name="pr-summary", description="summarize a pull request",
@@ -92,7 +92,7 @@ def test_evolve_skill_gate_true_admits_and_updates_live_file(in_tmp_cwd, monkeyp
 
 
 def test_evolve_skill_gate_true_quarantines_and_rolls_back(in_tmp_cwd, monkeypatch):
-    from agents import skills
+    from keelson import skills
 
     created = skills.create_skill(
         name="pr-summary-2", description="summarize a pull request",
@@ -133,7 +133,7 @@ def test_evolve_skill_gate_true_quarantines_and_rolls_back(in_tmp_cwd, monkeypat
     assert "cite sources" in q_path.read_text(encoding="utf-8")
 
     # and it gets an Evolution Card too -- rejected, not undocumented
-    from agents.evolution_card import write_card
+    from keelson.evolution_card import write_card
 
     card_path = write_card(
         candidate={"name": "pr-summary-2", "instructions": "Always cite sources for every claim you make."},

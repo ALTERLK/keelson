@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agents import paths
+from keelson import paths
 
 
 def test_user_home_honours_env(monkeypatch, tmp_path):

@@ -64,7 +64,7 @@ export const stages = [
       en: "Keelson speaks both the OpenAI and the Anthropic protocol, retries transient errors with backoff, and stops at a turn or cost cap with one best-effort answer.",
       zh: "Keelson 同时支持 OpenAI 和 Anthropic 两种协议，对瞬时错误做退避重试，到达轮次或成本上限时给出一次尽力而为的回答后停止。",
     },
-    code: "agents/agent.py · _chat_openai / _chat_anthropic",
+    code: "keelson/agent.py · _chat_openai / _chat_anthropic",
   },
   {
     id: "gate",
@@ -77,7 +77,7 @@ export const stages = [
       en: "Reading is allowed. Destructive shell commands are matched against a pattern list and need your OK. Five modes change the default, from read-only planning to fully automatic; rules in settings.json override them per tool.",
       zh: "读文件直接放行；危险的 shell 命令会匹配一份模式清单，需要你点头。五种模式可以调整默认行为，从只读规划到全自动；settings.json 里的规则还能按工具单独覆盖。",
     },
-    code: "agents/tools.py · check_permission",
+    code: "keelson/tools.py · check_permission",
   },
   {
     id: "tool",
@@ -90,7 +90,7 @@ export const stages = [
       en: "Shell commands run without blocking, stream their output as they go, and are killed with their whole process tree on timeout or when you press Stop. Read-only tools in one response run concurrently.",
       zh: "shell 命令非阻塞执行，输出边跑边显示；超时或你点“停止”时，连同整个进程树一起杀掉。同一次回复里的只读工具会并发执行。",
     },
-    code: "agents/tools.py · run_shell_async, execute_tool",
+    code: "keelson/tools.py · run_shell_async, execute_tool",
   },
   {
     id: "result",
@@ -103,7 +103,7 @@ export const stages = [
       en: "An oversized result is written to disk and replaced by a reference. The loop guard watches this step: the same tool, again and again, with results that no longer change, gets stopped.",
       zh: "过大的结果会落盘并替换成引用。循环保护盯着这一步：同一个工具一再被调用而结果不再变化，就会被叫停。",
     },
-    code: "agents/agent.py · _loop_guard_check, _persist_large_result",
+    code: "keelson/agent.py · _loop_guard_check, _persist_large_result",
   },
   {
     id: "fold",
@@ -116,7 +116,7 @@ export const stages = [
       en: "Three tiers, cheapest first: cap each result, trim stale results at 60% of the window, then at 70% rewrite history into three structured notes — what happened, what is being done now, what the tools taught us.",
       zh: "分三层，先用便宜的：单条结果设预算；窗口用到 60% 时裁掉陈旧结果；到 70% 时把历史改写成三份结构化笔记——发生过什么、现在在做什么、工具教会了我们什么。",
     },
-    code: "agents/session_memory.py · agents/agent.py · _run_compression_pipeline",
+    code: "keelson/session_memory.py · keelson/agent.py · _run_compression_pipeline",
   },
 ];
 

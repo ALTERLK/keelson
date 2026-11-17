@@ -1,7 +1,7 @@
 """Read-only views over artifacts already in the repo.
 
 Nothing here is hand-entered: benchmark figures are recomputed from the raw
-``bench/runs/*/results.jsonl`` rows with the same ``agents.bench.metrics``
+``bench/runs/*/results.jsonl`` rows with the same ``keelson.bench.metrics``
 functions the written report uses, and the skill-evolution view is assembled
 from the files the real pipeline produced. ``bench/dashboard.json`` only names
 which run directories make up each series.

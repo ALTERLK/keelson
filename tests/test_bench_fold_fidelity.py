@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.bench.fold_fidelity import Probe, extract_probes, grade, score
+from keelson.bench.fold_fidelity import Probe, extract_probes, grade, score
 
 _MSGS = [
     {"role": "user", "content": "Fix the off-by-one in pagination and add a test"},

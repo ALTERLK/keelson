@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from agents import paths
+from keelson import paths
 
 from .memory import build_memory_prompt_section
 from .skills import build_skill_descriptions

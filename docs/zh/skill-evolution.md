@@ -48,12 +48,12 @@ Keelson 用 pending window、Extractor、Maintainer、provenance 和 usage stats
 
 ## 3. 当前请求中的 Skill 检索
 
-用户输入进入 `agents/agent.py` 后，会先检索相关 Skill：
+用户输入进入 `keelson/agent.py` 后，会先检索相关 Skill：
 
 ```text
-agents/agent.py::_augment_user_message_with_skill_context()
-  -> agents/skills.py::format_retrieved_skill_context()
-  -> agents/skills.py::retrieve_relevant_skills()
+keelson/agent.py::_augment_user_message_with_skill_context()
+  -> keelson/skills.py::format_retrieved_skill_context()
+  -> keelson/skills.py::retrieve_relevant_skills()
 ```
 
 检索逻辑是轻量 BM25：
@@ -85,9 +85,9 @@ Skill 有两种触发方式：
 执行入口：
 
 ```text
-agents/agent.py::_execute_skill_tool()
-agents/skills.py::execute_skill()
-agents/skills.py::resolve_skill_prompt()
+keelson/agent.py::_execute_skill_tool()
+keelson/skills.py::execute_skill()
+keelson/skills.py::resolve_skill_prompt()
 ```
 
 调用链是：
@@ -116,8 +116,8 @@ skill tool call
 
 相关入口：
 
-- `agents/agent.py::_set_pending_skill_extraction_window()`
-- `agents/agent.py::_pop_pending_skill_extraction_window()`
+- `keelson/agent.py::_set_pending_skill_extraction_window()`
+- `keelson/agent.py::_pop_pending_skill_extraction_window()`
 
 pending window 保存：
 
@@ -136,7 +136,7 @@ pending window 保存：
 统一入口在：
 
 ```text
-agents/online_skill_evolution.py::online_ingest()
+keelson/online_skill_evolution.py::online_ingest()
 ```
 
 流程是：
@@ -165,7 +165,7 @@ messages + retrieved_reference + hint
 入口：
 
 ```text
-agents/online_skill_evolution.py::extract_online_skill_candidate()
+keelson/online_skill_evolution.py::extract_online_skill_candidate()
 ```
 
 Extractor 的输入是：
@@ -206,7 +206,7 @@ Extractor 不写文件，只提候选。
 入口：
 
 ```text
-agents/online_skill_evolution.py::maintain_online_skill_candidate()
+keelson/online_skill_evolution.py::maintain_online_skill_candidate()
 ```
 
 维护流程：
@@ -237,7 +237,7 @@ candidate
 
 ## 9. 写入统一收敛到 skill_evolution.py
 
-无论是在线沉淀，还是手动 `/skill-create`、`/skill-evolve`，最终都收敛到 `agents/skill_evolution.py`。
+无论是在线沉淀，还是手动 `/skill-create`、`/skill-evolve`，最终都收敛到 `keelson/skill_evolution.py`。
 
 ### 9.1 新建 Skill
 
@@ -310,14 +310,14 @@ evolve_skill(gate=True)
 | 回滚 | 无需回滚 | `skill_history.py::rollback()`；SKILL.md frontmatter 记录 `rolled-back-from`/`rolled-back-to`，回滚本身也是一次被追踪的事件 |
 | 审计 | 生成 Evolution Card | 同样生成 Evolution Card，标题带 "— REJECTED" |
 
-关键代码：`agents/skill_gate.py`（打分与判定）、`agents/skill_history.py`（快照与回滚）、`agents/evolution_card.py`（审计卡渲染）。这套机制不只是单元测试覆盖——项目用真实模型驱动过两条独立的演化链路，一条真实判定 `admit`，另一条真实判定 `quarantine` 并回滚，完整记录见 [`docs/self-evolution-demo.md`](../docs/self-evolution-demo.md)。
+关键代码：`keelson/skill_gate.py`（打分与判定）、`keelson/skill_history.py`（快照与回滚）、`keelson/evolution_card.py`（审计卡渲染）。这套机制不只是单元测试覆盖——项目用真实模型驱动过两条独立的演化链路，一条真实判定 `admit`，另一条真实判定 `quarantine` 并回滚，完整记录见 [`docs/self-evolution-demo.md`](../docs/self-evolution-demo.md)。
 
 ## 10. Provenance：每次沉淀都可追溯
 
 相关入口：
 
-- `agents/skill_evolution.py::record_online_skill_provenance()`
-- `agents/skill_evolution.py::_update_online_provenance_index()`
+- `keelson/skill_evolution.py::record_online_skill_provenance()`
+- `keelson/skill_evolution.py::_update_online_provenance_index()`
 
 每次在线沉淀都会写：
 
@@ -349,9 +349,9 @@ evolve_skill(gate=True)
 
 相关入口：
 
-- `agents/agent.py::_run_skill_usage_tracking()`
-- `agents/online_skill_evolution.py::judge_retrieved_skill_usage()`
-- `agents/skill_evolution.py::record_skill_usage_judgments()`
+- `keelson/agent.py::_run_skill_usage_tracking()`
+- `keelson/online_skill_evolution.py::judge_retrieved_skill_usage()`
+- `keelson/skill_evolution.py::record_skill_usage_judgments()`
 
 每轮回复后，如果本轮检索过 Skills，会判断：
 
@@ -527,14 +527,14 @@ retrieved skills
 
 | 逻辑 | 代码入口 |
 |------|----------|
-| Skill 加载和检索 | `agents/skills.py` |
-| pending window | `agents/agent.py` |
-| 在线抽取和维护 | `agents/online_skill_evolution.py` |
-| 创建 / 演化 / provenance / usage | `agents/skill_evolution.py` |
-| 非劣性门禁打分与判定 | `agents/skill_gate.py` |
-| 快照与回滚 | `agents/skill_history.py` |
-| 审计卡渲染 | `agents/evolution_card.py` |
-| 工具入口和权限 | `agents/tools.py` |
+| Skill 加载和检索 | `keelson/skills.py` |
+| pending window | `keelson/agent.py` |
+| 在线抽取和维护 | `keelson/online_skill_evolution.py` |
+| 创建 / 演化 / provenance / usage | `keelson/skill_evolution.py` |
+| 非劣性门禁打分与判定 | `keelson/skill_gate.py` |
+| 快照与回滚 | `keelson/skill_history.py` |
+| 审计卡渲染 | `keelson/evolution_card.py` |
+| 工具入口和权限 | `keelson/tools.py` |
 
 ## 17. 一句话总结
 

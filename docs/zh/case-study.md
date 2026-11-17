@@ -71,7 +71,7 @@ Keelson 以 `dontAsk` 模式无人值守运行：权限门本来要问人的操�
 - **现象**：第 1 轮 more-itertools，10 秒就结束，什么都没改。
 - **证据**：轨迹 `21-case-more-itertools-1308-round1`。模型列了一次文件，下一次回复既没有文字也没有工具调用（输出 0 个 token）。
 - **原因**：循环的结束条件是“这次回复里没有工具调用”。空回复恰好满足它。
-- **修复**：空回复（无文字、无工具调用）视为一次失败的调用，带一句提示重试，最多两次；仍然为空才结束，并发出一条警告（`agents/agent.py::_should_retry_empty_reply`，`tests/test_empty_reply.py`）。
+- **修复**：空回复（无文字、无工具调用）视为一次失败的调用，带一句提示重试，最多两次；仍然为空才结束，并发出一条警告（`keelson/agent.py::_should_retry_empty_reply`，`tests/test_empty_reply.py`）。
 - **验证程度**：后两轮没有再遇到空回复，所以这条修复只有单元测试，没有实际运行中的验证。
 
 ### 2. 循环保护能被模型自己重置
@@ -102,7 +102,7 @@ Keelson 以 `dontAsk` 模式无人值守运行：权限门本来要问人的操�
 - **现象**：模型写的多行复现脚本反复返回“(no output)”，于是它换着花样重试——前面几条缺陷里的“反复试探”大半源于此。
 - **证据**：前两轮一共 40 条多行 shell 命令，**没有一条被完整执行**：36 条只跑了第一行，另外 4 条被循环保护拦下。例如 `python -c "` 换行再写脚本：Python 只收到一个空参数，什么也不输出。第 1 轮 python-dotenv 里模型写了四行命令（建文件、写入、读取、打印退出码），以为都跑了，其实只跑了第一行。
 - **原因**：`run_shell` 把命令原样交给平台的 shell。POSIX 的 `sh -c` 会逐行执行；Windows 的 `cmd /c` 只执行第一行，其余丢弃，不报错。
-- **修复**：在 Windows 上，多行命令写进一个临时批处理文件再执行，每一行都会跑，`%errorlevel%` 也按行展开。跨行的引号字符串在 cmd.exe 里无法表达，这种命令直接拒绝并说明原因，同时给出可行的写法（`agents/tools.py::_prepare_shell_command`、`_multiline_quote_problem`，`tests/test_shell_multiline.py`）。
+- **修复**：在 Windows 上，多行命令写进一个临时批处理文件再执行，每一行都会跑，`%errorlevel%` 也按行展开。跨行的引号字符串在 cmd.exe 里无法表达，这种命令直接拒绝并说明原因，同时给出可行的写法（`keelson/tools.py::_prepare_shell_command`、`_multiline_quote_problem`，`tests/test_shell_multiline.py`）。
 - **验证程度**：第 3 轮 6 条多行命令：3 条被明确拒绝并说明原因，3 条完整执行。cachetools 那次，模型在被拒绝后两次调用之内就换成了提示里建议的写法，拿到了真实的报错栈，20 次调用收工、循环保护一次没触发。tenacity 那次，一条多行 `echo` 写出了 33 行的测试文件，整次运行 15 次调用，是三轮里最短的。
 
 ## 没修的问题
@@ -137,7 +137,7 @@ Keelson 以 `dontAsk` 模式无人值守运行：权限门本来要问人的操�
 
 - **把 `.git` 藏起来。** 克隆里包含修复提交。最初的版本没有处理这一点；在跑任何模型之前改成了运行期间把 `.git` 移出工作目录。
 - **判分前重新安装工作目录。** 见上面“从网络安装包”一节。
-- **轨迹脱敏漏了三种写法。** `pytest-of-<用户名>` 这样的目录名、被 pytest 缩写过的路径（`C:\\Users\\a...9\\repo`）、以及把 Python 源码里的 `as e:` 加换行误判成盘符 `e:`。每次都是泄露检查先拦下来、拒绝保存，然后才补的规则（`agents/web/scrub.py`，`tests/test_scrub.py`）。
+- **轨迹脱敏漏了三种写法。** `pytest-of-<用户名>` 这样的目录名、被 pytest 缩写过的路径（`C:\\Users\\a...9\\repo`）、以及把 Python 源码里的 `as e:` 加换行误判成盘符 `e:`。每次都是泄露检查先拦下来、拒绝保存，然后才补的规则（`keelson/web/scrub.py`，`tests/test_scrub.py`）。
 
 ## 这个实验不能说明什么
 

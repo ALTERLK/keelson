@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from agents import events
-from agents.agent import EMPTY_REPLY_NUDGE, EMPTY_REPLY_RETRIES, Agent
+from keelson import events
+from keelson.agent import EMPTY_REPLY_NUDGE, EMPTY_REPLY_RETRIES, Agent
 
 
 def _reply(content):

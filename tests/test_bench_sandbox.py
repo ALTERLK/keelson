@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.bench.sandbox import (
+from keelson.bench.sandbox import (
     _snapshot,
     apply_solution,
     grade_workdir,
@@ -136,7 +136,7 @@ def test_validate_task_passes_for_every_task_in_the_suite():
 def test_validate_task_reports_missing_solution(tmp_path, monkeypatch):
     # a task with no solution/ dir should fail validate_task with a clear error,
     # not silently report ok.
-    from agents.bench.sandbox import SandboxTask
+    from keelson.bench.sandbox import SandboxTask
 
     d = tmp_path / "no-solution-task"
     d.mkdir()

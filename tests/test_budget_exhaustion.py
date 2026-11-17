@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from agents.agent import Agent
+from keelson.agent import Agent
 
 
 def _tc_response(specs):

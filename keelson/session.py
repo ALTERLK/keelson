@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agents import paths
+from keelson import paths
 
 
 def _session_dir() -> Path:

@@ -5,7 +5,7 @@ an Evolution Card until this was fixed)."""
 
 from __future__ import annotations
 
-from agents.online_skill_evolution import _coerce_candidate, _coerce_text
+from keelson.online_skill_evolution import _coerce_candidate, _coerce_text
 
 
 def test_coerce_text_joins_a_list_into_bullet_lines():

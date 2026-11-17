@@ -31,4 +31,4 @@ if [ ! -f "$STAMP" ] || [ pyproject.toml -nt "$STAMP" ]; then
   touch "$STAMP"
 fi
 
-exec .venv/bin/python -m agents.main web "$@"
+exec .venv/bin/python -m keelson.main web "$@"

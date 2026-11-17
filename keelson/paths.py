@@ -10,7 +10,7 @@ User-level state lives under one root:
 * ``$KEELSON_HOME`` if set, else ``~/.keelson``
 
     ├── skills/                     project-independent skills
-    ├── agents/                     custom sub-agent definitions
+    ├── keelson/                     custom sub-agent definitions
     ├── plans/                      plan-mode plan files
     ├── sessions/                   saved sessions (for --resume)
     ├── tool-results/               spilled large tool outputs
@@ -18,7 +18,7 @@ User-level state lives under one root:
 
 Project-level state lives under ``<cwd>/.keelson/``:
 
-    ├── skills/  agents/  rules/  sessions/  skill-evolution/
+    ├── skills/  keelson/  rules/  sessions/  skill-evolution/
     └── settings.json
 """
 

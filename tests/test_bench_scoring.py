@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agents.bench.toolhop import ToolHopTask, score
+from keelson.bench.toolhop import ToolHopTask, score
 
 
 def _t(answer: str, answer_type: str) -> ToolHopTask:

@@ -32,7 +32,7 @@ Strip the harness system message and the harness collapses onto the bare loop on
 every axis — cap rate, accuracy (9/21 == 9/21, so C did *not* "fix" it by letting
 the model answer from memory), median calls, and per-task hit rates.
 
-**Root cause:** `_HARNESS_SYSTEM_PROMPT` in `agents/bench/runner.py` —
+**Root cause:** `_HARNESS_SYSTEM_PROMPT` in `keelson/bench/runner.py` —
 > "Never answer from your own knowledge. Decompose ... call one tool per hop ...
 > When every hop is done, output only: ANSWER: <final answer>"
 

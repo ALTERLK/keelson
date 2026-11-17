@@ -3,7 +3,7 @@
 // `apply(state, event)` is the only place that changes state. A live SSE
 // stream and a recorded trace both arrive as the same events and go through
 // this one function, which is why a replay is indistinguishable from the run
-// it was recorded from. Event names mirror agents/events.py.
+// it was recorded from. Event names mirror keelson/events.py.
 
 const TIMELINE_LIMIT = 300;
 const LIVE_OUTPUT_LIMIT = 60_000;

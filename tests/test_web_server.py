@@ -11,9 +11,9 @@ pytest.importorskip("fastapi")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from agents import events  # noqa: E402
-from agents.web import data  # noqa: E402
-from agents.web.server import SessionManager, _sse, create_app  # noqa: E402
+from keelson import events  # noqa: E402
+from keelson.web import data  # noqa: E402
+from keelson.web.server import SessionManager, _sse, create_app  # noqa: E402
 
 
 class StubAgent:
@@ -230,7 +230,7 @@ def test_no_new_session_while_every_slot_is_busy(in_tmp_cwd):
 def test_a_finished_session_is_listed_and_can_be_resumed_by_a_new_server(in_tmp_cwd, monkeypatch):
     traces = in_tmp_cwd / ".keelson" / "traces"
     saved_messages = {"openaiMessages": [{"role": "user", "content": "remember: the port is 8765"}]}
-    monkeypatch.setattr("agents.session.load_session", lambda session_id: saved_messages)
+    monkeypatch.setattr("keelson.session.load_session", lambda session_id: saved_messages)
 
     # First server process: one turn, then it shuts down.
     manager = SessionManager(StubAgent, traces_dir=traces)

@@ -1,6 +1,6 @@
 """Sandbox coding-benchmark driver.
 
-Plugs a real Agent into agents/bench/sandbox.py's pure grader. Two arms, kept
+Plugs a real Agent into keelson/bench/sandbox.py's pure grader. Two arms, kept
 as close to identical as possible so the only systematic difference is "does
 the harness wrap this or not" (the lesson from bench/spiral-diagnosis.md: a
 prompt or tool-set mismatch between arms confounds the comparison):
@@ -14,7 +14,7 @@ prompt or tool-set mismatch between arms confounds the comparison):
 Both arms run in-process, one task at a time (--concurrency is not exposed:
 real file tools share the process cwd, so concurrent tasks would race). Each
 task gets its own scratch KEELSON_HOME + cwd, mirroring
-agents/bench/runner.py's isolation. A soft per-task timeout (asyncio.wait_for)
+keelson/bench/runner.py's isolation. A soft per-task timeout (asyncio.wait_for)
 keeps one hung task from stalling the whole batch.
 
 --validate needs no API key: proves every task's starter code fails its own
@@ -34,7 +34,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from agents.bench.sandbox import (
+from keelson.bench.sandbox import (
     SandboxTask,
     _snapshot,
     grade_workdir,
@@ -43,7 +43,7 @@ from agents.bench.sandbox import (
     summarize,
     validate_task,
 )
-from agents.tools import execute_tool, tool_definitions
+from keelson.tools import execute_tool, tool_definitions
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -84,7 +84,7 @@ class SandboxRunConfig:
 
 
 def _resolve_api() -> tuple[str | None, str | None, bool]:
-    from agents.main import _resolve_api_config
+    from keelson.main import _resolve_api_config
 
     return _resolve_api_config(None)
 
@@ -103,7 +103,7 @@ def _git_commit() -> str:
 # -------------------------------------------------------------- arm: harness ---
 
 async def _run_harness_agent(task: SandboxTask, cfg: SandboxRunConfig, api_key: str) -> dict:
-    from agents.agent import Agent
+    from keelson.agent import Agent
 
     agent = Agent(
         permission_mode="bypassPermissions",  # measures the harness's editing behaviour, not the gate
@@ -131,7 +131,7 @@ async def _run_harness_agent(task: SandboxTask, cfg: SandboxRunConfig, api_key: 
 # ------------------------------------------------------------------ arm: raw ---
 
 async def _run_raw_agent(task: SandboxTask, cfg: SandboxRunConfig, api_key: str) -> dict:
-    from agents.prompt import build_system_prompt
+    from keelson.prompt import build_system_prompt
 
     system_prompt = build_system_prompt()
     tool_defs = _sandbox_tool_defs()
@@ -223,8 +223,8 @@ async def run_one(task: SandboxTask, cfg: SandboxRunConfig, api_key: str, rep: i
         os.environ["KEELSON_HOME"] = home
         os.environ["KEELSON_AUTO_SKILL_EVOLUTION"] = "0"
         os.environ.setdefault("KEELSON_SPECULATIVE", "0")
-        from agents.skills import reset_skill_cache
-        from agents.tools import reset_activated_tools, reset_permission_cache
+        from keelson.skills import reset_skill_cache
+        from keelson.tools import reset_activated_tools, reset_permission_cache
 
         reset_skill_cache()
         reset_permission_cache()

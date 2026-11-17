@@ -2,7 +2,7 @@
 
 Every skill in this project's actual usage history has `promoted: true` exactly
 **zero** times (`grep -r '"promoted": true' .keelson/` — nothing). Not because the
-gate doesn't work — `agents/skill_gate.py` has 60 lines of unit tests — but
+gate doesn't work — `keelson/skill_gate.py` has 60 lines of unit tests — but
 because it had never been driven end to end with real replay data behind it.
 This page is that run: two independent skill lineages, driven through the
 **real** `online_ingest()` → Extractor → Maintainer → `evolve_skill(gate=True)`
@@ -87,8 +87,8 @@ source, because that requirement didn't exist yet) fails it → **`quarantine`**
 3. writes an Evolution Card titled **`— REJECTED`**
    (`format_release_notes-rejected-20260911T053122Z.md`) — this round also
    closed a real gap found while building this demo: quarantined candidates
-   previously got *no* card at all (`agents/evolution_card.py`,
-   `agents/online_skill_evolution.py`); now a rejection is exactly as
+   previously got *no* card at all (`keelson/evolution_card.py`,
+   `keelson/online_skill_evolution.py`); now a rejection is exactly as
    auditable as an acceptance.
 
 Live file: `lineage-b-quarantine/SKILL.md` — content matches the pre-candidate

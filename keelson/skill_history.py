@@ -13,8 +13,8 @@ import difflib
 from dataclasses import dataclass
 from typing import Any
 
-from agents.frontmatter import format_frontmatter, parse_frontmatter
-from agents.skill_evolution import (
+from keelson.frontmatter import format_frontmatter, parse_frontmatter
+from keelson.skill_evolution import (
     HISTORY_DIR,
     USAGE_LOG,
     _append_jsonl,

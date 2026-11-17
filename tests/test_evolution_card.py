@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from agents.evolution_card import render_card, write_card
-from agents.online_skill_evolution import OnlineSkillCandidate
+from keelson.evolution_card import render_card, write_card
+from keelson.online_skill_evolution import OnlineSkillCandidate
 
 
 def _cand():

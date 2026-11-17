@@ -25,14 +25,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agents.frontmatter import parse_frontmatter
-from agents.online_skill_eval import (
+from keelson.frontmatter import parse_frontmatter
+from keelson.online_skill_eval import (
     _compile_eval_rules,
     _evaluate_rule,
     _lineage_id_for_skill,
     _online_eval_root,
 )
-from agents.skill_evolution import _safe_skill_slug, _utc_now, get_evolution_dir
+from keelson.skill_evolution import _safe_skill_slug, _utc_now, get_evolution_dir
 
 SideQuery = Callable[..., Any]
 

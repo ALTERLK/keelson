@@ -44,12 +44,12 @@ Keelson 更接近：
 
 | 层级 | 主要文件 | 职责 |
 |------|----------|------|
-| 入口层 | `agents/main.py`、`agents/ui.py`、`agents/web/`、`agents/doctor.py` | 参数解析、REPL、one-shot、终端渲染、Web 控制台与多会话、`doctor` / `init` |
-| 事件总线 | `agents/events.py` | 运行时只发布事件，所有前端都订阅同一条事件流；耗时 span；按会话绑定总线 |
-| Harness 层 | `agents/agent.py` | Agent Loop、协议适配、工具调度、上下文压缩、session 保存 |
-| 能力层 | `agents/tools.py`、`agents/skills.py`、`agents/memory.py`、`agents/mcp_client.py`、`agents/subagent.py` | 工具、Skills、Memory、MCP、子 Agent |
-| Prompt 层 | `agents/prompt.py` | 动态构建 system prompt |
-| 演化层 | `agents/online_skill_evolution.py`、`agents/skill_evolution.py`、`agents/online_skill_eval.py` | Skills 抽取、演化、审计、评测 |
+| 入口层 | `keelson/main.py`、`keelson/ui.py`、`keelson/web/`、`keelson/doctor.py` | 参数解析、REPL、one-shot、终端渲染、Web 控制台与多会话、`doctor` / `init` |
+| 事件总线 | `keelson/events.py` | 运行时只发布事件，所有前端都订阅同一条事件流；耗时 span；按会话绑定总线 |
+| Harness 层 | `keelson/agent.py` | Agent Loop、协议适配、工具调度、上下文压缩、session 保存 |
+| 能力层 | `keelson/tools.py`、`keelson/skills.py`、`keelson/memory.py`、`keelson/mcp_client.py`、`keelson/subagent.py` | 工具、Skills、Memory、MCP、子 Agent |
+| Prompt 层 | `keelson/prompt.py` | 动态构建 system prompt |
+| 演化层 | `keelson/online_skill_evolution.py`、`keelson/skill_evolution.py`、`keelson/online_skill_eval.py` | Skills 抽取、演化、审计、评测 |
 | 持久化层 | `.keelson/`、`~/.keelson/` | Skills、Memory、Session、审计和大结果持久化 |
 
 这几个层级的边界比较清楚：
@@ -66,7 +66,7 @@ Keelson 更接近：
 
 ![一轮对话的完整路径](../assets/diagrams/turn.zh.svg)
 
-主链路从 `agents/main.py` 进入，最终落到 `Agent.chat()`。
+主链路从 `keelson/main.py` 进入，最终落到 `Agent.chat()`。
 
 ```text
 用户输入
@@ -94,7 +94,7 @@ Keelson 更接近：
 
 ## 4. 入口层
 
-入口层主要在 `agents/main.py`。
+入口层主要在 `keelson/main.py`。
 
 它负责：
 
@@ -120,7 +120,7 @@ Keelson 更接近：
 
 ### 4.1 显示与运行解耦：事件总线
 
-Runtime 不直接打印。它在 `agents/events.py` 的进程内总线上发布带类型的事件（`tool_call`、`permission`、`tool_result`、`context_fold` 等），前端都是订阅者：
+Runtime 不直接打印。它在 `keelson/events.py` 的进程内总线上发布带类型的事件（`tool_call`、`permission`、`tool_result`、`context_fold` 等），前端都是订阅者：
 
 ![一条事件流，三个消费者](../assets/diagrams/events.zh.svg)
 
@@ -134,7 +134,7 @@ Runtime 不直接打印。它在 `agents/events.py` 的进程内总线上发布�
 
 ## 5. Harness 层
 
-Harness 层集中在 `agents/agent.py`，这是最核心的模块。
+Harness 层集中在 `keelson/agent.py`，这是最核心的模块。
 
 `Agent` 维护的主要状态有：
 
@@ -172,7 +172,7 @@ Keelson 支持两类协议：
 - OpenAI-compatible
 - Anthropic-compatible
 
-协议判断在 `agents/main.py::_resolve_api_config()`。
+协议判断在 `keelson/main.py::_resolve_api_config()`。
 
 运行时分支在 `Agent` 里：
 
@@ -203,7 +203,7 @@ else:
 
 ## 7. 工具系统与权限架构
 
-工具系统在 `agents/tools.py`。
+工具系统在 `keelson/tools.py`。
 
 工具定义集中在 `tool_definitions`，包括：
 
@@ -276,9 +276,9 @@ Skill 保存的是“可复用方法”，比如：
 
 | 文件 | 职责 |
 |------|------|
-| `agents/skills.py` | 加载、解析、检索、执行 Skill |
-| `agents/skill_evolution.py` | 创建、演化、版本快照、provenance、usage stats |
-| `agents/online_skill_evolution.py` | 在线抽取候选、决策 add / merge / discard |
+| `keelson/skills.py` | 加载、解析、检索、执行 Skill |
+| `keelson/skill_evolution.py` | 创建、演化、版本快照、provenance、usage stats |
+| `keelson/online_skill_evolution.py` | 在线抽取候选、决策 add / merge / discard |
 
 运行时分三段：
 
@@ -312,7 +312,7 @@ Skills 自进化是 Keelson 最核心的差异点之一。
 3. Extractor 抽取候选 Skill。
 4. Maintainer 决定 add、merge 或 discard。
 
-落盘和审计都在 `agents/skill_evolution.py`：
+落盘和审计都在 `keelson/skill_evolution.py`：
 
 | 能力 | 说明 |
 |------|------|
@@ -340,7 +340,7 @@ Memory 和 Skills 的职责不同：
 | Memory | 事实、偏好、背景、历史决策 | 用户喜欢中文回答；项目部署在 Docker；某接口已废弃 |
 | Skills | 方法、流程、风格、可复用操作步骤 | review 输出结构；政府报告写法；重构检查流程 |
 
-Memory 在 `agents/memory.py` 里实现：
+Memory 在 `keelson/memory.py` 里实现：
 
 ```text
 保存 Memory
@@ -363,7 +363,7 @@ MCP 用来把外部工具统一接入 Agent。
 
 Keelson 没有依赖 MCP SDK，而是自己实现了 stdio JSON-RPC Client。
 
-相关模块是 `agents/mcp_client.py`。
+相关模块是 `keelson/mcp_client.py`。
 
 核心对象：
 
@@ -403,8 +403,8 @@ Agent.chat() 首次执行
 
 | 文件 | 职责 |
 |------|------|
-| `agents/subagent.py` | 定义内置子 Agent，发现自定义子 Agent |
-| `agents/agent.py` | 通过 `_execute_agent_tool()` 创建并运行子 Agent |
+| `keelson/subagent.py` | 定义内置子 Agent，发现自定义子 Agent |
+| `keelson/agent.py` | 通过 `_execute_agent_tool()` 创建并运行子 Agent |
 
 执行流程：
 
@@ -427,7 +427,7 @@ Agent.chat() 首次执行
 
 ## 13. Prompt 架构
 
-Prompt 在 `agents/prompt.py` 中动态构建。
+Prompt 在 `keelson/prompt.py` 中动态构建。
 
 `build_system_prompt()` 会拼接：
 
@@ -450,8 +450,8 @@ Prompt 在 `agents/prompt.py` 中动态构建。
 
 | 文件 | 职责 |
 |------|------|
-| `agents/session.py` | 保存、加载、列出 session |
-| `agents/agent.py` | 自动保存、恢复、压缩消息、大结果持久化 |
+| `keelson/session.py` | 保存、加载、列出 session |
+| `keelson/agent.py` | 自动保存、恢复、压缩消息、大结果持久化 |
 
 主要机制：
 
@@ -493,18 +493,18 @@ Web 控制台在此之上提供了会话的浏览与恢复：每个会话的事�
 
 | 问题 | 应该看哪里 |
 |------|------------|
-| 用户命令怎么进入系统？ | `agents/main.py` |
-| 一次请求怎么跑完整 Agent Loop？ | `agents/agent.py` |
-| 模型怎么调用工具？ | `agents/agent.py::_execute_tool_call()` |
-| 工具具体怎么执行？ | `agents/tools.py` |
-| 权限怎么判断？ | `agents/tools.py::check_permission()` |
-| system prompt 怎么生成？ | `agents/prompt.py` |
-| Skill 怎么加载和检索？ | `agents/skills.py` |
-| Skill 怎么新增或合并？ | `agents/online_skill_evolution.py`、`agents/skill_evolution.py` |
-| Memory 怎么保存和召回？ | `agents/memory.py` |
-| MCP 怎么接入？ | `agents/mcp_client.py` |
-| 子 Agent 怎么创建？ | `agents/subagent.py`、`agents/agent.py::_execute_agent_tool()` |
-| session 怎么保存和恢复？ | `agents/session.py`、`agents/agent.py` |
+| 用户命令怎么进入系统？ | `keelson/main.py` |
+| 一次请求怎么跑完整 Agent Loop？ | `keelson/agent.py` |
+| 模型怎么调用工具？ | `keelson/agent.py::_execute_tool_call()` |
+| 工具具体怎么执行？ | `keelson/tools.py` |
+| 权限怎么判断？ | `keelson/tools.py::check_permission()` |
+| system prompt 怎么生成？ | `keelson/prompt.py` |
+| Skill 怎么加载和检索？ | `keelson/skills.py` |
+| Skill 怎么新增或合并？ | `keelson/online_skill_evolution.py`、`keelson/skill_evolution.py` |
+| Memory 怎么保存和召回？ | `keelson/memory.py` |
+| MCP 怎么接入？ | `keelson/mcp_client.py` |
+| 子 Agent 怎么创建？ | `keelson/subagent.py`、`keelson/agent.py::_execute_agent_tool()` |
+| session 怎么保存和恢复？ | `keelson/session.py`、`keelson/agent.py` |
 
 ## 17. 通用 Agent Runtime
 

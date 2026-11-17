@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agents.skill_gating import gating_reason, looks_like_feedback
+from keelson.skill_gating import gating_reason, looks_like_feedback
 
 
 @pytest.mark.parametrize("msg", [

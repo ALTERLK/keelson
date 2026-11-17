@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agents import paths
+from keelson import paths
 
 from .frontmatter import parse_frontmatter
 from .skill_evolution import (
@@ -379,8 +379,8 @@ def _apply_evolution_gate(skill_name: str, evolve_result: dict) -> dict:
     writing, so 'old' is that snapshot and 'new' is the live file. On a
     regression we restore the snapshot and stash the candidate in quarantine.
     """
-    from agents import skill_gate
-    from agents.skill_history import list_history, rollback
+    from keelson import skill_gate
+    from keelson.skill_history import list_history, rollback
 
     snaps = list_history(skill_name)
     file_path = evolve_result.get("file", "")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from agents.bench import sandbox_runner as sr
+from keelson.bench import sandbox_runner as sr
 
 
 def test_sandbox_tool_defs_are_the_seven_named_tools():

@@ -100,7 +100,7 @@ if ($have -ne $wanted) {
     Set-Content -LiteralPath $stamp -Value $wanted -Encoding ascii
 }
 
-$webArgs = @('-m', 'agents.main', 'web', '--port', "$Port")
+$webArgs = @('-m', 'keelson.main', 'web', '--port', "$Port")
 if ($Replay) { $webArgs += '--replay' }
 if ($NoOpen) { $webArgs += '--no-open' }
 & $venvPython @webArgs

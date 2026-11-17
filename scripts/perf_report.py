@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agents.web import data  # noqa: E402
+from keelson.web import data  # noqa: E402
 
 ORDER = ["model_stream", "tool", "permission", "skill_retrieval", "fold", "confirm_wait"]
 LABELS = {

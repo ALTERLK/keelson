@@ -7,8 +7,8 @@ import json
 
 import pytest
 
-from agents.bench import runner
-from agents.bench.toolhop import ToolHopTask
+from keelson.bench import runner
+from keelson.bench.toolhop import ToolHopTask
 
 
 @pytest.mark.parametrize("text,expected", [

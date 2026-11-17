@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from agents.web.scrub import _DRIVE_PATH
+from keelson.web.scrub import _DRIVE_PATH
 
 pytest.importorskip("fastapi")
 

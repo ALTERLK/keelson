@@ -31,11 +31,11 @@ here, because they are what the project is about.
 
 | What a model cannot do alone | What Keelson does | Code |
 |---|---|---|
-| Judge whether an action is dangerous | **Permission gate**: every tool call gets a verdict before it runs — allow, ask you, or deny. The reason for a denial goes back to the model, which changes course instead of pushing through | `agents/tools.py` |
-| Notice it is going in circles | **Loop guard**: stops a tool that keeps being called with no new result | `agents/agent.py` |
-| Stay coherent in a very long task | **Context folding**: three tiers; the last rewrites history into structured memory | `agents/session_memory.py` |
-| Remember what you told it | **Skill self-evolution**: rules are extracted from your feedback; an update must pass a "no worse than before" gate or it is quarantined | `agents/skill_gate.py` |
-| Account for what it did | **Event stream and replay**: every step is an event that can be recorded and replayed exactly | `agents/events.py` |
+| Judge whether an action is dangerous | **Permission gate**: every tool call gets a verdict before it runs — allow, ask you, or deny. The reason for a denial goes back to the model, which changes course instead of pushing through | `keelson/tools.py` |
+| Notice it is going in circles | **Loop guard**: stops a tool that keeps being called with no new result | `keelson/agent.py` |
+| Stay coherent in a very long task | **Context folding**: three tiers; the last rewrites history into structured memory | `keelson/session_memory.py` |
+| Remember what you told it | **Skill self-evolution**: rules are extracted from your feedback; an update must pass a "no worse than before" gate or it is quarantined | `keelson/skill_gate.py` |
+| Account for what it did | **Event stream and replay**: every step is an event that can be recorded and replayed exactly | `keelson/events.py` |
 
 ## Three steps
 
@@ -172,7 +172,7 @@ docker compose up                     # or Docker: console on http://localhost:8
 
 ```text
 keelson/
-├── agents/                 the Python package
+├── keelson/                 the Python package
 │   ├── agent.py            the loop: model calls, tool dispatch, context compression, loop guard
 │   ├── tools.py            built-in tools, the permission gate, the async shell
 │   ├── events.py           event bus, timing spans, per-session binding

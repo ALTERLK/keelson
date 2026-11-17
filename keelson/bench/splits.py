@@ -13,7 +13,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-from agents.bench.toolhop import ToolHopTask, build_callables
+from keelson.bench.toolhop import ToolHopTask, build_callables
 
 _DEFAULT_SALT = "keelson-toolhop-v1"
 

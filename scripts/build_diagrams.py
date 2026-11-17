@@ -229,15 +229,15 @@ def overview(lang: str) -> Canvas:
                  "模型只提议；运行时负责裁决、执行和记录。所有前端看的是同一条事件流。"))
 
     fronts = c.group(30, 88, 222, 432, t("Front ends", "前端"))
-    terminal = c.node(44, 122, 194, 78, t("Terminal REPL", "终端 REPL"), t("Rich rendering, slash commands", "Rich 渲染，斜杠命令"), "agents/main.py · ui.py", "blue")
-    c.node(44, 214, 194, 78, t("Web console", "Web 控制台"), t("sessions, live tool output", "多会话，工具实时输出"), "agents/web/ · SSE", "blue")
+    terminal = c.node(44, 122, 194, 78, t("Terminal REPL", "终端 REPL"), t("Rich rendering, slash commands", "Rich 渲染，斜杠命令"), "keelson/main.py · ui.py", "blue")
+    c.node(44, 214, 194, 78, t("Web console", "Web 控制台"), t("sessions, live tool output", "多会话，工具实时输出"), "keelson/web/ · SSE", "blue")
     replay = c.node(44, 306, 194, 78, t("Replay", "回放"), t("recorded runs, no model", "播放录制的运行，不调模型"), "keelson web --replay", "blue")
     c.node(44, 398, 194, 78, t("Hosted demo", "在线演示"), t("static export of the console", "控制台的静态导出"), "GitHub Pages", "blue")
 
     c.group(282, 88, 476, 432, t("Runtime", "运行时"))
     loop = c.node(298, 122, 444, 74, t("Agent loop", "Agent 循环"),
                   t("call the model → gate each tool call → run it → feed the result back",
-                    "调用模型 → 逐个裁决工具调用 → 执行 → 把结果写回"), "agents/agent.py", "brand")
+                    "调用模型 → 逐个裁决工具调用 → 执行 → 把结果写回"), "keelson/agent.py", "brand")
     xs = (298, 451, 604)
     c.node(xs[0], 210, 138, 88, t("Context manager", "上下文管理"), t(["budget · prune", "fold at 70%"], ["预算 · 修剪", "70% 时折叠"]), "session_memory.py")
     c.node(xs[1], 210, 138, 88, t("Loop guard", "循环保护"), t(["stops a tool that", "repeats for nothing"], ["叫停无进展的", "重复调用"]), "agent.py")
@@ -247,7 +247,7 @@ def overview(lang: str) -> Canvas:
     tools = c.node(xs[2], 312, 138, 88, t("Tool dispatch", "工具分发"), t(["built-in · skill", "MCP · sub-agent"], ["内置 · 技能", "MCP · 子 Agent"]), "tools.py")
     bus = c.node(298, 416, 444, 76, t("Event bus", "事件总线"),
                  t("typed, ordered, numbered events · one bus per session", "带类型、有序、带序号的事件 · 每个会话一条总线"),
-                 "agents/events.py", "brand")
+                 "keelson/events.py", "brand")
 
     c.group(788, 88, 222, 432, t("Outside", "外部"))
     model = c.node(802, 122, 194, 78, t("Model API", "模型 API"), t("OpenAI- or Anthropic-compatible", "OpenAI / Anthropic 兼容协议"), "streaming")
@@ -380,13 +380,13 @@ def events(lang: str) -> Canvas:
                    ["同步投递，严格按发布顺序 · 每个事件带一个序号 · 订阅者抛异常不会影响运行",
                     "保留最近 5000 个事件：晚加入或断线重连的页面，从它见过的最后一个序号接着追",
                     "当前总线是一个 ContextVar：一轮对话及其派生的所有任务，都发布到自己会话的总线上"]),
-                 "agents/events.py", "brand")
+                 "keelson/events.py", "brand")
     for p in (p1, p2, p3):
         c.edge(p.bottom(), (p.cx, 206), label="emit()" if p is p2 else "")
 
-    s1 = c.node(xs[0], 366, w, 64, t("Terminal renderer", "终端渲染器"), t("the REPL's display", "REPL 的显示"), "agents/ui.py")
+    s1 = c.node(xs[0], 366, w, 64, t("Terminal renderer", "终端渲染器"), t("the REPL's display", "REPL 的显示"), "keelson/ui.py")
     s2 = c.node(xs[1], 366, w, 64, t("SSE endpoint", "SSE 接口"), t("one stream per session", "每个会话一条流"), "GET /api/sessions/{id}/events")
-    s3 = c.node(xs[2], 366, w, 64, t("Trace recorder", "轨迹录制器"), t("appends every event to a file", "把每个事件追加到文件"), "agents/web/recorder.py")
+    s3 = c.node(xs[2], 366, w, 64, t("Trace recorder", "轨迹录制器"), t("appends every event to a file", "把每个事件追加到文件"), "keelson/web/recorder.py")
     for s in (s1, s2, s3):
         c.edge((s.cx, 310), s.top(), kind="brand", label=t("subscribe", "订阅") if s is s2 else "")
 

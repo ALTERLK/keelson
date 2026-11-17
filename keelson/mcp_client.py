@@ -35,7 +35,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from agents import paths
+from keelson import paths
 
 from .ui import print_error, print_info
 

@@ -1,6 +1,6 @@
 /* Design tokens. Every colour in app.css comes from here, so a theme is one
    block of variables. The amber brand colour matches the terminal UI
-   (agents/ui.py), and the three --series-* colours are a colour-blind-safe
+   (keelson/ui.py), and the three --series-* colours are a colour-blind-safe
    categorical set, checked against both chart surfaces. */
 
 @font-face {

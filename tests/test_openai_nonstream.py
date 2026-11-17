@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from agents.agent import Agent
+from keelson.agent import Agent
 
 
 class _Boom(Exception):
@@ -32,7 +32,7 @@ def _resp(text="hi there"):
 
 
 async def test_retries_then_succeeds(agent, monkeypatch):
-    monkeypatch.setattr("agents.agent.asyncio.sleep", lambda *_a, **_k: _anop())
+    monkeypatch.setattr("keelson.agent.asyncio.sleep", lambda *_a, **_k: _anop())
     calls = {"n": 0}
 
     async def flaky(**kwargs):

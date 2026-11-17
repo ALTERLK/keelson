@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from agents.tools import check_permission, reset_permission_cache
+from keelson.tools import check_permission, reset_permission_cache
 
 
 @pytest.fixture(autouse=True)
@@ -71,7 +71,7 @@ def test_write_new_file_confirms_but_existing_allows(tmp_path, monkeypatch):
 # --- settings.json allow/deny rules ---------------------------------------
 
 def test_deny_rule_beats_allow_rule(in_tmp_cwd, monkeypatch):
-    from agents import paths
+    from keelson import paths
 
     proj = paths.project_dir()
     proj.mkdir(parents=True, exist_ok=True)
@@ -84,7 +84,7 @@ def test_deny_rule_beats_allow_rule(in_tmp_cwd, monkeypatch):
 
 
 def test_allow_rule_overrides_confirm(in_tmp_cwd):
-    from agents import paths
+    from keelson import paths
 
     proj = paths.project_dir()
     proj.mkdir(parents=True, exist_ok=True)
@@ -124,7 +124,7 @@ def test_known_tools_still_pass_through():
 
 def test_subagent_permission_mode_never_exceeds_parent(monkeypatch):
     monkeypatch.delenv("KEELSON_SUBAGENT_MODE", raising=False)
-    from agents.agent import Agent
+    from keelson.agent import Agent
 
     assert Agent(permission_mode="default")._subagent_permission_mode() == "dontAsk"
     assert Agent(permission_mode="acceptEdits")._subagent_permission_mode() == "dontAsk"
@@ -134,6 +134,6 @@ def test_subagent_permission_mode_never_exceeds_parent(monkeypatch):
 
 def test_subagent_mode_env_override(monkeypatch):
     monkeypatch.setenv("KEELSON_SUBAGENT_MODE", "acceptEdits")
-    from agents.agent import Agent
+    from keelson.agent import Agent
 
     assert Agent(permission_mode="default")._subagent_permission_mode() == "acceptEdits"

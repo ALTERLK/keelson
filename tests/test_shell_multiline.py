@@ -14,8 +14,8 @@ import tempfile
 
 import pytest
 
-from agents import tools
-from agents.tools import IS_WIN, _batch_line, _multiline_quote_problem, _prepare_shell_command
+from keelson import tools
+from keelson.tools import IS_WIN, _batch_line, _multiline_quote_problem, _prepare_shell_command
 
 
 async def test_every_line_of_a_command_runs():

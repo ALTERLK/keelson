@@ -106,7 +106,7 @@ def start_server(workspace: Path, home: Path) -> subprocess.Popen:
     env = {**os.environ, **{k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None}}
     env.update(KEELSON_HOME=str(home), KEELSON_AUTO_SKILL_EVOLUTION="0", PYTHONIOENCODING="utf-8", PYTHONPATH=str(ROOT))
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env.get("PATH", "")
-    server = subprocess.Popen([sys.executable, "-m", "agents.main", "web", "--no-open", "--port", str(PORT)],
+    server = subprocess.Popen([sys.executable, "-m", "keelson.main", "web", "--no-open", "--port", str(PORT)],
                               cwd=workspace, env=env)
     deadline = time.time() + 30
     while time.time() < deadline:

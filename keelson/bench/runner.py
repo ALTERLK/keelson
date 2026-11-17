@@ -26,9 +26,9 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from agents.bench import metrics
-from agents.bench.splits import build_split, load_split
-from agents.bench.toolhop import (
+from keelson.bench import metrics
+from keelson.bench.splits import build_split, load_split
+from keelson.bench.toolhop import (
     ToolHopTask,
     default_dataset_path,
     load_toolhop,
@@ -223,7 +223,7 @@ class _CountingToolRunner:
 # ------------------------------------------------------------- arm: harness ---
 
 async def _run_harness_task(task: ToolHopTask, cfg: RunConfig, api_key: str, rep: int = 0) -> dict:
-    from agents.agent import Agent
+    from keelson.agent import Agent
 
     tool_runner = _CountingToolRunner(task)
     tool_defs = to_tool_defs(task)
@@ -451,13 +451,13 @@ def _setup_arm_env(cfg: RunConfig) -> tuple[str, str]:
 
 def _reset_skill_state() -> None:
     try:
-        from agents.skills import reset_skill_cache
+        from keelson.skills import reset_skill_cache
 
         reset_skill_cache()
     except Exception:
         pass
     try:
-        from agents.tools import reset_permission_cache
+        from keelson.tools import reset_permission_cache
 
         reset_permission_cache()
     except Exception:
@@ -526,7 +526,7 @@ def write_artifacts(results: list[dict], cfg: RunConfig, out_root: Path) -> Path
 # -------------------------------------------------------------------- CLI ---
 
 def _resolve_api() -> tuple[str | None, str | None, bool]:
-    from agents.main import _resolve_api_config
+    from keelson.main import _resolve_api_config
 
     return _resolve_api_config(None)
 
@@ -540,7 +540,7 @@ def build_config(args: argparse.Namespace) -> RunConfig:
     else:
         split = build_split(tasks, n_train=args.n, n_test=args.n, salt=args.salt)
         if args.split_file:
-            from agents.bench.splits import save_split
+            from keelson.bench.splits import save_split
 
             save_split(split, args.split_file)
 

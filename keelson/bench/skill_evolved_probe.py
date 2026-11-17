@@ -17,7 +17,7 @@ question turn with no feedback, so there is nothing for it to learn. If that
 holds, ``skill_evolved`` is byte-identical to ``no_skill`` on this dataset and
 the report should say so rather than leave the cell blank.
 
-Run:  python -m agents.bench.skill_evolved_probe --n 12
+Run:  python -m keelson.bench.skill_evolved_probe --n 12
 """
 
 from __future__ import annotations
@@ -31,14 +31,14 @@ import tempfile
 import time
 from pathlib import Path
 
-from agents.bench.runner import (
+from keelson.bench.runner import (
     _HARNESS_SYSTEM_PROMPT,
     _CountingToolRunner,
     _question_prompt,
     _resolve_api,
 )
-from agents.bench.splits import build_split, load_split
-from agents.bench.toolhop import (
+from keelson.bench.splits import build_split, load_split
+from keelson.bench.toolhop import (
     ToolHopTask,
     default_dataset_path,
     load_toolhop,
@@ -76,7 +76,7 @@ def _norm_transcript(openai_messages: list[dict]) -> list[dict]:
 
 
 async def _run_one(task: ToolHopTask, model: str, api_base: str, api_key: str, use_openai: bool):
-    from agents.agent import Agent
+    from keelson.agent import Agent
 
     tool_runner = _CountingToolRunner(task)
     tool_defs = to_tool_defs(task)
@@ -120,7 +120,7 @@ async def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default="bench/runs")
     args = ap.parse_args(argv)
 
-    from agents.online_skill_evolution import (
+    from keelson.online_skill_evolution import (
         extract_online_skill_candidate,
         maintain_online_skill_candidate,
     )

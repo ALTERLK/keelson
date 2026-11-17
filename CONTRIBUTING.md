@@ -40,15 +40,15 @@ CI runs the same four on Python 3.11 and 3.12, plus a Docker build.
 
 | To change… | Look in |
 |---|---|
-| the loop, tool dispatch, the loop guard | `agents/agent.py` |
-| a tool or the permission gate | `agents/tools.py` |
-| what the runtime reports (events, spans) | `agents/events.py`, then the subscribers: `agents/ui.py`, `agents/web/static/js/store.js` |
-| the web console | `agents/web/` (server, sessions) and `agents/web/static/` (no build step: edit and reload) |
+| the loop, tool dispatch, the loop guard | `keelson/agent.py` |
+| a tool or the permission gate | `keelson/tools.py` |
+| what the runtime reports (events, spans) | `keelson/events.py`, then the subscribers: `keelson/ui.py`, `keelson/web/static/js/store.js` |
+| the web console | `keelson/web/` (server, sessions) and `keelson/web/static/` (no build step: edit and reload) |
 | a figure in the docs | `scripts/build_diagrams.py`, then re-run it |
 | the demo traces | `scripts/record_demo.py` (needs an API key) |
 
 The interface is bilingual: a new string goes into both dictionaries in
-`agents/web/static/js/i18n.js`, and a new doc page should exist under both
+`keelson/web/static/js/i18n.js`, and a new doc page should exist under both
 `docs/` and `docs/zh/`.
 
 ## Recorded traces

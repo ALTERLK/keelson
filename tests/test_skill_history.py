@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from agents import skill_history
-from agents.frontmatter import parse_frontmatter
-from agents.skill_evolution import evolve_skill_file
+from keelson import skill_history
+from keelson.frontmatter import parse_frontmatter
+from keelson.skill_evolution import evolve_skill_file
 
 
 @pytest.fixture

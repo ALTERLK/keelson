@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.frontmatter import format_frontmatter, parse_frontmatter
+from keelson.frontmatter import format_frontmatter, parse_frontmatter
 
 
 def test_flat_pairs_and_body():

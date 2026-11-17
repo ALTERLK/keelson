@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agents import paths
+from keelson import paths
 
 from .frontmatter import parse_frontmatter
 from .tools import tool_definitions

@@ -6,7 +6,7 @@ do, and how to report a problem.
 
 ## What the runtime enforces
 
-- **Every tool call is checked before it runs** (`agents/tools.py::check_permission`).
+- **Every tool call is checked before it runs** (`keelson/tools.py::check_permission`).
   Destructive shell commands and new files need approval in the default mode;
   `settings.json` rules can allow or deny specific calls; tools the gate does
   not recognise (MCP tools included) are untrusted by default.

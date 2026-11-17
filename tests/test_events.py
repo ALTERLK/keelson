@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from agents import events, ui
-from agents.agent import Agent
-from agents.events import EventBus
+from keelson import events, ui
+from keelson.agent import Agent
+from keelson.events import EventBus
 
 
 @pytest.fixture

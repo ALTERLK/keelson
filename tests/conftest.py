@@ -25,7 +25,7 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv(var, raising=False)
 
     # Reset module-level caches that depend on cwd / env.
-    import agents.tools as tools
+    import keelson.tools as tools
 
     tools.reset_permission_cache()
     yield
@@ -43,7 +43,7 @@ def in_tmp_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture(scope="session")
 def toolhop_tasks():
     """The real ToolHop dataset if it is present, else skip the test."""
-    from agents.bench.toolhop import default_dataset_path, load_toolhop
+    from keelson.bench.toolhop import default_dataset_path, load_toolhop
 
     path = default_dataset_path()
     if not path.exists():

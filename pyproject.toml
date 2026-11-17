@@ -45,13 +45,13 @@ Repository = "https://github.com/ALTERLK/keelson"
 Demo = "https://alterlk.github.io/keelson/"
 
 [project.scripts]
-keelson = "agents.main:main"
+keelson = "keelson.main:main"
 
 [tool.setuptools]
-packages = ["agents", "agents.bench", "agents.web"]
+packages = ["keelson", "keelson.bench", "keelson.web"]
 
 [tool.setuptools.package-data]
-"agents.web" = ["static/*", "static/**/*"]
+"keelson.web" = ["static/*", "static/**/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

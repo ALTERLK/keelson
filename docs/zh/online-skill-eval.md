@@ -5,7 +5,7 @@
 核心实现文件：
 
 ```text
-agents/online_skill_eval.py
+keelson/online_skill_eval.py
 ```
 
 REPL 命令入口：
@@ -95,7 +95,7 @@ REPL 命令入口：
 
 `side_query` 是 Agent 内部构造的轻量模型调用函数，用来执行 LLM judge 规则。它不是主对话回复生成器，只用于评测判断。
 
-`同步路径` 指直接运行 `python3 -m agents.online_skill_eval` 或普通函数调用，此时没有 `side_query`，所以只执行程序化规则。
+`同步路径` 指直接运行 `python3 -m keelson.online_skill_eval` 或普通函数调用，此时没有 `side_query`，所以只执行程序化规则。
 
 `异步路径` 指 REPL 里的 `/skill-eval`，它能拿到 Agent 的模型客户端，因此可以启用 LLM judge。
 
@@ -110,7 +110,7 @@ REPL 中输入：
 调用链路：
 
 ```text
-agents/main.py
+keelson/main.py
   -> agent._build_side_query(max_tokens=2400)
   -> format_online_skill_eval_async(side_query=side_query)
   -> evaluate_online_skill_evolution_async(side_query=side_query)
@@ -119,7 +119,7 @@ agents/main.py
 直接运行模块：
 
 ```text
-python3 -m agents.online_skill_eval
+python3 -m keelson.online_skill_eval
 ```
 
 调用链路：
@@ -180,7 +180,7 @@ evaluate_online_skill_evolution(
 评测还会调用：
 
 ```text
-agents/skills.py::discover_skills()
+keelson/skills.py::discover_skills()
 ```
 
 读取当前 active Skills：

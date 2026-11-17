@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from agents.jsonutil import drop_raw_newlines_in_strings, loads_lenient, parse_json_object
+from keelson.jsonutil import drop_raw_newlines_in_strings, loads_lenient, parse_json_object
 
 
 def test_plain_and_fenced_objects():

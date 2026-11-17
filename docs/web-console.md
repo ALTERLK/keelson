@@ -24,7 +24,7 @@ terminal, so "what happened" and "how it is shown" were the same code. Now the
 `print_*` functions in `ui.py` only publish events, and the terminal renderer
 is one subscriber among others.
 
-Properties of the bus (`agents/events.py`):
+Properties of the bus (`keelson/events.py`):
 
 - **Synchronous, ordered dispatch.** A subscriber sees exactly the sequence
   the loop produced. Streaming text to a terminal depends on that.
@@ -39,7 +39,7 @@ Properties of the bus (`agents/events.py`):
 ## Sessions
 
 One server process holds several independent conversations
-(`agents/web/sessions.py`). Each `Session` owns an `EventBus`, an `Agent`, a
+(`keelson/web/sessions.py`). Each `Session` owns an `EventBus`, an `Agent`, a
 trace recorder and its pending permission prompts.
 
 The runtime knows nothing about sessions. When a turn starts, the session
@@ -157,7 +157,7 @@ model and one machine: it shows the order of magnitude, not a benchmark.
 
 ## Replay
 
-A trace is the event stream written to JSON lines (`agents/web/recorder.py`).
+A trace is the event stream written to JSON lines (`keelson/web/recorder.py`).
 Replay happens **in the browser**: the player reads a trace and feeds its
 events, re-timed, into the same reducer that consumes the live SSE stream
 (`static/js/store.js`). Console state is a fold over events and nothing else,
@@ -177,12 +177,12 @@ tour works on any trace, including your own sessions.
 
 `scripts/record_demo.py` records the shipped traces by running real tasks in a
 throwaway workspace. Local paths are rewritten before saving
-(`agents/web/scrub.py`), and a trace that still contains a user name, an
+(`keelson/web/scrub.py`), and a trace that still contains a user name, an
 absolute Windows path or something shaped like an API key is not saved.
 
 ## Front end
 
-Plain HTML, CSS and ES modules under `agents/web/static/` — no framework, no
+Plain HTML, CSS and ES modules under `keelson/web/static/` — no framework, no
 build step, no CDN, so it works offline and ships inside the Python package
 (fonts included: Inter and JetBrains Mono, both under the SIL Open Font License).
 

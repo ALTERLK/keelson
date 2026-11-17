@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from agents import events
-from agents.events import EventBus
-from agents.web.recorder import TraceRecorder, describe_trace, find_trace, list_traces, load_trace
+from keelson import events
+from keelson.events import EventBus
+from keelson.web.recorder import TraceRecorder, describe_trace, find_trace, list_traces, load_trace
 
 
 def _record(path, emit_fn, **meta):

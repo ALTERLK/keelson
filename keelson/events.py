@@ -3,9 +3,9 @@
 The agent loop never talks to a display directly. It publishes typed events
 here, and anything that wants to observe a run subscribes:
 
-    Agent loop ──emit──▶ EventBus ──┬─▶ terminal renderer   (agents/ui.py)
-                                    ├─▶ SSE broadcaster      (agents/web/server.py)
-                                    └─▶ trace recorder       (agents/web/recorder.py)
+    Agent loop ──emit──▶ EventBus ──┬─▶ terminal renderer   (keelson/ui.py)
+                                    ├─▶ SSE broadcaster      (keelson/web/server.py)
+                                    └─▶ trace recorder       (keelson/web/recorder.py)
 
 Design notes
 ------------
@@ -187,7 +187,7 @@ def emit(type: str, **data: Any) -> Event:
 def span(name: str, **meta: Any) -> Iterator[None]:
     """Time a step of the loop and publish it as a ``span`` event.
 
-    Also written through ``agents.trace`` when ``KEELSON_TRACE=1``, so the
+    Also written through ``keelson.trace`` when ``KEELSON_TRACE=1``, so the
     file-based profile and the live view come from the same measurement.
     """
     start = time.perf_counter()

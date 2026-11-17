@@ -22,7 +22,7 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
-from agents.skill_evolution import _safe_skill_slug, _utc_now, get_evolution_dir
+from keelson.skill_evolution import _safe_skill_slug, _utc_now, get_evolution_dir
 
 
 def _as_dict(obj: Any) -> dict[str, Any]:
@@ -162,7 +162,7 @@ def write_card(
     diff = ""
     if action == "merge" and skill:
         try:
-            from agents.skill_history import diff_current_vs_snapshot
+            from keelson.skill_history import diff_current_vs_snapshot
 
             d = diff_current_vs_snapshot(skill)
             if d.get("ok"):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from agents.agent import Agent
+from keelson.agent import Agent
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ async def test_execute_tool_call_short_circuits_and_counts(agent, monkeypatch):
         ran.append(name)
         return "real result"
 
-    monkeypatch.setattr("agents.agent.execute_tool", fake_exec_tool)
+    monkeypatch.setattr("keelson.agent.execute_tool", fake_exec_tool)
     _fill(agent, "genealogy_query", 6, distinct_results=1)
 
     out = await agent._execute_tool_call("genealogy_query", {"x": 1})
@@ -102,12 +102,12 @@ async def _anop(*a, **k):
 
 
 def _shell_window(agent, command, n, distinct_results=1):
-    from agents.agent import _guard_key
+    from keelson.agent import _guard_key
     _fill(agent, _guard_key("run_shell", {"command": command}), n, distinct_results)
 
 
 def test_guard_key_is_the_program_for_the_shell_and_the_name_otherwise():
-    from agents.agent import _guard_key
+    from keelson.agent import _guard_key
 
     assert _guard_key("read_file", {"file_path": "a.py"}) == "read_file"
     assert _guard_key("run_shell", {"command": 'python -c "print(1)"'}) == "run_shell:python -c"
@@ -135,7 +135,7 @@ def test_a_fold_does_not_reset_the_guard(agent):
 
 
 def test_budget_is_exceeded_once_the_guard_has_tripped_enough(agent):
-    from agents.agent import LOOP_GUARD_MAX_HITS
+    from keelson.agent import LOOP_GUARD_MAX_HITS
 
     agent._loop_guard_hits = LOOP_GUARD_MAX_HITS - 1
     assert agent._check_budget()["exceeded"] is False
@@ -147,7 +147,7 @@ def test_budget_is_exceeded_once_the_guard_has_tripped_enough(agent):
 
 async def test_a_model_that_ignores_the_guard_is_stopped_by_the_runtime(agent, monkeypatch):
     """Guard trips three times, the model asks for a tool again: no tool runs, one tool-less call ends the turn."""
-    from agents.agent import LOOP_GUARD_MAX_HITS
+    from keelson.agent import LOOP_GUARD_MAX_HITS
 
     def tool_call(i):
         return {"choices": [{"message": {"role": "assistant", "content": None, "tool_calls": [
@@ -176,8 +176,8 @@ async def test_a_model_that_ignores_the_guard_is_stopped_by_the_runtime(agent, m
         return None
 
     monkeypatch.setattr(agent, "_call_openai_stream", fake_model)
-    monkeypatch.setattr("agents.agent.execute_tool", fake_exec_tool)
-    monkeypatch.setattr("agents.agent.check_permission", lambda *a, **k: {"action": "allow"})
+    monkeypatch.setattr("keelson.agent.execute_tool", fake_exec_tool)
+    monkeypatch.setattr("keelson.agent.check_permission", lambda *a, **k: {"action": "allow"})
     monkeypatch.setattr(agent, "_run_compression_pipeline", lambda: None)
     monkeypatch.setattr(agent, "_check_and_compact", anop)
     monkeypatch.setattr(agent, "_refresh_runtime_system_prompt", lambda: None)

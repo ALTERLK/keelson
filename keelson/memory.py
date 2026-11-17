@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agents import paths
+from keelson import paths
 
 from .frontmatter import format_frontmatter, parse_frontmatter
 

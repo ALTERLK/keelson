@@ -21,9 +21,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from agents.web import data  # noqa: E402
-from agents.web.recorder import list_traces, load_trace  # noqa: E402
-from agents.web.server import STATIC_DIR  # noqa: E402
+from keelson.web import data  # noqa: E402
+from keelson.web.recorder import list_traces, load_trace  # noqa: E402
+from keelson.web.server import STATIC_DIR  # noqa: E402
 
 LIVE_META = '<meta name="keelson-mode" content="live">'
 STATIC_META = '<meta name="keelson-mode" content="static">'

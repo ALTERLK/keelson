@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agents.bench import runner
+from keelson.bench import runner
 
 
 def _cfg(arm):

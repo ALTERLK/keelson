@@ -2,7 +2,7 @@
 
 **Model:** `gemini-3.8-flash` via 4SAPI (`https://4sapi.com/v1`, OpenAI-compatible, non-streaming — the gateway drops streamed tool-call deltas).
 **Dataset:** ToolHop (`data/ToolHop/ToolHop.json`); 120-task hop-stratified subset in `bench/splits.json` (salt `keelson-toolhop-v1`), 60 train / 60 test. Results below are the **test** split.
-**Scoring:** exact gold-answer match, normalized per `answer_type` (`agents/bench/toolhop.py::score`); no LLM judge in the pass/fail path.
+**Scoring:** exact gold-answer match, normalized per `answer_type` (`keelson/bench/toolhop.py::score`); no LLM judge in the pass/fail path.
 **Arms:** `raw_api` = bare model function-calling loop. `no_skill` / `skill_v1` = full Runtime (loop, permission gate, tool dispatch, context fold, per-turn skill retrieval, loop guard) under `bypassPermissions`; `skill_v1` also gets the hand-written `multihop-tool-chaining` skill.
 
 This is round 2. Round 1 (n=60, single run) found the harness ~8pp below `raw_api`, traced it to 7 tasks spiraling to the turn cap, and shipped a fix. Everything below is post-fix, run with repeats for a noise band. The investigation and the pre-fix numbers are in [`bench/spiral-diagnosis.md`](spiral-diagnosis.md) — kept as the record, not superseded.
@@ -62,11 +62,11 @@ Every arm is 0 at 6–7 hops — the chain outgrows `gemini-3.8-flash` regardles
 
 ## `skill_evolved` — not a distinct arm on this dataset
 
-`agents/bench/skill_evolved_probe.py` drove the real evolution entry point (`extract_online_skill_candidate`, model-backed `side_query`) over 12 real train-task transcripts: **0 candidates extracted**. `extract_online_skill_candidate`'s own rules key on a user-feedback turn ("USER turns are the primary evidence … extract only durable workflow, correction, or repeated constraint"). A ToolHop task is one question turn with no feedback, so `skill_evolved` collapses to `no_skill` here by construction. The evolved-skill path needs a bench with a correction signal — the sandbox coding tasks below, once built out.
+`keelson/bench/skill_evolved_probe.py` drove the real evolution entry point (`extract_online_skill_candidate`, model-backed `side_query`) over 12 real train-task transcripts: **0 candidates extracted**. `extract_online_skill_candidate`'s own rules key on a user-feedback turn ("USER turns are the primary evidence … extract only durable workflow, correction, or repeated constraint"). A ToolHop task is one question turn with no feedback, so `skill_evolved` collapses to `no_skill` here by construction. The evolved-skill path needs a bench with a correction signal — the sandbox coding tasks below, once built out.
 
 ## Sandbox coding benchmark — round 3
 
-ToolHop is a clean function-calling task; it can't exercise `edit_file` safety, out-of-scope edits, test-tampering, or read-before-edit. `agents/bench/sandbox.py` + `agents/bench/sandbox_runner.py` measure that directly: 14 small coding tasks (bugfix/feature/edge-case/refactor/traceback/trap), each with a reference `solution/` validated to fail-then-pass before any model call. Two arms over the *same* 7 tools and the *same* real `build_system_prompt()` text (the ToolHop H2 lesson: mismatched prompts between arms confound the comparison) — `harness` = real Agent (`bypassPermissions`, read-before-edit gate, loop guard, graceful budget exhaustion); `raw` = bare tool-calling loop, gate off. **Descriptive statistics — n=14 per cell, no significance testing.**
+ToolHop is a clean function-calling task; it can't exercise `edit_file` safety, out-of-scope edits, test-tampering, or read-before-edit. `keelson/bench/sandbox.py` + `keelson/bench/sandbox_runner.py` measure that directly: 14 small coding tasks (bugfix/feature/edge-case/refactor/traceback/trap), each with a reference `solution/` validated to fail-then-pass before any model call. Two arms over the *same* 7 tools and the *same* real `build_system_prompt()` text (the ToolHop H2 lesson: mismatched prompts between arms confound the comparison) — `harness` = real Agent (`bypassPermissions`, read-before-edit gate, loop guard, graceful budget exhaustion); `raw` = bare tool-calling loop, gate off. **Descriptive statistics — n=14 per cell, no significance testing.**
 
 Two models: `gemini-3.8-flash` (weak, same as ToolHop) and `gpt-6-astra` (strong).
 
@@ -87,8 +87,8 @@ Full artifacts: `bench/runs/20260911T024427Z-sandbox-raw-gemini-3.8-flash`, `...
 
 | vehicle | what it tests | state |
 |---------|---------------|-------|
-| `agents/bench/fold_fidelity.py` | does a context fold keep task-critical facts vs. plain truncation | fact-probe extractor is written; **no CLI, no transcript corpus, unrun.** |
-| `agents/skill_gate.py` | non-inferiority gate blocks a regressing skill | unit-tested only; no end-to-end bench. |
+| `keelson/bench/fold_fidelity.py` | does a context fold keep task-critical facts vs. plain truncation | fact-probe extractor is written; **no CLI, no transcript corpus, unrun.** |
+| `keelson/skill_gate.py` | non-inferiority gate blocks a regressing skill | unit-tested only; no end-to-end bench. |
 
 Not yet measured — needs benchmark-building, not more spend. Sandbox above closes the coding-task gap; these two are what's left.
 

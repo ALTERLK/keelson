@@ -15,7 +15,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY pyproject.toml README.md LICENSE ./
-COPY agents ./agents
+COPY keelson ./keelson
 # Read-only artifacts the console's benchmark, skill-evolution and trace pages show.
 COPY bench ./bench
 COPY docs/self-evolution-demo ./docs/self-evolution-demo

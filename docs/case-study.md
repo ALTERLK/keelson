@@ -71,7 +71,7 @@ Each is written as symptom, evidence, cause, fix. The evidence is a trace that c
 - **Symptom**: more-itertools in round 1 ended after ten seconds with nothing changed.
 - **Evidence**: trace `21-case-more-itertools-1308-round1`. The model listed files once, and the next completion had no text and no tool call (zero output tokens).
 - **Cause**: the loop ends when a reply contains no tool call. An empty reply satisfies that.
-- **Fix**: a reply with no text and no tool call is a failed call. It is retried with a one-line nudge, at most twice; only then does the turn end, with a warning (`agents/agent.py::_should_retry_empty_reply`, `tests/test_empty_reply.py`).
+- **Fix**: a reply with no text and no tool call is a failed call. It is retried with a one-line nudge, at most twice; only then does the turn end, with a warning (`keelson/agent.py::_should_retry_empty_reply`, `tests/test_empty_reply.py`).
 - **How far it is verified**: no empty reply occurred in the later rounds, so this fix has unit tests and no live confirmation.
 
 ### 2. The model could reset the loop guard
@@ -102,7 +102,7 @@ Found while reading the round 2 traces, and the one with the widest effect.
 - **Symptom**: the model's multi-line repro scripts kept returning "(no output)", so it tried variation after variation. Much of the repeated probing in the defects above started here.
 - **Evidence**: the first two rounds contain 40 multi-line shell commands and **none ran completely**: 36 ran only their first line, and the loop guard stopped the other 4. With `python -c "` followed by a script on the next lines, Python receives an empty argument and prints nothing. In round 1 the model sent python-dotenv a four-line command (create a file, write to it, read it back, print the exit code) and believed all four had run. One had.
 - **Cause**: `run_shell` hands the command to the platform shell as it is. `sh -c` runs every line. `cmd /c` runs the first and drops the rest without an error.
-- **Fix**: on Windows a multi-line command is written to a temporary batch file and that is run, so every line executes and `%errorlevel%` is expanded line by line. A quoted string that spans lines cannot be expressed in cmd.exe at all; such a command is refused with the reason and a form that works (`agents/tools.py::_prepare_shell_command`, `_multiline_quote_problem`, `tests/test_shell_multiline.py`).
+- **Fix**: on Windows a multi-line command is written to a temporary batch file and that is run, so every line executes and `%errorlevel%` is expanded line by line. A quoted string that spans lines cannot be expressed in cmd.exe at all; such a command is refused with the reason and a form that works (`keelson/tools.py::_prepare_shell_command`, `_multiline_quote_problem`, `tests/test_shell_multiline.py`).
 - **How far it is verified**: round 3 has six multi-line commands. Three were refused with the reason and three ran completely. On cachetools the model switched to the suggested form within two calls of the refusal, got a real traceback, and finished in 20 calls without a single guard trip. On tenacity one multi-line `echo` wrote a 33-line test file, and the whole run took 15 calls, the shortest of all three rounds.
 
 ## What is not fixed
@@ -137,7 +137,7 @@ Errors in the measuring tool need saying as much as errors in the thing measured
 
 - **Hiding `.git`.** The clone contains the fix commit. The first version did nothing about that; before any model run it was changed to move `.git` out of the checkout while the agent works.
 - **Reinstalling the checkout before grading.** See "Installing from the network" above.
-- **The trace scrubber missed three spellings.** A directory named `pytest-of-<user>`, a path that pytest had abbreviated (`C:\\Users\\a...9\\repo`), and Python source with `as e:` before a line break, which looked like drive `e:`. Each time the leak check refused to save the trace first, and the rule was added afterwards (`agents/web/scrub.py`, `tests/test_scrub.py`).
+- **The trace scrubber missed three spellings.** A directory named `pytest-of-<user>`, a path that pytest had abbreviated (`C:\\Users\\a...9\\repo`), and Python source with `as e:` before a line break, which looked like drive `e:`. Each time the leak check refused to save the trace first, and the rule was added afterwards (`keelson/web/scrub.py`, `tests/test_scrub.py`).
 
 ## What this experiment does not show
 

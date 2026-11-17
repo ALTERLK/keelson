@@ -15,15 +15,15 @@ script, not the SVG.
 
 | Layer | Files | Owns |
 |---|---|---|
-| Front ends | `agents/main.py`, `agents/ui.py`, `agents/web/` | CLI/REPL, terminal rendering, web console and its sessions |
-| Event bus | `agents/events.py` | The one stream every front end observes; timing spans; the per-session binding |
-| Runtime | `agents/agent.py` | The loop, protocol adapters, tool dispatch, context folding, sessions |
-| Capabilities | `agents/tools.py`, `skills.py`, `memory.py`, `mcp_client.py`, `subagent.py` | Tools and the permission gate, skills, long-term memory, MCP, sub-agents |
-| Prompt | `agents/prompt.py` | Assembling the system prompt for the current state |
-| Evolution | `agents/online_skill_evolution.py`, `skill_evolution.py`, `skill_gate.py`, `skill_history.py`, `evolution_card.py` | Extracting, gating, versioning and auditing skill changes |
-| Evidence | `agents/bench/`, `bench/` | Benchmarks, metrics, committed run artifacts |
-| Setup | `agents/doctor.py` | `keelson doctor` and `keelson init` |
-| State | `.keelson/`, `~/.keelson/` (`agents/paths.py`) | Skills, memory, sessions, traces, audit records |
+| Front ends | `keelson/main.py`, `keelson/ui.py`, `keelson/web/` | CLI/REPL, terminal rendering, web console and its sessions |
+| Event bus | `keelson/events.py` | The one stream every front end observes; timing spans; the per-session binding |
+| Runtime | `keelson/agent.py` | The loop, protocol adapters, tool dispatch, context folding, sessions |
+| Capabilities | `keelson/tools.py`, `skills.py`, `memory.py`, `mcp_client.py`, `subagent.py` | Tools and the permission gate, skills, long-term memory, MCP, sub-agents |
+| Prompt | `keelson/prompt.py` | Assembling the system prompt for the current state |
+| Evolution | `keelson/online_skill_evolution.py`, `skill_evolution.py`, `skill_gate.py`, `skill_history.py`, `evolution_card.py` | Extracting, gating, versioning and auditing skill changes |
+| Evidence | `keelson/bench/`, `bench/` | Benchmarks, metrics, committed run artifacts |
+| Setup | `keelson/doctor.py` | `keelson doctor` and `keelson init` |
+| State | `.keelson/`, `~/.keelson/` (`keelson/paths.py`) | Skills, memory, sessions, traces, audit records |
 
 ## One turn
 

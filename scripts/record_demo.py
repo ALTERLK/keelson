@@ -152,12 +152,12 @@ def _make_workspace(task: str, base: Path) -> Path:
 
 
 async def _run(name: str, scenario: dict, *, scripted: bool = False) -> Path:
-    from agents import events, ui
-    from agents.agent import Agent
-    from agents.main import _load_env_file, _resolve_api_config
-    from agents.web.recorder import TraceRecorder
-    from agents.web.scrub import leaks, scrub
-    from agents.web.sessions import Session
+    from keelson import events, ui
+    from keelson.agent import Agent
+    from keelson.main import _load_env_file, _resolve_api_config
+    from keelson.web.recorder import TraceRecorder
+    from keelson.web.scrub import leaks, scrub
+    from keelson.web.sessions import Session
 
     os.chdir(ROOT)
     _load_env_file()

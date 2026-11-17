@@ -28,7 +28,7 @@ the trace recorder and the console's timing view). It is the right cost for a pr
 
 ## How the agent is evaluated
 
-`agents/bench/` runs the harness against **ToolHop** (multi-hop tool calling,
+`keelson/bench/` runs the harness against **ToolHop** (multi-hop tool calling,
 995 tasks). Each task ships executable Python tool bodies and a gold answer, so
 scoring is deterministic and fully offline — no LLM-as-judge in the loop that
 decides pass/fail.
@@ -36,7 +36,7 @@ decides pass/fail.
 Four arms on a train/test-split subset (`raw_api` = bare function-calling loop,
 `no_skill` = full harness, `skill_v1` = + a hand-written skill, `skill_evolved` =
 + a skill grown on the *train* split). Arm-vs-arm deltas get a **paired bootstrap
-95% CI** and a **McNemar** p-value (`agents/bench/metrics.py`) — a few-point gap
+95% CI** and a **McNemar** p-value (`keelson/bench/metrics.py`) — a few-point gap
 on ~60 tasks is usually noise.
 
 ### Round 1: n=60 found the harness ~8pp behind `raw_api` — one narrow cause
@@ -87,7 +87,7 @@ candidates** — `extract_online_skill_candidate` keys on a user-feedback turn,
 which a single-turn Q→A task doesn't have, so it collapses to `no_skill`.
 
 **The harness's value has to be measured on task shapes ToolHop lacks.** Round 3
-did that for coding: `agents/bench/sandbox_runner.py` plugs a real Agent into
+did that for coding: `keelson/bench/sandbox_runner.py` plugs a real Agent into
 `sandbox.py`'s grader (now 14 tasks — bugfix/feature/edge-case/refactor/
 traceback/trap — up from 3, each with a validated `solution/`), two arms over
 the *same* 7 tools and the *same* real system prompt so only "harness or not"
@@ -112,8 +112,8 @@ as an occasional verification-skipping failure mode, not a systematic defect —
 n=4 is too small to separate from noise, but it's the real shape of edit-safety
 risk this benchmark exists to surface. Full numbers: `bench/REPORT.md`.
 
-`agents/bench/fold_fidelity.py` (does a fold keep task-critical facts vs.
-truncation) has the probe extractor but **no runner**; `agents/skill_gate.py` (a
+`keelson/bench/fold_fidelity.py` (does a fold keep task-critical facts vs.
+truncation) has the probe extractor but **no runner**; `keelson/skill_gate.py` (a
 regressing skill gets quarantined) is unit-tested only. These still need
 benchmark-building.
 
@@ -168,18 +168,18 @@ auditable as an acceptance.
 | sub-agent construction | `agent.py`'s `_execute_agent_tool` builds the child `Agent` without passing `api_key` / `anthropic_base_url` through | **found, not fixed** — a sub-agent under a non-default endpoint (e.g. this bench's 4SAPI config) would hit the wrong API |
 | OpenAI vs Anthropic snip asymmetry | the OpenAI compression path snips *all* stale tool messages; the Anthropic path only snips `SNIPPABLE_TOOLS` | **found, not fixed** — doesn't trigger in the bench (contexts stay small), but the two backends compress differently |
 | `frontmatter.py` | only a tiny YAML subset (`key: value` + `|`/`>` block scalars). Nested maps / flow sequences are not parsed | by design; documented |
-| `agents/bench` skill arms (`skill_v1`, `skill_evolved`) | `raw_api` / `no_skill` / `skill_v1` ran at n=60 (`bench/REPORT.md`); `skill_evolved` probed and shown to collapse to `no_skill` on ToolHop (no feedback turn → 0 candidates) | done for this dataset |
+| `keelson/bench` skill arms (`skill_v1`, `skill_evolved`) | `raw_api` / `no_skill` / `skill_v1` ran at n=60 (`bench/REPORT.md`); `skill_evolved` probed and shown to collapse to `no_skill` on ToolHop (no feedback turn → 0 candidates) | done for this dataset |
 | `skill_gate` | LLM-judge rules are skipped in the offline gate (programmatic subset only) | intentional — hard gates must not depend on a model |
-| context fold fidelity | probe extraction + grading built (`agents/bench/fold_fidelity.py`); retention numbers need a model-backed fold | partial |
+| context fold fidelity | probe extraction + grading built (`keelson/bench/fold_fidelity.py`); retention numbers need a model-backed fold | partial |
 | MCP tools | now gated (`check_permission` denies un-classified tools in plan mode, confirms otherwise) — previously ungated | **fixed** |
 | sub-agents | now bounded by the parent's permission mode (`_subagent_permission_mode`, default `dontAsk`) — previously forced to `bypassPermissions` | **fixed** |
 | self-evolution cost | Extractor+Maintainer ran ~every turn (2 model calls); now pre-gated by `skill_gating.looks_like_feedback` (`KEELSON_SKILL_GATING`) | **fixed** — token-savings % pending a run |
-| evolution auditability | add/merge decisions were spread across 5 JSONL files | **fixed** — one Evolution Card per event (`agents/evolution_card.py`) |
+| evolution auditability | add/merge decisions were spread across 5 JSONL files | **fixed** — one Evolution Card per event (`keelson/evolution_card.py`) |
 | `run_shell` blocked the event loop | `subprocess.run` held the loop for the whole command: no events flowed, Stop did nothing, and a timeout killed the shell but left its children running | **fixed** (v0.3.0) — `run_shell_async`: asyncio subprocess, live `tool_output` events, process-tree kill on timeout/cancel; `tests/test_async_shell.py`, `scripts/smoke_live.py` |
-| one session per process | the event bus was a module global, so two conversations in one server would have shared a stream | **fixed** (v0.3.0) — the current bus is a `ContextVar`; `agents/web/sessions.py` binds one bus per session; `tests/test_web_server.py` |
+| one session per process | the event bus was a module global, so two conversations in one server would have shared a stream | **fixed** (v0.3.0) — the current bus is a `ContextVar`; `keelson/web/sessions.py` binds one bus per session; `tests/test_web_server.py` |
 | sessions were not browsable | messages and traces were saved but nothing listed or reopened them | **fixed** (v0.3.0) — history in the console; resume replays the trace and restores the message list, also after a restart |
-| side-model JSON with raw line breaks | an OpenAI-compatible gateway in non-streaming mode re-chunked replies and left a literal newline inside JSON strings, once inside a key (`{"action\n": "add"}`); the Maintainer's decision failed to parse and a good skill candidate was silently discarded | **fixed** (v0.3.0) — `agents/jsonutil.py` retries with raw newlines inside string literals removed (never valid JSON, so the repair cannot change a valid document); found while re-recording the demo traces; `tests/test_jsonutil.py` |
-| trace scrubber missed nested JSON | a path inside a tool result that was itself JSON (backslashes escaped twice) was not rewritten; the leak check caught it and refused to save | **fixed** (v0.3.0) — `agents/web/scrub.py` tries every escaping depth; `tests/test_scrub.py` |
+| side-model JSON with raw line breaks | an OpenAI-compatible gateway in non-streaming mode re-chunked replies and left a literal newline inside JSON strings, once inside a key (`{"action\n": "add"}`); the Maintainer's decision failed to parse and a good skill candidate was silently discarded | **fixed** (v0.3.0) — `keelson/jsonutil.py` retries with raw newlines inside string literals removed (never valid JSON, so the repair cannot change a valid document); found while re-recording the demo traces; `tests/test_jsonutil.py` |
+| trace scrubber missed nested JSON | a path inside a tool result that was itself JSON (backslashes escaped twice) was not rewritten; the leak check caught it and refused to save | **fixed** (v0.3.0) — `keelson/web/scrub.py` tries every escaping depth; `tests/test_scrub.py` |
 | web sessions share a working directory | sessions isolate conversations, not files; two sessions editing one file will collide | by design for a local tool; a per-session worktree would be the next step |
 | multi-line shell commands on Windows | `cmd /c` ran the first line and dropped the rest without an error; the model believed it had run commands it had not (0 of 40 ran completely in case-study rounds 1–2) | **fixed** (v0.3.0) — run from a temporary batch file, line by line; a quoted string spanning lines is refused with the reason; `tests/test_shell_multiline.py` |
 | an empty model reply ended the turn | no text and no tool call satisfied the loop's exit condition, so a failed completion looked like a finished task | **fixed** (v0.3.0) — retried with a nudge, at most twice; `tests/test_empty_reply.py` |

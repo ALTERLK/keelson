@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agents.web.scrub import BACKSLASH, leaks, scrub
+from keelson.web.scrub import BACKSLASH, leaks, scrub
 
 WORKSPACE = "C:\\Temp\\keelson-demo-abc\\workspace"
 
@@ -53,7 +53,7 @@ def test_leaks_reports_what_is_left():
 
 
 def test_username_is_rewritten_only_as_a_whole_word(monkeypatch):
-    from agents.web.scrub import scrub_username
+    from keelson.web.scrub import scrub_username
 
     monkeypatch.setenv("USERNAME", "30802")
     text = "/tmp/pytest-of-30802/pytest-0 took 130802 ms; id 308021; owner=30802."
@@ -61,7 +61,7 @@ def test_username_is_rewritten_only_as_a_whole_word(monkeypatch):
 
 
 def test_a_very_short_username_is_left_alone(monkeypatch):
-    from agents.web.scrub import scrub_username
+    from keelson.web.scrub import scrub_username
 
     monkeypatch.setenv("USERNAME", "me")
     assert scrub_username("tell me a name") == "tell me a name"
@@ -71,7 +71,7 @@ def test_an_abbreviated_home_path_is_caught_and_rewritten():
     """pytest shortens long strings in assertion messages; inside a JSON tool result that is four backslashes."""
     import json
 
-    from agents.web.scrub import leaks, scrub_home_fragments
+    from keelson.web.scrub import leaks, scrub_home_fragments
 
     shortened = "C:" + BACKSLASH * 2 + "Users" + BACKSLASH * 2 + "a...9" + BACKSLASH * 2 + "repo"   # as repr() prints it
     inner = json.dumps({"stdout": f"AssertionError: assert '{shortened}' == ''"})
@@ -86,7 +86,7 @@ def test_an_abbreviated_home_path_is_caught_and_rewritten():
 
 
 def test_home_fragments_leave_urls_alone():
-    from agents.web.scrub import scrub_home_fragments
+    from keelson.web.scrub import scrub_home_fragments
 
     assert scrub_home_fragments("see https://example.com/Users/guide and C:/Users/alice/x") == \
         "see https://example.com/Users/guide and /home/user/x"

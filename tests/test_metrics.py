@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agents.bench.metrics import (
+from keelson.bench.metrics import (
     mcnemar,
     paired_bootstrap_delta,
     paired_bootstrap_delta_pooled,

@@ -18,8 +18,8 @@ from pathlib import Path
 
 from tqdm.utils import IS_WIN
 
-from agents import events, paths
-from agents.memory import get_memory_dir
+from keelson import events, paths
+from keelson.memory import get_memory_dir
 
 ToolDef = dict  # Anthropic tool schema dict
 #权限模式
