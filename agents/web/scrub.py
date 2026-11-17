@@ -18,7 +18,17 @@ BACKSLASH = "\\"
 # In a JSON trace a path separator is two backslashes (or a slash). A single
 # backslash is an escape such as \n and must not be mistaken for a path, and
 # the lookbehind keeps "https://" from looking like drive "s:".
-_DRIVE_PATH = re.compile(r'(?<![A-Za-z])[A-Za-z]:(?:\\\\|/(?!/))[^\\/"]+(?:\\\\|/)')
+#
+# One level down (a tool result that is itself JSON) a line break is written
+# with two backslashes as well, so source code such as "except E as e:" followed
+# by an indented line looks like drive "e:". Two things tell them apart: a path
+# segment is not a lone n, r or t, and it does not contain a run of spaces.
+_DRIVE_PATH = re.compile(
+    r'(?<![A-Za-z])[A-Za-z]:(?:(?:\\\\)+|/(?!/))(?![nrt](?:\\|/|"))(?:[^\\/"\s]| (?! ))+(?:\\\\|/)'
+)
+# A home directory that survived the replacements because a tool shortened it
+# (pytest prints a long string as 'C:\\Users\\3...9\\repo'): any drive, any escaping depth.
+_HOME_FRAGMENT = re.compile(r'(?<![A-Za-z])[A-Za-z]:(?:\\+|/)Users(?:\\+|/)[^\\/"\']+', re.IGNORECASE)
 
 
 def _short_path(path: str) -> str:
@@ -58,6 +68,24 @@ def scrub(text: str, replacements: list[tuple[str, str]]) -> str:
         for variant in sorted(variants, key=len, reverse=True):
             text = re.sub(re.escape(variant), lambda _match: alias, text, flags=re.IGNORECASE)
     return text
+
+
+def scrub_username(text: str, alias: str = "user") -> str:
+    """Rewrite the account name where it stands as a word of its own.
+
+    Path replacement does not reach it everywhere: pytest names its scratch
+    directory ``pytest-of-<user>``. Only whole words are touched, so a numeric
+    account name is not rewritten inside a longer number.
+    """
+    name = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    if len(name) < 3:
+        return text
+    return re.sub(rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])", lambda _match: alias, text, flags=re.IGNORECASE)
+
+
+def scrub_home_fragments(text: str, alias: str = "/home/user") -> str:
+    """Rewrite whatever still looks like ``X:/Users/<name>``, however it is escaped or abbreviated."""
+    return _HOME_FRAGMENT.sub(lambda _match: alias, text)
 
 
 def leaks(text: str) -> list[str]:

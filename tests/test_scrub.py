@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agents.web.scrub import leaks, scrub
+from agents.web.scrub import BACKSLASH, leaks, scrub
 
 WORKSPACE = "C:\\Temp\\keelson-demo-abc\\workspace"
 
@@ -50,3 +50,58 @@ def test_leaks_reports_what_is_left():
     assert leaks(json.dumps({"out": "D:/projects/thing/a.py"}))
     assert leaks(json.dumps({"env": "sk-" + "a" * 24}))
     assert leaks(json.dumps({"out": "/workspace/pager.py passed"})) == []
+
+
+def test_username_is_rewritten_only_as_a_whole_word(monkeypatch):
+    from agents.web.scrub import scrub_username
+
+    monkeypatch.setenv("USERNAME", "30802")
+    text = "/tmp/pytest-of-30802/pytest-0 took 130802 ms; id 308021; owner=30802."
+    assert scrub_username(text) == "/tmp/pytest-of-user/pytest-0 took 130802 ms; id 308021; owner=user."
+
+
+def test_a_very_short_username_is_left_alone(monkeypatch):
+    from agents.web.scrub import scrub_username
+
+    monkeypatch.setenv("USERNAME", "me")
+    assert scrub_username("tell me a name") == "tell me a name"
+
+
+def test_an_abbreviated_home_path_is_caught_and_rewritten():
+    """pytest shortens long strings in assertion messages; inside a JSON tool result that is four backslashes."""
+    import json
+
+    from agents.web.scrub import leaks, scrub_home_fragments
+
+    shortened = "C:" + BACKSLASH * 2 + "Users" + BACKSLASH * 2 + "3...9" + BACKSLASH * 2 + "repo"   # as repr() prints it
+    inner = json.dumps({"stdout": f"AssertionError: assert '{shortened}' == ''"})
+    line = json.dumps({"type": "tool_result", "data": {"preview": inner}})
+    assert BACKSLASH * 8 in line
+    assert any("absolute Windows path" in item for item in leaks(line))
+
+    cleaned = scrub_home_fragments(line)
+    assert "Users" not in cleaned
+    assert not any("absolute Windows path" in item for item in leaks(cleaned))
+    json.loads(cleaned)
+
+
+def test_home_fragments_leave_urls_alone():
+    from agents.web.scrub import scrub_home_fragments
+
+    assert scrub_home_fragments("see https://example.com/Users/guide and C:/Users/alice/x") == \
+        "see https://example.com/Users/guide and /home/user/x"
+
+
+def test_source_code_inside_a_json_tool_result_is_not_a_drive_path():
+    """`except E as e:` followed by an indented line, two JSON levels down, is not drive e:."""
+    import json
+
+    code = "try:\n    raise ValueError('x')\nexcept ValueError as e:\n            raise e from e   # self-cause\n\nprint(1)\n"
+    line = json.dumps({"type": "tool_result", "data": {"preview": json.dumps({"stdout": code})}})
+    assert "e:" + BACKSLASH * 2 + "n" in line
+    assert not any("absolute Windows path" in item for item in leaks(line))
+
+    # ...while a real path at that depth is still caught, spaces in a folder name included.
+    for path in ("D:" + BACKSLASH + "work" + BACKSLASH + "repo", "C:" + BACKSLASH + "Program Files" + BACKSLASH + "Python312"):
+        nested = json.dumps({"data": {"preview": json.dumps({"stdout": f"File {path}{BACKSLASH}a.py"})}})
+        assert any("absolute Windows path" in item for item in leaks(nested)), path

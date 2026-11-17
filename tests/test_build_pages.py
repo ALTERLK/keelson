@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from agents.web.scrub import _DRIVE_PATH
+
 pytest.importorskip("fastapi")
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,6 +60,8 @@ def test_shipped_traces_carry_no_machine_specific_paths():
         pytest.skip("demo traces not present in this install")
     for path in traces.glob("*.jsonl"):
         text = path.read_text(encoding="utf-8")
-        assert ":\\\\" not in text and "Users" not in text, path.name
+        # The drive-letter check is the scrubber's own: a bare `:\\` also matches Python
+        # source quoted inside a tool result ("def f():" followed by a line break).
+        assert "Users" not in text and not _DRIVE_PATH.search(text), path.name
         for line in text.splitlines():
             json.loads(line)
