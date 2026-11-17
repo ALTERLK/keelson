@@ -73,7 +73,7 @@ def test_an_abbreviated_home_path_is_caught_and_rewritten():
 
     from agents.web.scrub import leaks, scrub_home_fragments
 
-    shortened = "C:" + BACKSLASH * 2 + "Users" + BACKSLASH * 2 + "3...9" + BACKSLASH * 2 + "repo"   # as repr() prints it
+    shortened = "C:" + BACKSLASH * 2 + "Users" + BACKSLASH * 2 + "a...9" + BACKSLASH * 2 + "repo"   # as repr() prints it
     inner = json.dumps({"stdout": f"AssertionError: assert '{shortened}' == ''"})
     line = json.dumps({"type": "tool_result", "data": {"preview": inner}})
     assert BACKSLASH * 8 in line

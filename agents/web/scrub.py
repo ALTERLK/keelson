@@ -27,7 +27,7 @@ _DRIVE_PATH = re.compile(
     r'(?<![A-Za-z])[A-Za-z]:(?:(?:\\\\)+|/(?!/))(?![nrt](?:\\|/|"))(?:[^\\/"\s]| (?! ))+(?:\\\\|/)'
 )
 # A home directory that survived the replacements because a tool shortened it
-# (pytest prints a long string as 'C:\\Users\\3...9\\repo'): any drive, any escaping depth.
+# (pytest prints a long string as 'C:\\Users\\a...9\\repo'): any drive, any escaping depth.
 _HOME_FRAGMENT = re.compile(r'(?<![A-Za-z])[A-Za-z]:(?:\\+|/)Users(?:\\+|/)[^\\/"\']+', re.IGNORECASE)
 
 

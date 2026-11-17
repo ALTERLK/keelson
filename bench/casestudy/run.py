@@ -488,7 +488,7 @@ def publish_trace(case: dict, work: Path, order: int, round_number: int | None =
         (tempfile.gettempdir(), "/tmp"),          # scratch files the model made with `tempfile`
         (str(Path.home()), "/home/user"),         # pip's cache, per-user site-packages
     ])
-    text = scrub_home_fragments(text)              # paths a tool abbreviated, e.g. pytest's 'C:/Users/3...9/repo'
+    text = scrub_home_fragments(text)              # paths a tool abbreviated, e.g. pytest's 'C:/Users/a...9/repo'
     text = scrub_username(text)                    # e.g. pytest's scratch directory, pytest-of-<user>
     found = leaks(text)
     if found:

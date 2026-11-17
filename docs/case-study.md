@@ -137,7 +137,7 @@ Errors in the measuring tool need saying as much as errors in the thing measured
 
 - **Hiding `.git`.** The clone contains the fix commit. The first version did nothing about that; before any model run it was changed to move `.git` out of the checkout while the agent works.
 - **Reinstalling the checkout before grading.** See "Installing from the network" above.
-- **The trace scrubber missed three spellings.** A directory named `pytest-of-<user>`, a path that pytest had abbreviated (`C:\\Users\\3...9\\repo`), and Python source with `as e:` before a line break, which looked like drive `e:`. Each time the leak check refused to save the trace first, and the rule was added afterwards (`agents/web/scrub.py`, `tests/test_scrub.py`).
+- **The trace scrubber missed three spellings.** A directory named `pytest-of-<user>`, a path that pytest had abbreviated (`C:\\Users\\a...9\\repo`), and Python source with `as e:` before a line break, which looked like drive `e:`. Each time the leak check refused to save the trace first, and the rule was added afterwards (`agents/web/scrub.py`, `tests/test_scrub.py`).
 
 ## What this experiment does not show
 
