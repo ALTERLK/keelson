@@ -50,6 +50,7 @@ from agents.ui import (
     print_sub_agent_start,
     print_tool_call,
     print_tool_result,
+    print_warning,
     start_spinner,
     stop_spinner,
 )
@@ -130,9 +131,36 @@ KEEP_RECENT_RESULTS = 3
 LOOP_GUARD_WINDOW = 8
 LOOP_GUARD_SAME_NAME = 6
 LOOP_GUARD_DISTINCT_RESULTS = 3
+# The guard first asks. A model that has been asked this many times in one turn
+# and still requests tools is not going to stop by itself: the runtime ends the
+# turn with one tool-less call (see bench/casestudy, round 1).
+LOOP_GUARD_MAX_HITS = 3
 LOOP_GUARD_EXCLUDE = {
     "compact_context", "enter_plan_mode", "exit_plan_mode", "agent", "skill", "tool_search",
 }
+
+# A reply with no text and no tool call is a failed call, not "the model is done".
+EMPTY_REPLY_RETRIES = 2
+EMPTY_REPLY_NUDGE = (
+    "Your last reply was empty. Continue with the task: call a tool, or give your final answer."
+)
+
+
+def _guard_key(name: str, inp: dict | None) -> str:
+    """What the loop guard counts as "the same tool".
+
+    For every tool but the shell that is its name. The shell is a tool for
+    running other programs, so there it is the program and its first argument:
+    six `python -c` probes in a row must not block the `python -m pytest` that
+    follows them.
+    """
+    if name != "run_shell":
+        return name
+    words = str((inp or {}).get("command") or "").split()
+    if not words:
+        return name
+    head = words[:3] if len(words) > 2 and words[1] == "-m" else words[:2]
+    return "run_shell:" + " ".join(head).lower()
 
 
 def _result_key(s: object) -> str:
@@ -255,6 +283,7 @@ class Agent:
         self._last_tool_name: str = ""
         self._loop_window: list[dict[str, str]] = []   # recent {name, result_key} for the loop guard
         self._loop_guard_hits: int = 0
+        self._empty_replies: int = 0
 
         #构建系统提示词
         self._base_system_prompt = custom_system_prompt or build_system_prompt()
@@ -471,6 +500,7 @@ class Agent:
         self._turn_output_buffer = []
         self._loop_window = []
         self._loop_guard_hits = 0
+        self._empty_replies = 0
         coro = self._chat_openai(user_message) if self.use_openai else self._chat_anthropic(user_message)
         self._current_task = asyncio.create_task(coro)
         try:
@@ -568,7 +598,9 @@ class Agent:
         self._tool_error_streak = 0
         self._same_tool_repeat_count = 0
         self._last_tool_name = ""
-        self._loop_window = []
+        # The loop guard's window is deliberately left alone. A fold changes what
+        # the model can see, not what it has just been doing, and `compact_context`
+        # is a tool: clearing the window here let the model reset the guard itself.
 
     def _looks_like_tool_failure(self, tool_name: str, raw: str, result: str) -> bool:
         text = f"{raw}\n{result}".lower()
@@ -819,6 +851,9 @@ class Agent:
             return {"exceeded": True, "reason": f"Cost limit reached (${self._get_current_cost_usd():.4f} >= ${self.max_cost_usd})"}
         if self.max_turns is not None and self.current_turns >= self.max_turns:
             return {"exceeded": True, "reason": f"Turn limit reached ({self.current_turns} >= {self.max_turns})"}
+        if self._loop_guard_hits >= LOOP_GUARD_MAX_HITS:
+            return {"exceeded": True,
+                    "reason": f"Loop guard tripped {self._loop_guard_hits} times and the model kept calling tools"}
         return {"exceeded": False}
 
     _BUDGET_FINALIZE_PROMPT = (
@@ -826,6 +861,32 @@ class Agent:
         "best final answer from the information you already have, on a line "
         "starting with 'ANSWER:'."
     )
+
+    _GUARD_FINALIZE_PROMPT = (
+        "You kept repeating tool calls that returned nothing new, so the run is "
+        "being stopped here. Do not call any more tools. Say what you changed and "
+        "what is still unverified, then give your best final answer on a line "
+        "starting with 'ANSWER:'."
+    )
+
+    def _finalize_prompt(self) -> str:
+        return self._GUARD_FINALIZE_PROMPT if self._loop_guard_hits >= LOOP_GUARD_MAX_HITS else self._BUDGET_FINALIZE_PROMPT
+
+    def _should_retry_empty_reply(self, text: object) -> bool:
+        """True when the model said nothing at all and there are retries left.
+
+        Without this an empty completion ends the turn silently, as if the task
+        were finished (more-itertools #1308 in the case study: one tool call,
+        then an empty reply, then nothing).
+        """
+        if self._aborted or str(text or "").strip():
+            return False
+        if self._empty_replies >= EMPTY_REPLY_RETRIES:
+            print_warning(f"The model returned an empty reply {self._empty_replies + 1} times; ending the turn.")
+            return False
+        self._empty_replies += 1
+        print_info(f"The model returned an empty reply; asking again ({self._empty_replies}/{EMPTY_REPLY_RETRIES}).")
+        return True
 
     async def _finalize_on_budget_openai(self, pending_tool_calls: list | None) -> None:
         """Turn cap hit mid tool-call: satisfy the dangling tool_calls (else the
@@ -835,11 +896,11 @@ class Agent:
             if isinstance(tc, dict) and tc.get("type") == "function":
                 self._openai_messages.append({
                     "role": "tool", "tool_call_id": tc.get("id"),
-                    "content": "Tool execution skipped: step limit reached.",
+                    "content": "Tool execution skipped: the run is being stopped.",
                 })
         if not paths.env_flag("KEELSON_FINAL_ANSWER_ON_BUDGET", default=True):
             return
-        self._openai_messages.append({"role": "user", "content": self._BUDGET_FINALIZE_PROMPT})
+        self._openai_messages.append({"role": "user", "content": self._finalize_prompt()})
         base = {"model": self.model, "messages": _sanitize_for_utf8(self._openai_messages)}
         try:
             try:
@@ -862,7 +923,7 @@ class Agent:
     async def _finalize_on_budget_anthropic(self) -> None:
         if not paths.env_flag("KEELSON_FINAL_ANSWER_ON_BUDGET", default=True):
             return
-        self._anthropic_messages.append({"role": "user", "content": self._BUDGET_FINALIZE_PROMPT})
+        self._anthropic_messages.append({"role": "user", "content": self._finalize_prompt()})
         try:
             resp = await self._anthropic_client.messages.create(
                 model=self.model,
@@ -1284,7 +1345,7 @@ class Agent:
         # Loop guard — check before executing, but after the control tools above
         # (which legitimately repeat). Decided pre-await so speculative / gather
         # batches can't race past it.
-        guard = self._loop_guard_check(name)
+        guard = self._loop_guard_check(name, inp)
         if guard is not None:
             self._loop_guard_hits += 1
             events.emit(events.LOOP_GUARD, name=name, hits=self._loop_guard_hits)
@@ -1306,20 +1367,21 @@ class Agent:
                 except Exception:
                     pass
 
-        self._loop_window.append({"name": name, "result_key": _result_key(result)})
+        self._loop_window.append({"name": _guard_key(name, inp), "result_key": _result_key(result)})
         if len(self._loop_window) > LOOP_GUARD_WINDOW * 4:
             self._loop_window = self._loop_window[-LOOP_GUARD_WINDOW * 2:]
         return result
 
-    def _loop_guard_check(self, name: str) -> str | None:
+    def _loop_guard_check(self, name: str, inp: dict | None = None) -> str | None:
         """Nudge (and skip execution) when one tool name fills most of the recent
         window and its results have stopped diverging — the arg-fuzzing spiral."""
         if name in LOOP_GUARD_EXCLUDE:
             return None
         if not paths.env_flag("KEELSON_LOOP_GUARD", default=True):
             return None
+        key = _guard_key(name, inp)
         recent = self._loop_window[-LOOP_GUARD_WINDOW:]
-        same = [e for e in recent if e["name"] == name]
+        same = [e for e in recent if e["name"] == key]
         if len(same) < LOOP_GUARD_SAME_NAME:
             return None
         if len({e["result_key"] for e in same}) > LOOP_GUARD_DISTINCT_RESULTS:
@@ -1608,6 +1670,11 @@ class Agent:
 
             # 没有工具调用，说明模型已经给出最终回复，本轮对话结束。
             if not tool_uses:
+                said = "".join(getattr(b, "text", "") or "" for b in response.content if b.type == "text")
+                if self._should_retry_empty_reply(said):
+                    self._anthropic_messages.pop()
+                    self._anthropic_messages.append({"role": "user", "content": EMPTY_REPLY_NUDGE})
+                    continue
                 if not self.is_sub_agent:
                     print_cost(self.total_input_tokens, self.total_output_tokens)
                 break
@@ -1877,6 +1944,10 @@ class Agent:
             tool_calls = message.get("tool_calls")
 
             if not tool_calls:
+                if self._should_retry_empty_reply(message.get("content")):
+                    self._openai_messages.pop()          # an empty assistant message is not worth keeping
+                    self._openai_messages.append({"role": "user", "content": EMPTY_REPLY_NUDGE})
+                    continue
                 if not self.is_sub_agent:
                     print_cost(self.total_input_tokens, self.total_output_tokens)
                 break
