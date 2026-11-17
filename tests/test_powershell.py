@@ -63,6 +63,15 @@ def test_error_positions_point_at_the_users_command(tmp_path):
     assert platform_shell.tidy_powershell_errors(text, script) == "boom\nAt line 2 char:1\n+ throw 'boom'"
 
 
+def test_error_positions_are_tidied_when_powershell_prints_another_form_of_the_path():
+    # Python's TEMP in 8.3 form, PowerShell 7 printing the long form (seen on GitHub's Windows runners).
+    script = platform_shell.Path(r"C:\Users\RUNNER~1\AppData\Local\Temp\keelson-abc123.ps1")
+    text = ("Get-Item: C:\\Users\\runneradmin\\AppData\\Local\\Temp\\keelson-abc123.ps1:2\n"
+            "Line |\n   2 |  Get-Item 'C:\\nope'")
+    tidy = platform_shell.tidy_powershell_errors(text, script)
+    assert ".ps1" not in tidy and tidy.startswith("Get-Item: line 1")
+
+
 # ─── real runs (Windows) ────────────────────────────────────
 
 needs_powershell = pytest.mark.skipif(

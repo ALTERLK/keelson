@@ -114,11 +114,15 @@ def tidy_powershell_errors(text: str, script: Path) -> str:
     if not text:
         return text
 
-    def line_ref(match: re.Match) -> str:
-        return f"line {max(1, int(match.group(1)) - 1)}"   # the prelude is line 1
+    def replace(match: re.Match) -> str:
+        if match.group(1):
+            return f"line {max(1, int(match.group(1)) - 1)}"   # the prelude is line 1
+        return "<command>"
 
-    text = re.sub(re.escape(str(script)) + r":(\d+)", line_ref, text)
-    return text.replace(str(script), "<command>")
+    # Matched by file name, not full path: PowerShell may print the long form of a
+    # folder that Python's TEMP holds in 8.3 form (C:\Users\RUNNER~1\... on CI).
+    pattern = r"""[^\s'"]*""" + re.escape(script.name) + r"(?::(\d+))?"
+    return re.sub(pattern, replace, text)
 
 
 # ─── bash habits in a PowerShell command ────────────────────
