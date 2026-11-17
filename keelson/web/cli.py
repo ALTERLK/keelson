@@ -19,7 +19,7 @@ def _parse(argv: list[str]) -> argparse.Namespace:
                         help="Allow a non-loopback --host; only for containers that publish the port to loopback")
     parser.add_argument("--replay", action="store_true", help="Serve recorded traces only; no model is called")
     parser.add_argument("--no-open", action="store_true", help="Do not open a browser tab")
-    parser.add_argument("--no-record", action="store_true", help="Do not record this session to .keelson/traces/")
+    parser.add_argument("--no-record", action="store_true", help="Do not record this session (recordings go to ~/.keelson/projects/<hash>/traces/)")
     parser.add_argument("--accept-edits", action="store_true", help="Start in acceptEdits mode")
     parser.add_argument("--model", "-m", default=None)
     parser.add_argument("--api-base", default=None)
@@ -32,6 +32,7 @@ def _agent_factory(args: argparse.Namespace):
 
     A factory rather than one agent: every web session gets its own.
     """
+    from .. import models
     from ..agent import Agent
     from ..main import _load_env_file, _resolve_api_config
 
@@ -39,7 +40,7 @@ def _agent_factory(args: argparse.Namespace):
     api_base, api_key, use_openai = _resolve_api_config(args.api_base)
     if not api_key:
         return None, ""
-    model = args.model or os.environ.get("MODEL") or "deepseek-chat"
+    model = args.model or os.environ.get("MODEL") or models.DEFAULT_MODEL
 
     def build() -> Agent:
         return Agent(
@@ -83,7 +84,8 @@ def main(argv: list[str] | None = None) -> int:
 
     manager = SessionManager(
         factory,
-        traces_dir=paths.project_dir() / "traces",
+        traces_dir=paths.project_traces_dir(),
+        extra_trace_dirs=[paths.legacy_traces_dir()],
         record=not args.no_record,
     )
     url = f"http://{'localhost' if args.in_container else args.host}:{args.port}/"

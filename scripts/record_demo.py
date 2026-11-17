@@ -170,7 +170,7 @@ async def _run(name: str, scenario: dict, *, scripted: bool = False) -> Path:
         api_base, api_key, use_openai = _resolve_api_config(None)
         if not api_key:
             raise SystemExit("No API key configured (.env). Use --scripted to record without a model.")
-        model = os.environ.get("MODEL") or "deepseek-chat"
+        model = os.environ.get("MODEL") or "deepseek-flash"
 
     base = Path(tempfile.mkdtemp(prefix="keelson-demo-"))
     workspace = _make_workspace(scenario["task"], base)

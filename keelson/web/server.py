@@ -55,7 +55,7 @@ class CreateBody(BaseModel):
 
 
 def _trace_dirs() -> list[Path]:
-    return [data.DEMO_TRACES_DIR, paths.project_dir() / "traces"]
+    return [data.DEMO_TRACES_DIR, paths.project_traces_dir(), paths.legacy_traces_dir()]
 
 
 def _sse(event: events.Event) -> str:

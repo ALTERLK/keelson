@@ -557,7 +557,7 @@ def build_config(args: argparse.Namespace) -> RunConfig:
         split_name=split_name,
         split_path=args.split_file or "(in-memory)",
         task_ids=list(ids),
-        model=args.model or os.environ.get("MODEL") or "deepseek-chat",
+        model=args.model or os.environ.get("MODEL") or "deepseek-flash",
         api_base=api_base,
         use_openai=use_openai,
         concurrency=args.concurrency,

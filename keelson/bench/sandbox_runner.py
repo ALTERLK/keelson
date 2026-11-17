@@ -359,7 +359,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = SandboxRunConfig(
         arm=args.arm,
-        model=args.model or os.environ.get("MODEL") or "deepseek-chat",
+        model=args.model or os.environ.get("MODEL") or "deepseek-flash",
         api_base=api_base,
         use_openai=use_openai,
         max_turns=args.max_turns,

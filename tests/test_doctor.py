@@ -100,25 +100,60 @@ def test_render_env_uses_the_variables_each_protocol_reads(kind, expected):
     assert "MODEL=m1" in lines
 
 
-def test_init_writes_env_then_runs_the_checks(monkeypatch, tmp_path):
-    monkeypatch.chdir(tmp_path)
-    answers = iter(["1", "https://gateway.invalid/v1", "my-model"])
-    monkeypatch.setattr(builtins, "input", lambda prompt="": next(answers))
+def _run_init(monkeypatch, tmp_path, argv, answers):
+    project = tmp_path / "project"
+    project.mkdir(exist_ok=True)
+    monkeypatch.chdir(project)
+    replies = iter(answers)
+    monkeypatch.setattr(builtins, "input", lambda prompt="": next(replies))
     monkeypatch.setattr(doctor.getpass, "getpass", lambda prompt="": "secret-key")
     ran = []
     monkeypatch.setattr(doctor, "doctor_main", lambda argv=None: ran.append(argv) or 0)
+    assert doctor.init_main(argv) == 0
+    return project, ran
 
-    assert doctor.init_main([]) == 0
-    written = (tmp_path / ".env").read_text(encoding="utf-8")
+
+def test_init_writes_the_global_config_then_runs_the_checks(monkeypatch, tmp_path):
+    openai_preset = str(next(i for i, p in enumerate(doctor.PRESETS, 1) if p["kind"] == "openai"))
+    project, ran = _run_init(monkeypatch, tmp_path, [], [openai_preset, "https://gateway.invalid/v1", "my-model"])
+
+    written = (tmp_path / "home" / "config.env").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=secret-key" in written
     assert "OPENAI_BASE_URL=https://gateway.invalid/v1" in written
     assert "MODEL=my-model" in written
+    assert not (project / ".env").exists()      # nothing lands in the project folder
     assert ran == [[]]
 
 
+def test_init_project_writes_only_this_project(monkeypatch, tmp_path):
+    project, _ = _run_init(monkeypatch, tmp_path, ["--project"], ["1", "", ""])
+    written = (project / ".keelson" / "config.env").read_text(encoding="utf-8")
+    # The first preset is DeepSeek with a current model name.
+    assert "API=https://api.deepseek.com" in written
+    assert "MODEL=deepseek-flash" in written
+    assert not (tmp_path / "home" / "config.env").exists()
+
+
 def test_init_does_not_overwrite_without_consent(monkeypatch, tmp_path):
+    config = tmp_path / "home" / "config.env"
+    config.parent.mkdir(parents=True)
+    config.write_text("MODEL=keep-me\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    (tmp_path / ".env").write_text("MODEL=keep-me\n", encoding="utf-8")
     monkeypatch.setattr(builtins, "input", lambda prompt="": "")
     assert doctor.init_main([]) == 0
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == "MODEL=keep-me\n"
+    assert config.read_text(encoding="utf-8") == "MODEL=keep-me\n"
+
+
+async def test_a_retired_model_name_fails_without_a_request(monkeypatch):
+    monkeypatch.setattr(doctor, "_resolved_config", lambda: ("https://api.deepseek.com", "k" * 40, True, "deepseek-chat"))
+    pings = []
+
+    async def fake_ping(*args, **kwargs):
+        pings.append(args)
+        return True, "ok"
+
+    monkeypatch.setattr(doctor, "_ping", fake_ping)
+    checks = _by_id(await doctor.run_checks())
+    assert checks["model-name"]["status"] == doctor.FAIL
+    assert "deepseek-flash" in checks["model-name"]["detail"]
+    assert pings == []

@@ -7,10 +7,12 @@ import asyncio
 import os
 import signal
 import sys
+from pathlib import Path
 from urllib.parse import urlparse
 
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
 
+from . import models, paths
 from .agent import Agent
 from .memory import list_memories
 from .online_skill_eval import format_online_skill_eval_async
@@ -82,18 +84,42 @@ def _clean_env(value: str | None) -> str | None:
     return value or None
 
 
-def _load_env_file() -> None:
-    env_path = find_dotenv(usecwd=True)
-    if env_path:
-        load_dotenv(env_path, override=False)
-    else:
-        load_dotenv(override=False)
+_KEY_VARS = ("APIKEY", "KEELSON_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
+
+
+def _load_env_file() -> list[Path]:
+    """Load model settings. Earlier sources win; nothing overrides real env vars.
+
+    1. environment variables
+    2. ``<project>/.keelson/config.env``
+    3. ``~/.keelson/config.env`` (written by ``keelson init``)
+    4. ``./.env`` in the current folder only — the pre-0.4 location. It is not
+       searched for in parent folders any more: walking up could pick up some
+       other application's ``OPENAI_API_KEY``.
+    """
+    loaded: list[Path] = []
+    for candidate in (paths.project_config_file(), paths.user_config_file()):
+        if candidate.is_file():
+            load_dotenv(candidate, override=False)
+            loaded.append(candidate)
+    legacy = Path.cwd() / ".env"
+    if legacy.is_file():
+        had_key = any(_clean_env(os.environ.get(name)) for name in _KEY_VARS)
+        load_dotenv(legacy, override=False)
+        loaded.append(legacy)
+        if not had_key and any(_clean_env(os.environ.get(name)) for name in _KEY_VARS):
+            print("note: using the API key from ./.env; `keelson init` can save it to "
+                  f"{paths.user_config_file()} so every project can use it.", file=sys.stderr)
+    return loaded
 
 
 def _is_anthropic_compatible_base_url(base_url: str | None) -> bool:
     if not base_url:
         return False
     parsed = urlparse(base_url)
+    host = (parsed.hostname or "").lower()
+    if host == "anthropic.com" or host.endswith(".anthropic.com"):
+        return True
     path = (parsed.path or "").lower().rstrip("/")
     return path.endswith("/anthropic") or "/anthropic/" in path
 
@@ -109,8 +135,11 @@ def _resolve_api_config(cli_api_base: str | None) -> tuple[str | None, str | Non
 
     resolved_api_base = _clean_env(cli_api_base) or generic_api_base or openai_api_base or anthropic_api_base
 
+    # A base URL that only came from ANTHROPIC_BASE_URL speaks the Anthropic protocol.
+    only_anthropic_base = bool(anthropic_api_base) and resolved_api_base == anthropic_api_base and not (
+        _clean_env(cli_api_base) or generic_api_base or openai_api_base)
     if resolved_api_base:
-        if _is_anthropic_compatible_base_url(resolved_api_base):
+        if only_anthropic_base or _is_anthropic_compatible_base_url(resolved_api_base):
             return resolved_api_base, generic_api_key or anthropic_api_key or openai_api_key, False
         return resolved_api_base, generic_api_key or openai_api_key or anthropic_api_key, True
 
@@ -164,15 +193,16 @@ async def run_repl(agent: Agent) -> None:
     agent.set_plan_approval_fn(plan_approval_fn)
 
     sigint_count = 0
+    loop = asyncio.get_running_loop()
 
     def handle_sigint(sig, frame):
         nonlocal sigint_count
-        if agent._aborted is False and agent._output_buffer is not None:
-            # Agent is processing
-            agent.abort()
+        if agent.is_processing:
+            # Stop the running turn. Scheduled through the loop so a loop that is
+            # waiting on the network wakes up to see the cancellation.
+            loop.call_soon_threadsafe(agent.abort)
             print_interrupted()
             sigint_count = 0
-            print_user_prompt()
         else:
             sigint_count += 1
             if sigint_count >= 2:
@@ -395,7 +425,7 @@ def main() -> None:
         print("""
 Usage: keelson [options] [prompt]
        keelson web [--port 8765] [--replay] [--no-open]    start the web console
-       keelson init                                        write a .env interactively
+       keelson init [--project]                            save model + key (all projects / this one)
        keelson doctor [--offline]                          check that this install works
 
 Options:
@@ -403,9 +433,9 @@ Options:
   --plan              Plan mode: read-only, describe changes without executing
   --accept-edits      Auto-approve file edits, still confirm dangerous shell
   --dont-ask          Auto-deny anything needing confirmation (for CI)
-  --thinking          Enable extended thinking (Anthropic only)
-  --model, -m         Model to use (default: deepseek-chat, or MODEL env)
-  --api-base URL      Override API base URL from CLI or .env
+  --thinking          Turn on the model's thinking mode (Claude, DeepSeek)
+  --model, -m         Model to use (default: deepseek-flash, or MODEL from the config)
+  --api-base URL      Override the API base URL from the config
   --resume            Resume the last session
   --max-cost USD      Stop when estimated cost exceeds this amount
   --max-turns N       Stop after N agentic turns
@@ -434,7 +464,7 @@ Examples:
   keelson --yolo "run all tests and fix failures"
   keelson --plan "how would you refactor this?"
   keelson --max-cost 0.50 --max-turns 20 "implement feature X"
-  MODEL=deepseek-chat APIKEY=sk-xxx API=https://api.deepseek.com/anthropic keelson "hello"
+  MODEL=deepseek-flash APIKEY=sk-xxx API=https://api.deepseek.com keelson "hello"
   MODEL=gpt-4o OPENAI_API_KEY=sk-xxx OPENAI_BASE_URL=https://aihubmix.com/v1 keelson "hello"
   keelson --resume
   keelson  # starts interactive REPL
@@ -444,8 +474,10 @@ Examples:
     # 将命令行布尔开关统一转换成 Agent 内部使用的权限模式。
     permission_mode = _resolve_permission_mode(args)
     # 模型优先使用命令行参数，其次读取 .env 中的 MODEL，最后回落到默认模型。
-    model = args.model or os.environ.get("MODEL") or "deepseek-chat"
+    model = args.model or os.environ.get("MODEL") or models.DEFAULT_MODEL
     resolved_api_base, resolved_api_key, resolved_use_openai = _resolve_api_config(args.api_base)
+    if models.retirement_note(model):
+        print_warning(models.retirement_note(model) + " Run `keelson init` to switch.")
 
     # 没有可用 API key 时无法调用模型，直接提示配置方式并退出。
     if not resolved_api_key:

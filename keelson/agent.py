@@ -15,7 +15,7 @@ from typing import Any
 import anthropic
 import openai
 
-from keelson import events, paths, trace
+from keelson import events, models, paths, trace
 from keelson.mcp_client import McpManager
 from keelson.memory import MemoryPrefetch, format_memories_for_injection, start_memory_prefetch
 from keelson.prompt import build_system_prompt
@@ -100,19 +100,8 @@ async def _with_retry(fn, max_retries: int = 3):
             print_retry(attempt + 1, max_retries, reason)
             await asyncio.sleep(delay)
 
-MODEL_CONTEXT = {
-    "claude-opus-4-6": 200000,
-    "claude-sonnet-4-6": 200000,
-    "claude-sonnet-4-20250514": 200000,
-    "claude-haiku-4-5-20251001": 200000,
-    "claude-opus-4-20250514": 200000,
-    "gpt-4o": 128000,
-    "gpt-4o-mini": 128000,
-    "deepseek-chat":200000
-}
-
-def _get_context_windows(model:str)->int:
-    return MODEL_CONTEXT.get(model, 200000)
+def _get_context_windows(model: str) -> int:
+    return models.context_window(model)
 
 
 #多层级压缩常数
@@ -171,14 +160,25 @@ def _result_key(s: object) -> str:
 
 
 def _get_max_output_tokens(model: str) -> int:
-    m = model.lower()
-    if "opus-4-6" in m:
-        return 64000
-    if "sonnet-4-6" in m:
-        return 32000
-    if any(x in m for x in ("opus-4", "sonnet-4", "haiku-4")):
-        return 32000
-    return 16384
+    return models.max_output_tokens(model)
+
+
+# A reply cut off by max_tokens may end in half a tool call. It is never run;
+# the model is told and asked to take a smaller step, at most this many times a turn.
+TRUNCATION_RETRIES = 2
+TRUNCATED_TOOL_CALL_NOTE = (
+    "Your last reply hit the output limit before its tool call was complete, so the call was "
+    "NOT executed. Take a smaller step: write a large file in several parts, or edit one "
+    "section at a time."
+)
+
+def _assistant_message(content: str | None, tool_calls: list | None, reasoning: str | None) -> dict:
+    """An assistant turn as it goes back into the OpenAI-style history."""
+    message: dict[str, Any] = {"role": "assistant", "content": content or None, "tool_calls": tool_calls}
+    if reasoning:
+        message["reasoning_content"] = _safe_utf8_text(reasoning)
+    return message
+
 
 #转换tool的形式到openai
 def _to_openai_tools(tools: list[ToolDef]) -> list[dict]:
@@ -199,7 +199,7 @@ class Agent:
     def __init__(self,
                  *,
                  permission_mode:str="default",
-                 model:str="deepseek-chat",
+                 model:str=models.DEFAULT_MODEL,
                  api_base: str | None=None,
                  anthropic_base_url: str | None=None,
                  api_key: str | None=None,
@@ -215,6 +215,10 @@ class Agent:
         self.thinking = thinking
         self.model = model
         self.use_openai = bool(api_base)
+        # Kept so sub-agents talk to the same endpoint with the same key.
+        self._api_base = api_base
+        self._anthropic_base_url = anthropic_base_url
+        self._api_key = api_key
         self.is_sub_agent = is_sub_agent
         self.tools = custom_tools or tool_definitions
         # Optional out-of-band tool executors keyed by name (used by the
@@ -230,7 +234,9 @@ class Agent:
 
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        self.total_cache_hit_tokens = 0
         self.last_input_token_count = 0
+        self._truncations = 0
         self.current_turns = 0
         self.last_api_call_time = 0
 
@@ -323,6 +329,8 @@ class Agent:
 
     def _model_supports_thinking(self) -> bool:
         m = self.model.lower()
+        if models.is_deepseek(m):
+            return True
         if "claude-3-" in m or "3-5-" in m or "3-7-" in m:
             return False
         if "claude" in m and any(x in m for x in ("opus", "sonnet", "haiku")):
@@ -374,9 +382,12 @@ class Agent:
             model = judge_model
             async def _sq(system:str, user_message:str)->str:
 
+                # Side queries are short and must answer in text: DeepSeek's default
+                # thinking would spend the small max_tokens before any answer.
+                no_think = {"thinking": {"type": "disabled"}} if models.is_deepseek(model) else {}
                 resp = await client.messages.create(
                     model=model, max_tokens=max(1, int(max_tokens)), system=system,
-                messages=[{"role": "user", "content": user_message}],
+                messages=[{"role": "user", "content": user_message}], **no_think,
                 )
                 text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
                 if not text.strip():
@@ -393,6 +404,8 @@ class Agent:
             client = self._openai_client
             model = judge_model
             async def _sq_openai(system:str, user_message:str)->str:
+                no_think = ({"extra_body": {"thinking": {"type": "disabled"}}}
+                            if models.is_deepseek(model) else {})
                 resp = await client.chat.completions.create(
                     model=model,
                     max_tokens=max(1, int(max_tokens)),
@@ -400,7 +413,7 @@ class Agent:
                         {"role": "system", "content": system},
                         {"role": "user", "content": user_message},
                     ],
-
+                    **no_think,
                 )
                 if not resp.choices:
                     logging.warning("side_query returned no OpenAI-compatible choices: model=%s", model)
@@ -501,6 +514,7 @@ class Agent:
         self._loop_window = []
         self._loop_guard_hits = 0
         self._empty_replies = 0
+        self._truncations = 0
         coro = self._chat_openai(user_message) if self.use_openai else self._chat_anthropic(user_message)
         self._current_task = asyncio.create_task(coro)
         try:
@@ -532,6 +546,7 @@ class Agent:
         self._output_buffer = []
         prev_in = self.total_input_tokens
         prev_out = self.total_output_tokens
+        prev_hit = self.total_cache_hit_tokens
         await self.chat(prompt)
         text = "".join(self._output_buffer)
         self._output_buffer = None
@@ -539,7 +554,8 @@ class Agent:
             "text": text,
             "tokens":{
                 "input":self.total_input_tokens-prev_in,
-                "output":self.total_output_tokens-prev_out
+                "output":self.total_output_tokens-prev_out,
+                "cache_hit": self.total_cache_hit_tokens - prev_hit,
             },
         }
 
@@ -831,6 +847,7 @@ class Agent:
             self._openai_messages.append({"role": "system", "content":self._system_prompt})
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        self.total_cache_hit_tokens = 0
         self.last_input_token_count = 0
         print_info("Conversation cleared.")
 
@@ -843,7 +860,84 @@ class Agent:
 
     #获取当前的花费，
     def _get_current_cost_usd(self) -> float:
+        hit = min(self.total_cache_hit_tokens, self.total_input_tokens)
+        known = models.cost_usd(self.model, cache_hit=hit, cache_miss=self.total_input_tokens - hit,
+                                output=self.total_output_tokens)
+        if known is not None:
+            return known
+        # Price unknown: assume a mid-range frontier model, so a budget errs on the safe side.
         return (self.total_input_tokens / 1_000_000) * 3 + (self.total_output_tokens / 1_000_000) * 15
+
+    # ─── provider details shared by every request ───────────────
+
+    def _openai_request_extras(self) -> dict[str, Any]:
+        """max_tokens, plus DeepSeek's thinking switch (it defaults to on server-side)."""
+        extras: dict[str, Any] = {"max_tokens": _get_max_output_tokens(self.model)}
+        if models.is_deepseek(self.model):
+            mode = "disabled" if self._thinking_mode == "disabled" else "enabled"
+            extras["extra_body"] = {"thinking": {"type": mode}}
+        return extras
+
+    def _record_openai_usage(self, usage: dict | None) -> None:
+        if not usage:
+            return
+        self.total_input_tokens += usage.get("prompt_tokens") or 0
+        self.total_output_tokens += usage.get("completion_tokens") or 0
+        self.total_cache_hit_tokens += usage.get("cache_hit_tokens") or 0
+        self.last_input_token_count = usage.get("prompt_tokens") or 0
+
+    @staticmethod
+    def _openai_usage_dict(usage: Any) -> dict[str, int]:
+        """prompt/completion tokens and cache hits from an OpenAI-style usage object.
+
+        DeepSeek reports cache hits as prompt_cache_hit_tokens; OpenAI as
+        prompt_tokens_details.cached_tokens.
+        """
+        if usage is None:
+            return {"prompt_tokens": 0, "completion_tokens": 0, "cache_hit_tokens": 0}
+        hit = getattr(usage, "prompt_cache_hit_tokens", None)
+        if hit is None:
+            details = getattr(usage, "prompt_tokens_details", None)
+            hit = getattr(details, "cached_tokens", None) if details is not None else None
+        return {
+            "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+            "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+            "cache_hit_tokens": int(hit or 0),
+        }
+
+    def _anthropic_thinking_param(self, max_output: int) -> dict[str, Any]:
+        """The `thinking` request field, or nothing.
+
+        Claude: only when thinking is on. DeepSeek's Anthropic endpoint thinks by
+        default, so there it is always sent, explicitly on or off.
+        """
+        if self._thinking_mode in ("adaptive", "enabled"):
+            return {"thinking": {"type": "enabled", "budget_tokens": max(1024, max_output - 1)}}
+        if models.is_deepseek(self.model):
+            return {"thinking": {"type": "disabled"}}
+        return {}
+
+    def _record_anthropic_usage(self, usage: Any) -> None:
+        if usage is None:
+            return
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        # Anthropic's input_tokens excludes cached tokens; count the whole prompt.
+        prompt = (getattr(usage, "input_tokens", 0) or 0) + cache_read + cache_write
+        self.total_input_tokens += prompt
+        self.total_output_tokens += getattr(usage, "output_tokens", 0) or 0
+        self.total_cache_hit_tokens += cache_read
+        self.last_input_token_count = prompt
+
+    def _sub_agent_kwargs(self) -> dict[str, Any]:
+        """Endpoint, key and model for a sub-agent: the same ones this agent uses."""
+        return {
+            "model": self.model,
+            "api_base": self._api_base if self.use_openai else None,
+            "anthropic_base_url": self._anthropic_base_url if not self.use_openai else None,
+            "api_key": self._api_key,
+            "thinking": self.thinking,
+        }
 
     #检查预算
     def _check_budget(self) -> dict:
@@ -888,6 +982,17 @@ class Agent:
         print_info(f"The model returned an empty reply; asking again ({self._empty_replies}/{EMPTY_REPLY_RETRIES}).")
         return True
 
+    def _note_truncation(self) -> bool:
+        """A reply was cut off mid tool call. True: tell the model and go on; False: end the turn."""
+        if self._truncations >= TRUNCATION_RETRIES:
+            print_warning("The model's replies keep hitting the output limit; ending the turn. "
+                          "Raise KEELSON_MAX_OUTPUT_TOKENS or ask for a smaller step.")
+            return False
+        self._truncations += 1
+        print_info(f"The reply hit the output limit mid tool call; that call was not run "
+                   f"({self._truncations}/{TRUNCATION_RETRIES}).")
+        return True
+
     async def _finalize_on_budget_openai(self, pending_tool_calls: list | None) -> None:
         """Turn cap hit mid tool-call: satisfy the dangling tool_calls (else the
         history is malformed and the next request 400s) and make one tool-less
@@ -901,7 +1006,8 @@ class Agent:
         if not paths.env_flag("KEELSON_FINAL_ANSWER_ON_BUDGET", default=True):
             return
         self._openai_messages.append({"role": "user", "content": self._finalize_prompt()})
-        base = {"model": self.model, "messages": _sanitize_for_utf8(self._openai_messages)}
+        base = {"model": self.model, "messages": _sanitize_for_utf8(self._openai_messages),
+                **self._openai_request_extras()}
         try:
             try:
                 resp = await self._openai_client.chat.completions.create(
@@ -910,13 +1016,17 @@ class Agent:
                 )
             except Exception:  # some gateways reject tool_choice=none / need tools omitted
                 resp = await self._openai_client.chat.completions.create(**base)
-            txt = (resp.choices[0].message.content or "") if resp.choices else ""
+            msg = resp.choices[0].message if resp.choices else None
+            txt = (msg.content or "") if msg else ""
             if resp.usage:
-                self.total_input_tokens += resp.usage.prompt_tokens
-                self.total_output_tokens += resp.usage.completion_tokens
+                self._record_openai_usage(self._openai_usage_dict(resp.usage))
             if txt:
                 self._emit_text("\n" + str(txt))
-                self._openai_messages.append({"role": "assistant", "content": str(txt)})
+                final: dict[str, Any] = {"role": "assistant", "content": str(txt)}
+                reasoning = getattr(msg, "reasoning_content", None)
+                if reasoning:
+                    final["reasoning_content"] = _safe_utf8_text(reasoning)
+                self._openai_messages.append(final)
         except Exception as e:
             logging.warning("budget finalize (openai) failed: %s", e)
 
@@ -930,13 +1040,14 @@ class Agent:
                 max_tokens=_get_max_output_tokens(self.model),
                 system=_safe_utf8_text(self._system_prompt),
                 messages=_sanitize_for_utf8(self._anthropic_messages),
+                **self._anthropic_thinking_param(_get_max_output_tokens(self.model)),
             )
             txt = "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
-            self.total_input_tokens += resp.usage.input_tokens
-            self.total_output_tokens += resp.usage.output_tokens
+            self._record_anthropic_usage(resp.usage)
             if txt:
                 self._emit_text("\n" + txt)
-                self._anthropic_messages.append({"role": "assistant", "content": [{"type": "text", "text": txt}]})
+                kept = [self._block_to_dict(b) for b in resp.content if getattr(b, "type", "") != "tool_use"]
+                self._anthropic_messages.append({"role": "assistant", "content": kept})
         except Exception as e:
             logging.warning("budget finalize (anthropic) failed: %s", e)
 
@@ -1430,8 +1541,7 @@ class Agent:
 
             print_sub_agent_start("skill-fork", inp.get("skill_name", ""))
             sub_agent = Agent(
-                model=self.model,
-                api_base=str(self._openai_client.base_url) if self.use_openai and self._openai_client else None,
+                **self._sub_agent_kwargs(),
                 custom_system_prompt=result["prompt"],
                 custom_tools=tools,
                 is_sub_agent=True,
@@ -1553,8 +1663,7 @@ class Agent:
         config = get_sub_agent_config(agent_type)
 
         sub_agent = Agent(
-            model=self.model,
-            api_base=str(self._openai_client.base_url) if self.use_openai and self._openai_client else None,
+            **self._sub_agent_kwargs(),
             custom_system_prompt=config["system_prompt"],
             custom_tools=config["tools"],
             is_sub_agent=True,
@@ -1654,15 +1763,26 @@ class Agent:
 
             # 记录本次模型调用的耗时点和 token 消耗，用于成本展示与预算控制。
             self.last_api_call_time = time.time()
-            self.total_input_tokens += response.usage.input_tokens
-            self.total_output_tokens += response.usage.output_tokens
-            self.last_input_token_count = response.usage.input_tokens
+            self._record_anthropic_usage(response.usage)
             self._emit_usage()
 
             # Anthropic 的响应内容里可能混有 text block 和 tool_use block，这里只挑出工具调用。
             tool_uses = [b for b in response.content if b.type == "tool_use"]
 
-            # 把模型返回的所有 content block 写入消息历史，后续 tool_result 要与这些 tool_use 对应。
+            if tool_uses and getattr(response, "stop_reason", None) == "max_tokens":
+                # The last tool_use may hold half its JSON. Run nothing from this reply.
+                for task in early_executions.values():
+                    task.cancel()
+                kept = [self._block_to_dict(b) for b in response.content if b.type != "tool_use"]
+                if kept:
+                    self._anthropic_messages.append({"role": "assistant", "content": kept})
+                if not self._note_truncation():
+                    break
+                self._anthropic_messages.append({"role": "user", "content": TRUNCATED_TOOL_CALL_NOTE})
+                continue
+
+            # 把模型返回的所有 content block（含 thinking 及其签名）写入消息历史：
+            # 带工具的请求必须把 thinking 原样传回，否则 DeepSeek 返回 400。
             self._anthropic_messages.append({
                 "role": "assistant",
                 "content": [self._block_to_dict(b) for b in response.content],
@@ -1790,6 +1910,15 @@ class Agent:
         if block.type == "tool_use":
             raw_input = dict(block.input) if hasattr(block.input, 'items') else block.input
             return {"type": "tool_use", "id": _safe_utf8_text(block.id), "name": _safe_utf8_text(block.name), "input": _sanitize_for_utf8(raw_input)}
+        if block.type == "thinking":
+            # Sent back byte for byte: the signature covers the text.
+            out = {"type": "thinking", "thinking": getattr(block, "thinking", "") or ""}
+            signature = getattr(block, "signature", None)
+            if signature is not None:
+                out["signature"] = signature
+            return out
+        if block.type == "redacted_thinking":
+            return {"type": "redacted_thinking", "data": getattr(block, "data", "")}
         # Fallback
         return {"type": _safe_utf8_text(block.type)}
 
@@ -1800,14 +1929,12 @@ class Agent:
 
             create_params: dict[str, Any] = {
                 "model": self.model,
-                "max_tokens": max_output if self._thinking_mode != "disabled" else 16384,
+                "max_tokens": max_output,
                 "system": _safe_utf8_text(self._system_prompt),
                 "tools": _sanitize_for_utf8(get_active_tool_definitions(self.tools)),
                 "messages": _sanitize_for_utf8(self._anthropic_messages),
+                **self._anthropic_thinking_param(max_output),
             }
-            #如果开启了思考模式，就给 Anthropic 请求加上 thinking 参数。
-            if self._thinking_mode  in ("adaptive", "enabled"):
-                create_params["thinking"]={"type": "enabled", "budget_tokens": max_output - 1}
 
             first_text = True
 
@@ -1840,12 +1967,14 @@ class Agent:
                             self._emit_text(delta.text)
                         #第二种，thinking 内容：
                         #如果模型返回思考内容，也输出出来，并在开头加：[thinking]
+                        # 只显示在终端，不进输出缓冲：子 Agent 的结果和技能提取不该混入思考过程。
                         elif hasattr(delta, 'thinking'):
-                            if first_text:
-                                stop_spinner()
-                                self._emit_text("\n  [thinking] ")
-                                first_text = False
-                            self._emit_text(delta.thinking)
+                            if self._output_buffer is None:
+                                if first_text:
+                                    stop_spinner()
+                                    print_assistant_text("\n  [thinking] ")
+                                    first_text = False
+                                print_assistant_text(_safe_utf8_text(delta.thinking))
                         #第三种，工具参数 JSON 片段：工具调用的参数不是一次性返回，
                         # 而是一段一段返回，所以这里不断拼接到 input_json。
                         elif hasattr(delta, 'partial_json'):
@@ -1871,8 +2000,8 @@ class Agent:
                             })
                 final_message = await stream.get_final_message()
 
-            #过滤思考的message（因为 thinking 内容一般不应该进入历史消息，否则后续上下文会变大，也可能不符合 API 消息格式要求。）
-            final_message.content = [b for b in final_message.content if b.type != "thinking"]
+            # thinking 块不再过滤：带工具的对话里，Claude 和 DeepSeek 都要求把
+            # thinking（含签名）原样传回，否则下一次请求返回 400。
             return final_message
 #调用 _do()，如果遇到可重试错误，就由 _with_retry() 负责重试。
         return await _with_retry(_do)
@@ -1931,13 +2060,23 @@ class Agent:
             self.last_api_call_time = time.time()
 
             if response.get("usage"):
-                self.total_input_tokens += response["usage"]["prompt_tokens"]
-                self.total_output_tokens += response["usage"]["completion_tokens"]
-                self.last_input_token_count = response["usage"]["prompt_tokens"]
+                self._record_openai_usage(response["usage"])
                 self._emit_usage()
 
             choice = response.get("choices", [{}])[0] if response.get("choices") else {}
             message = choice.get("message", {})
+
+            if message.get("tool_calls") and choice.get("finish_reason") == "length":
+                # Cut off by max_tokens: the last call's arguments may be half a JSON
+                # document. Keep the text and reasoning, run nothing.
+                message = {k: v for k, v in message.items() if k != "tool_calls"}
+                if message.get("content") or message.get("reasoning_content"):
+                    message["content"] = message.get("content") or ""
+                    self._openai_messages.append(message)
+                if not self._note_truncation():
+                    break
+                self._openai_messages.append({"role": "user", "content": TRUNCATED_TOOL_CALL_NOTE})
+                continue
 
             self._openai_messages.append(message)
 
@@ -2061,6 +2200,7 @@ class Agent:
                 model=self.model,
                 tools=_sanitize_for_utf8(_to_openai_tools(get_active_tool_definitions(self.tools))),
                 messages=_sanitize_for_utf8(self._openai_messages),
+                **self._openai_request_extras(),
             )
 
         resp = await _with_retry(_do)
@@ -2077,13 +2217,9 @@ class Agent:
         if msg.content:
             self._emit_text('\n' + str(msg.content))
         return {
-            "choices": [{"message": {"role": "assistant",
-                                     "content": msg.content or None,
-                                     "tool_calls": tcs},
+            "choices": [{"message": _assistant_message(msg.content, tcs, getattr(msg, "reasoning_content", None)),
                          "finish_reason": ch.finish_reason or "stop"}],
-            "usage": ({"prompt_tokens": resp.usage.prompt_tokens,
-                       "completion_tokens": resp.usage.completion_tokens}
-                      if resp.usage else {"prompt_tokens": 0, "completion_tokens": 0}),
+            "usage": self._openai_usage_dict(resp.usage),
         }
 
     async def _call_openai_stream(self) -> dict:
@@ -2100,9 +2236,11 @@ class Agent:
                 messages=_sanitize_for_utf8(self._openai_messages),
                 stream=True,
                 stream_options={"include_usage": True},
+                **self._openai_request_extras(),
             )
 
             content = ""
+            reasoning = ""
             first_text = True
             tool_calls: dict[int, dict] = {}
             finish_reason = ""
@@ -2110,14 +2248,18 @@ class Agent:
 
             async for chunk in stream:
                 if chunk.usage:
-                    usage = {
-                        "prompt_tokens": chunk.usage.prompt_tokens,
-                        "completion_tokens": chunk.usage.completion_tokens,
-                    }
+                    usage = self._openai_usage_dict(chunk.usage)
 
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
+
+                # DeepSeek thinking mode (and some local servers) stream the reasoning
+                # separately. It is kept and sent back: DeepSeek rejects a tool
+                # conversation whose earlier reasoning_content is missing.
+                piece = getattr(delta, "reasoning_content", None) if delta else None
+                if piece:
+                    reasoning += _safe_utf8_text(piece)
 
                 if delta and delta.content:
                     if first_text:
@@ -2152,14 +2294,10 @@ class Agent:
 
             return {
                 "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": content or None,
-                        "tool_calls": assembled,
-                    },
+                    "message": _assistant_message(content, assembled, reasoning),
                     "finish_reason": finish_reason or "stop",
                 }],
-                "usage": usage or {"prompt_tokens": 0, "completion_tokens": 0},
+                "usage": usage or self._openai_usage_dict(None),
             }
 
         return await _with_retry(_do)

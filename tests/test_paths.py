@@ -24,8 +24,10 @@ def test_project_dir_is_dot_keelson(in_tmp_cwd):
     assert paths.project_dir() == in_tmp_cwd / ".keelson"
 
 
-def test_skill_evolution_follows_project_dir(in_tmp_cwd):
-    assert paths.skill_evolution_dir() == in_tmp_cwd / ".keelson" / "skill-evolution"
+def test_skill_evolution_follows_the_project(in_tmp_cwd):
+    # 0.4: runtime data lives under ~/.keelson/projects/<hash>/, one folder per project.
+    assert paths.skill_evolution_dir() == paths.project_state_dir() / "skill-evolution"
+    assert paths.project_state_dir() == paths.user_home() / "projects" / paths.project_hash(in_tmp_cwd)
 
 
 def test_env_flag_alias_and_precedence(monkeypatch):

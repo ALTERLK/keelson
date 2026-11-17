@@ -154,11 +154,14 @@ class SessionManager:
         agent_factory: Callable[[], Any] | None = None,
         *,
         traces_dir: Path | None = None,
+        extra_trace_dirs: list[Path] | None = None,
         record: bool = True,
         max_sessions: int = MAX_LIVE_SESSIONS,
     ) -> None:
         self._factory = agent_factory
         self._traces_dir = traces_dir
+        # Older recordings (e.g. the pre-0.4 in-project folder): read, never written.
+        self._read_dirs = [d for d in [traces_dir, *(extra_trace_dirs or [])] if d is not None]
         self._record = record and traces_dir is not None
         self._max = max_sessions
         self._sessions: dict[str, Session] = {}
@@ -208,7 +211,7 @@ class SessionManager:
     # -- saved sessions -----------------------------------------------------
 
     def _load_saved(self, trace_id: str) -> dict[str, Any]:
-        path = find_trace([self._traces_dir], trace_id) if self._traces_dir else None
+        path = find_trace(self._read_dirs, trace_id) if self._read_dirs else None
         if path is None:
             raise KeyError(trace_id)
         return load_trace(path)
@@ -239,13 +242,13 @@ class SessionManager:
 
     def history(self) -> list[dict[str, Any]]:
         """Recorded sessions of this workspace that are not currently live."""
-        if self._traces_dir is None:
+        if not self._read_dirs:
             return []
         from ..session import load_session
 
         live = {s.recorder.path.stem for s in self._sessions.values() if s.recorder}
         rows = []
-        for row in list_traces([self._traces_dir]):
+        for row in list_traces(self._read_dirs):
             if row["id"] in live:
                 continue
             row["resumable"] = self.live and load_session(self._agent_session_id(row["id"])) is not None

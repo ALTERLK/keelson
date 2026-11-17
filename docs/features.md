@@ -382,7 +382,7 @@ Set them in `.env` or in the environment.
 | `OPENAI_API_KEY` + `OPENAI_BASE_URL` | An OpenAI-compatible provider | — |
 | `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` | Anthropic | — |
 | `APIKEY` + `API` | Generic form; a base URL whose path contains `/anthropic` uses the Anthropic protocol, anything else the OpenAI protocol | — |
-| `MODEL` | Model name | `deepseek-chat` |
+| `MODEL` | Model name | `deepseek-flash` (`deepseek-chat` and `deepseek-reasoner` were retired on 2026-07-24) |
 | `KEELSON_HOME` | State directory (sessions, skills, memory) | `~/.keelson` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | Extract skills from feedback automatically | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | Write new skills at project or user level | `project` |

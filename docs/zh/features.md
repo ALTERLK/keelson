@@ -283,7 +283,7 @@ when_to_use: The user asks to commit, or asks for a commit message
 | `OPENAI_API_KEY` + `OPENAI_BASE_URL` | OpenAI 兼容服务 | — |
 | `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` | Anthropic 官方 | — |
 | `APIKEY` + `API` | 通用写法；地址路径含 `/anthropic` 走 Anthropic 协议，否则走 OpenAI 协议 | — |
-| `MODEL` | 模型名 | `deepseek-chat` |
+| `MODEL` | 模型名 | `deepseek-flash`（`deepseek-chat`、`deepseek-reasoner` 已于 2026-07-24 下线） |
 | `KEELSON_HOME` | 状态目录（会话、技能、记忆） | `~/.keelson` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | 自动从反馈中提取技能 | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | 新技能写到项目级还是用户级 | `project` |

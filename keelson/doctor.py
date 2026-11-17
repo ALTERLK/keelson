@@ -3,7 +3,8 @@
 ``doctor`` checks the things that most often stop a first run (Python version,
 a configured model, whether that model actually answers, the external tools
 the built-in tools shell out to) and says how to fix each one. ``init`` writes
-a ``.env`` interactively and then runs the same checks.
+``~/.keelson/config.env`` interactively (or, with ``--project``, the project's
+``.keelson/config.env``) and then runs the same checks.
 """
 
 from __future__ import annotations
@@ -16,11 +17,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from . import models, paths
+
 OK, WARN, FAIL = "ok", "warn", "fail"
 
 PRESETS: list[dict[str, str]] = [
-    {"name": "OpenAI-compatible endpoint (most gateways)", "base": "https://api.openai.com/v1", "model": "gpt-4o", "kind": "openai"},
-    {"name": "DeepSeek", "base": "https://api.deepseek.com/anthropic", "model": "deepseek-chat", "kind": "anthropic"},
+    {"name": "DeepSeek (deepseek-flash; deepseek-v4-pro for harder tasks)", "base": "https://api.deepseek.com",
+     "model": models.DEFAULT_MODEL, "kind": "generic"},
+    {"name": "OpenAI-compatible endpoint (most gateways, local models)", "base": "https://api.openai.com/v1", "model": "gpt-4o", "kind": "openai"},
     {"name": "Anthropic", "base": "https://api.anthropic.com", "model": "claude-sonnet-4-5", "kind": "anthropic-native"},
     {"name": "Other Anthropic-compatible endpoint", "base": "https://your-host/anthropic", "model": "", "kind": "anthropic"},
 ]
@@ -43,18 +47,21 @@ def _resolved_config() -> tuple[str | None, str | None, bool, str]:
 
     _load_env_file()
     base, key, use_openai = _resolve_api_config(None)
-    return base, key, use_openai, os.environ.get("MODEL") or "deepseek-chat"
+    return base, key, use_openai, os.environ.get("MODEL") or models.DEFAULT_MODEL
 
 
 async def _ping(base: str | None, key: str, use_openai: bool, model: str, timeout: float = 20.0) -> tuple[bool, str]:
     """One minimal request, to tell 'configured' apart from 'actually works'."""
+    # DeepSeek thinks by default; 16 tokens of thinking would leave no answer.
+    no_thinking = models.is_deepseek(model)
     try:
         if use_openai:
             import openai
 
             client = openai.AsyncOpenAI(base_url=base, api_key=key, timeout=timeout, max_retries=0)
+            extra = {"extra_body": {"thinking": {"type": "disabled"}}} if no_thinking else {}
             reply = await client.chat.completions.create(
-                model=model, messages=[{"role": "user", "content": "Reply with: ok"}], max_tokens=16,
+                model=model, messages=[{"role": "user", "content": "Reply with: ok"}], max_tokens=16, **extra,
             )
             text = reply.choices[0].message.content or ""
         else:
@@ -63,8 +70,9 @@ async def _ping(base: str | None, key: str, use_openai: bool, model: str, timeou
             kwargs: dict[str, Any] = {"api_key": key, "timeout": timeout, "max_retries": 0}
             if base:
                 kwargs["base_url"] = base
+            extra = {"thinking": {"type": "disabled"}} if no_thinking else {}
             reply = await anthropic.AsyncAnthropic(**kwargs).messages.create(
-                model=model, max_tokens=16, messages=[{"role": "user", "content": "Reply with: ok"}],
+                model=model, max_tokens=16, messages=[{"role": "user", "content": "Reply with: ok"}], **extra,
             )
             text = "".join(getattr(block, "text", "") for block in reply.content)
         return True, f"{model} answered ({text.strip()[:20] or 'empty reply'})"
@@ -90,16 +98,20 @@ async def run_checks(*, ping_model: bool = True) -> list[dict[str, str]]:
         protocol = "OpenAI-compatible" if use_openai else "Anthropic-compatible"
         checks.append(_check("key", "API key", OK, f"configured ({len(key)} characters)"))
         checks.append(_check("endpoint", "Endpoint", OK, f"{base or 'provider default'} · {protocol} · model {model}"))
-        if ping_model:
+        retired = models.retirement_note(model)
+        if retired:
+            checks.append(_check("model-name", "Model name", FAIL, retired,
+                                 "Run `keelson init` to switch, or set MODEL in the config file."))
+        elif ping_model:
             reachable, detail = await _ping(base, key, use_openai, model)
             checks.append(_check(
                 "model", "Model answers", OK if reachable else FAIL, detail,
-                "" if reachable else "Check the key, the base URL and the model name in .env. "
+                "" if reachable else "Check the key, the base URL and the model name (run `keelson init` to change them). "
                                      "A base URL whose path contains /anthropic uses the Anthropic protocol.",
             ))
     else:
         checks.append(_check("key", "API key", FAIL, "not configured — the console will run in replay mode only",
-                             "Run `keelson init`, or copy .env.example to .env and fill in a key."))
+                             "Run `keelson init` to save a key for every project."))
 
     for tool, why, required in (
         ("git", "used by the built-in tools and the benchmarks", True),
@@ -172,21 +184,25 @@ def doctor_main(argv: list[str] | None = None) -> int:
 
 
 def render_env(preset: dict[str, str], base: str, model: str, key: str) -> str:
-    """The .env text for one provider choice."""
+    """The config.env text for one provider choice."""
     lines = ["# Written by `keelson init`. Keep this file out of version control."]
     if preset["kind"] == "openai":
         lines += [f"OPENAI_API_KEY={key}", f"OPENAI_BASE_URL={base}"]
     elif preset["kind"] == "anthropic-native":
         lines += [f"ANTHROPIC_API_KEY={key}", f"ANTHROPIC_BASE_URL={base}"]
-    else:
+    else:  # "generic" and "anthropic": the base URL decides the protocol
         lines += [f"APIKEY={key}", f"API={base}"]
     lines.append(f"MODEL={model}")
     return "\n".join(lines) + "\n"
 
 
 def init_main(argv: list[str] | None = None) -> int:
-    env_path = Path.cwd() / ".env"
-    print("\nKeelson setup — this writes a .env file in the current folder.\n")
+    # Default: one global file, so every project can use the same key.
+    # `keelson init --project` writes <project>/.keelson/config.env instead.
+    project_only = "--project" in (argv or [])
+    env_path = paths.project_config_file() if project_only else paths.user_config_file()
+    scope = "this project only" if project_only else "every project on this computer"
+    print(f"\nKeelson setup — this writes {_display_path(env_path)} ({scope}).\n")
     if env_path.exists():
         answer = input(f"{env_path} already exists. Overwrite it? [y/N] ").strip().lower()
         if not answer.startswith("y"):
@@ -211,8 +227,9 @@ def init_main(argv: list[str] | None = None) -> int:
         print("No key entered; nothing written.")
         return 2
 
+    env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.write_text(render_env(preset, base, model, key), encoding="utf-8", newline="\n")
-    print(f"\nWrote {env_path}. Checking that it works...")
+    print(f"\nWrote {_display_path(env_path)}. Checking that it works...")
     # Variables from an older .env may still be in this process; start clean.
     for name in ("APIKEY", "API", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
                  "KEELSON_API_KEY", "KEELSON_API_BASE", "MODEL"):

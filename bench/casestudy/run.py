@@ -349,7 +349,7 @@ async def _agent_main(case: dict, work: Path) -> None:
     api_base, api_key, use_openai = _resolve_api_config(None)
     if not api_key:
         raise SystemExit("No API key configured (.env).")
-    model = os.environ.get("MODEL") or "deepseek-chat"
+    model = os.environ.get("MODEL") or "deepseek-flash"
 
     os.environ["KEELSON_HOME"] = str(directory / "home")       # no skills or memory from this machine
     os.environ["KEELSON_AUTO_SKILL_EVOLUTION"] = "0"

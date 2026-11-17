@@ -9,17 +9,16 @@ import locale
 import os
 import re
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
 
-from tqdm.utils import IS_WIN
-
 from keelson import events, paths
 from keelson.memory import get_memory_dir
+from keelson.platforms import IS_WINDOWS as IS_WIN
+from keelson.platforms import kill_process_tree
 
 ToolDef = dict  # Anthropic tool schema dict
 #权限模式
@@ -585,23 +584,7 @@ def _format_shell_result(returncode: int, stdout: str, stderr: str) -> str:
     return stdout or "(no output)"
 
 
-def _kill_process_tree(pid: int) -> None:
-    """Stop a shell *and everything it started*.
-
-    Killing only the shell would leave its children running (``cmd /c pytest``
-    dies, pytest does not). Windows: ``taskkill /T`` walks the tree. POSIX: the
-    shell was started in its own session, so its process group is the tree.
-    """
-    try:
-        if IS_WIN:
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True, timeout=10, check=False,
-            )
-        else:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-    except (OSError, subprocess.SubprocessError):
-        pass  # already gone
+_kill_process_tree = kill_process_tree
 
 
 class _OutputRelay:

@@ -9,17 +9,23 @@ User-level state lives under one root:
 
 * ``$KEELSON_HOME`` if set, else ``~/.keelson``
 
+    ├── config.env                  global model / key settings (`keelson init`)
+    ├── settings.json               global permission rules
     ├── skills/                     project-independent skills
-    ├── keelson/                     custom sub-agent definitions
+    ├── agents/                     custom sub-agent definitions
     ├── plans/                      plan-mode plan files
     ├── sessions/                   saved sessions (for --resume)
     ├── tool-results/               spilled large tool outputs
-    └── memory/projects/<hash>/memory/   long-term memory, per project
+    ├── memory/projects/<hash>/memory/   long-term memory, per project
+    └── projects/<hash>/            runtime data for one project: traces,
+                                    folded memory, skill-evolution records,
+                                    checkpoints, task ledger, usage
 
-Project-level state lives under ``<cwd>/.keelson/``:
-
-    ├── skills/  keelson/  rules/  sessions/  skill-evolution/
-    └── settings.json
+Project-level files under ``<cwd>/.keelson/`` are only things a person writes
+or reviews: ``config.env``, ``settings.json``, ``settings.local.json``,
+``skills/``, ``agents/``, ``rules/``. Runtime data used to live there too; the
+``*_dir`` helpers below still use the old folder when it already exists and
+the new one does not, so nobody's history disappears.
 """
 
 from __future__ import annotations
@@ -45,6 +51,12 @@ __all__ = [
     "project_rules_dir",
     "project_sessions_dir",
     "skill_evolution_dir",
+    "project_state_dir",
+    "project_traces_dir",
+    "legacy_traces_dir",
+    "user_config_file",
+    "project_config_file",
+    "project_local_settings_file",
     "env_flag",
     "env_value",
 ]
@@ -76,6 +88,11 @@ def user_agents_dir() -> Path:
 
 def user_settings_file() -> Path:
     return user_home() / "settings.json"
+
+
+def user_config_file() -> Path:
+    """Global ``KEY=value`` settings written by ``keelson init``."""
+    return user_home() / "config.env"
 
 
 def plans_dir() -> Path:
@@ -114,16 +131,48 @@ def project_settings_file(cwd: Path | None = None) -> Path:
     return project_dir(cwd) / "settings.json"
 
 
+def project_local_settings_file(cwd: Path | None = None) -> Path:
+    """Personal per-project rules ("always allow in this project"); not meant to be committed."""
+    return project_dir(cwd) / "settings.local.json"
+
+
+def project_config_file(cwd: Path | None = None) -> Path:
+    return project_dir(cwd) / "config.env"
+
+
 def project_rules_dir(cwd: Path | None = None) -> Path:
     return project_dir(cwd) / "rules"
 
 
+def project_state_dir(cwd: Path | None = None) -> Path:
+    """Runtime data for one project, kept outside the project itself."""
+    base = (cwd or Path.cwd())
+    return user_home() / "projects" / project_hash(base)
+
+
+def _prefer_existing(new: Path, legacy: Path) -> Path:
+    # Keep using the pre-0.4 in-project folder if that is where the data is.
+    if legacy.exists() and not new.exists():
+        return legacy
+    return new
+
+
 def project_sessions_dir(cwd: Path | None = None) -> Path:
-    return project_dir(cwd) / "sessions"
+    return _prefer_existing(project_state_dir(cwd) / "sessions", project_dir(cwd) / "sessions")
 
 
 def skill_evolution_dir(cwd: Path | None = None) -> Path:
-    return project_dir(cwd) / "skill-evolution"
+    return _prefer_existing(project_state_dir(cwd) / "skill-evolution", project_dir(cwd) / "skill-evolution")
+
+
+def project_traces_dir(cwd: Path | None = None) -> Path:
+    """Where the web console records this project's sessions."""
+    return project_state_dir(cwd) / "traces"
+
+
+def legacy_traces_dir(cwd: Path | None = None) -> Path:
+    """Pre-0.4 location; still read so older recordings stay visible."""
+    return project_dir(cwd) / "traces"
 
 
 # ------------------------------------------------------------ env var access ---

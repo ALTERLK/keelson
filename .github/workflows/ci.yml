@@ -7,10 +7,17 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Windows is the primary platform (shell, encodings, line endings);
+    # Ubuntu keeps the core honest about not depending on Windows.
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [windows-latest, ubuntu-latest]
         python-version: ["3.11", "3.12"]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
