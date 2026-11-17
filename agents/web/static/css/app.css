@@ -496,6 +496,9 @@ a { color: var(--brand); }
 .case-diffs .cards-2 { margin-top: 10px; align-items: start; }
 .case-diffs h4 { margin-bottom: 6px; }
 .case-diffs .diff { max-height: 360px; overflow: auto; }
+.rounds .round-cost { margin-left: 10px; color: var(--muted); font-size: 12.5px; }
+.rounds tr.total td { border-bottom: 0; padding-top: 10px; }
+.rounds-log { margin-top: 12px; font-size: 13px; color: var(--text-2); }
 .method { margin: 0 0 10px; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; color: var(--text-2); }
 
 /* charts & tables */
