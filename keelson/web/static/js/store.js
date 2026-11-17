@@ -23,6 +23,7 @@ export function initialState() {
     turn: 0,            // index of the turn in progress (or the next one)
     turnStarts: [],     // time each turn began, by index
     info: null,         // the session's own description (model, permission mode, ...)
+    plan: [],           // the task ledger's plan: [{step, status}]
     nextId: 1,
   };
 }
@@ -155,10 +156,30 @@ const handlers = {
     note(state, event, `loop guard: ${event.data.name}`, "warn");
   },
 
+  scope(state, event) {
+    const { data } = event;
+    closeAssistant(state);
+    const reason = data.reason ? ` — ${data.reason}` : "";
+    push(state, { kind: "marker", tone: "info", key: "scope", text: `scope: ${(data.paths || []).join(", ")}${reason}` });
+    note(state, event, "scope declared", "info");
+  },
+
+  task(state, event) {
+    const { data } = event;
+    const marks = { done: "✓", in_progress: "▸", blocked: "!", pending: "○" };
+    state.plan = data.plan || [];
+    const lines = state.plan.map((s) => `${marks[s.status] || "○"} ${s.step}`);
+    if (data.decision) lines.push(`decision: ${data.decision}`);
+    closeAssistant(state);
+    if (lines.length) push(state, { kind: "notice", level: "info", text: ["Plan", ...lines].join("\n") });
+    note(state, event, "plan updated", "info");
+  },
+
   context_fold(state, event) {
     state.counts.folds++;
     state.stage = "fold";
-    push(state, { kind: "marker", tone: "info", key: "context_fold", text: `context folded (${event.data.trigger})` });
+    const kept = event.data.kept ? ` · kept word for word: ${event.data.kept}` : "";
+    push(state, { kind: "marker", tone: "info", key: "context_fold", text: `context folded (${event.data.trigger})${kept}` });
     note(state, event, "context folded", "info");
   },
 
@@ -202,6 +223,8 @@ const handlers = {
     const extra = [
       ...(data.weakened || []).map((w) => `tests weakened — ${w}`),
       ...(data.unproven || []).map((c) => `unproven claim — “${c}”`),
+      ...((data.out_of_scope || []).length ? [`changed outside the request's scope — ${data.out_of_scope.join(", ")}`] : []),
+      ...(data.warnings || []),
     ];
     push(state, { kind: "notice", level, text: [`${head}: ${data.detail || ""}`, ...extra].join("\n") });
     note(state, event, head, data.status === "passed" ? "" : data.status === "failed" ? "bad" : "warn");

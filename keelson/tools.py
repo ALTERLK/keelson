@@ -24,7 +24,8 @@ ToolDef = dict  # Anthropic tool schema dict
 #权限模式
 PermissionMode = str  # "default" | "plan" | "acceptEdits" | "bypassPermissions" | "dontAsk"
 
-READ_TOOLS = {"read_file", "list_files", "grep_search", "compact_context"}
+# update_task and declare_scope only record things in Keelson's own state: no files, nothing to undo.
+READ_TOOLS = {"read_file", "list_files", "grep_search", "compact_context", "update_task", "declare_scope"}
 EDIT_TOOLS = {"write_file", "edit_file", "delete_files", "skill_evolve", "skill_create"}
 
 
@@ -227,6 +228,46 @@ tool_definitions: list[ToolDef] = [
                 "type": {"type": "string", "enum": ["explore", "plan", "general"], "description": "Agent type. Default: general"},
             },
             "required": ["description", "prompt"],
+        },
+    },
+    # ─── task ledger and scope (handled in agent.py) ────────────
+    {
+        "name": "update_task",
+        "description": "Record the plan for the current work (the whole list of steps, each with a status) and, "
+                       "optionally, a key decision. Keelson keeps this, with the user's constraints, when the "
+                       "conversation is folded, and shows it to the user.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "type": "array",
+                    "description": "All steps, in order. Replaces the previous plan.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "step": {"type": "string"},
+                            "status": {"type": "string", "enum": ["pending", "in_progress", "done", "blocked"]},
+                        },
+                        "required": ["step"],
+                    },
+                },
+                "decision": {"type": "string", "description": "A decision worth remembering, in one sentence."},
+            },
+        },
+    },
+    {
+        "name": "declare_scope",
+        "description": "Declare the files or folders (globs allowed) you intend to change for the current "
+                       "request, and why. Adds to the scope; the user sees it. Changing a file outside the scope "
+                       "asks the user first.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "paths": {"type": "array", "items": {"type": "string"},
+                          "description": "Files, folders or globs, relative to the project"},
+                "reason": {"type": "string", "description": "Why these, in one sentence"},
+            },
+            "required": ["paths"],
         },
     },
     # ─── Tool search (deferred tool loader) ─────────────────────
@@ -1024,6 +1065,7 @@ def _ask(mode: str, tool_name: str, inp: dict, reason: str, *, rules: list[str] 
 
 _KNOWN_TOOLS = READ_TOOLS | EDIT_TOOLS | {
     "run_shell", "skill", "agent", "tool_search", "enter_plan_mode", "exit_plan_mode", "compact_context",
+    "update_task", "declare_scope",
 }
 
 

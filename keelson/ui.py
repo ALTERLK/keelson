@@ -202,6 +202,8 @@ class TerminalRenderer:
             events.CONFIRM_PROMPT: self._on_confirm_prompt,
             events.LOOP_GUARD: self._on_loop_guard,
             events.VERIFY: self._on_verify,
+            events.SCOPE: self._on_scope,
+            events.TASK: self._on_task,
             events.CONTEXT_FOLD: self._on_context_fold,
             events.USAGE: self._on_usage,
             events.SKILL_EVOLUTION: self._on_skill_evolution,
@@ -340,6 +342,31 @@ class TerminalRenderer:
             console.print(Text(f"    ! tests weakened — {item}", style=WARN))
         for claim in data.get("unproven") or []:
             console.print(Text(f"    ! unproven claim — “{claim}” (no passing check backs it)", style=WARN))
+        out = data.get("out_of_scope") or []
+        if out:
+            console.print(Text("    ! changed outside the request's scope — " + ", ".join(out), style=WARN))
+        for warning in data.get("warnings") or []:
+            console.print(Text(f"    ! {warning}", style=WARN))
+
+    def _on_scope(self, data: dict) -> None:
+        if _QUIET:
+            return
+        reason = data.get("reason") or ""
+        console.print(Text("  ◇ scope: " + ", ".join(data.get("paths") or []) + (f"  — {reason}" if reason else ""),
+                           style=ACCENT))
+
+    def _on_task(self, data: dict) -> None:
+        if _QUIET:
+            return
+        marks = {"done": ("✓", OK), "in_progress": ("▸", ACCENT), "blocked": ("!", WARN), "pending": ("○", MUTED)}
+        plan = data.get("plan") or []
+        if plan:
+            console.print(Text("  Plan", style="bold"))
+        for step in plan:
+            mark, style = marks.get(step.get("status"), ("○", MUTED))
+            console.print(Text(f"    {mark} {step.get('step', '')}", style=style))
+        if data.get("decision"):
+            console.print(Text(f"    decision: {data['decision']}", style=MUTED))
 
     def _on_loop_guard(self, data: dict) -> None:
         if _QUIET:
@@ -350,6 +377,8 @@ class TerminalRenderer:
         if _QUIET:
             return
         console.print(Text(f"\n  ⇲ context folded ({data.get('trigger', 'manual')})", style=ACCENT))
+        if data.get("kept"):
+            console.print(Text(f"    kept word for word: {data['kept']}", style=MUTED))
 
     def _on_skill_evolution(self, data: dict) -> None:
         action = data.get("action", "")
@@ -398,6 +427,9 @@ class TerminalRenderer:
             parts.append(f"{_fmt_count(tin)} in / {_fmt_count(tout)} out")
             cost = usage.get("cost_usd")
             parts.append(f"est. ${float(cost) if cost is not None else estimate_cost_usd(tin, tout):.4f}")
+            hit = usage.get("cache_hit_tokens")
+            if hit is not None and tin > 0:
+                parts.append(f"cache {int(hit) / tin:.0%}")
         if self._turn_started is not None:
             parts.append(f"{time.time() - self._turn_started:.1f}s")
             self._turn_started = None

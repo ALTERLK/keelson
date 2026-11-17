@@ -15,11 +15,13 @@ from typing import Any
 import anthropic
 import openai
 
-from keelson import checkpoints, events, models, paths, safety, trace
+from keelson import checkpoints, events, models, paths, safety, trace, usage
+from keelson import ledger as ledger_mod
+from keelson import scope as scope_mod
 from keelson import verify as verify_mod
 from keelson.mcp_client import McpManager
 from keelson.memory import MemoryPrefetch, format_memories_for_injection, start_memory_prefetch
-from keelson.prompt import build_system_prompt
+from keelson.prompt import build_system_prompt, get_git_context
 from keelson.session import save_folded_session_memory, save_session
 from keelson.session_memory import (
     FOLD_SESSION_MEMORY_SYSTEM,
@@ -284,6 +286,13 @@ class Agent:
         self._weakening_nudged = False
         self._task_about_tests = False
         self.last_outcome: verify_mod.Outcome | None = None
+        # Task ledger (keelson/ledger.py) and the current request's scope (keelson/scope.py).
+        self._ledger = ledger_mod.Ledger()
+        self._scope_reasons: list[str] = []
+        self._out_of_scope: list[str] = []
+        self._turn_request = ""
+        self._last_git_note: str | None = None
+        self._fold_hints: set[str] = set()     # fold-hint conditions already reported (see _maybe_fold_hint)
 
 
         # 计划模式”（Plan Mode）状态的变量
@@ -534,6 +543,12 @@ class Agent:
                 print_error(f"MCP init failed: {e}")
 
         original_user_message = _safe_utf8_text(user_message)
+        if not self.is_sub_agent:
+            over = usage.over_daily_budget()
+            if over:
+                print_warning(over)
+                print_divider()
+                return
         ready_skill_extraction_window: dict[str, Any] | None = None
         self._last_retrieved_skill_reference = None
         self._last_retrieved_skill_hits = []
@@ -551,6 +566,17 @@ class Agent:
             # What happened between turns (an /undo, say), so the model does not work from stale file contents.
             user_message = "\n".join(self._pending_notes) + "\n\n" + user_message
             self._pending_notes = []
+
+        if not self.is_sub_agent:
+            self._start_request(original_user_message)
+            if self._custom_system_prompt is None:
+                # Git status rides on the user message, not the system prompt, so the cached prefix holds.
+                git = await asyncio.to_thread(get_git_context)
+                if git and git != self._last_git_note:
+                    self._last_git_note = git
+                    user_message = f"<git-status>\n{git}\n</git-status>\n\n{user_message}"
+        turn_start_usage = (self.total_input_tokens, self.total_output_tokens, self.total_cache_hit_tokens,
+                            self._get_current_cost_usd())
 
         self._aborted = False
         self._turn_output_buffer = []
@@ -588,8 +614,96 @@ class Agent:
                 retrieved_reference=self._last_retrieved_skill_reference,
             )
         if not self.is_sub_agent:
+            self._finish_request(turn_start_usage)
             print_divider()
             self._auto_save()
+
+    # ── task ledger and scope (keelson/ledger.py, keelson/scope.py) ──
+
+    def _start_request(self, text: str) -> None:
+        """A new request: note what the user said, and set its scope to the files they @-mentioned."""
+        self._ledger.note_user_message(text)
+        self._turn_request = text
+        self._ledger.scope = scope_mod.mentioned_paths(text)
+        self._scope_reasons = ["mentioned by you"] if self._ledger.scope else []
+        self._out_of_scope = []
+        if self._ledger.scope:
+            events.emit(events.SCOPE, paths=list(self._ledger.scope), reason="mentioned by you", added=True)
+
+    def _finish_request(self, start: tuple[int, int, int, float]) -> None:
+        changed = self.last_outcome.changed if self.last_outcome else list(dict.fromkeys(self._evidence.tool_paths))
+        self._ledger.note_files(changed)
+        if self.last_outcome is not None:
+            self._ledger.note_verify(self.last_outcome.status, self.last_outcome.detail)
+        ledger_mod.save(self._ledger, self.session_id)
+        usage.record(session_id=self.session_id, model=self.model,
+                     input_tokens=self.total_input_tokens - start[0], output_tokens=self.total_output_tokens - start[1],
+                     cache_hit_tokens=self.total_cache_hit_tokens - start[2],
+                     cost_usd=max(0.0, self._get_current_cost_usd() - start[3]))
+
+    @property
+    def ledger(self) -> ledger_mod.Ledger:
+        return self._ledger
+
+    def reset_ledger(self) -> None:
+        self._ledger = ledger_mod.Ledger()
+
+    def _scope_active(self) -> bool:
+        return (bool(self._ledger.scope) and not self.is_sub_agent
+                and self.permission_mode not in ("bypassPermissions", "plan")
+                and paths.env_flag("KEELSON_SCOPE_GUARD", default=True))
+
+    @staticmethod
+    def _edit_targets(name: str, inp: dict) -> list[str]:
+        if name == "delete_files":
+            raw = inp.get("paths") or []
+            return [str(t) for t in (raw if isinstance(raw, list) else [raw]) if t]
+        return [str(inp["file_path"])] if inp.get("file_path") else []
+
+    def _scope_guard(self, name: str, inp: dict) -> dict | None:
+        """Changing a file outside the current request's scope needs a person's OK."""
+        if name not in ("write_file", "edit_file", "delete_files") or not self._scope_active():
+            return None
+        out = scope_mod.outside(self._edit_targets(name, inp), self._ledger.scope)
+        if not out or "keelson(out-of-scope)" in self._session_rules:
+            return None
+        from .tools import load_permission_rules
+
+        if any(r["tool"] == "keelson" and r["pattern"] == "out-of-scope" for r in load_permission_rules()["allow"]):
+            return None
+        reason = ("is outside the scope of this request (" + ", ".join(self._ledger.scope[:8])
+                  + (", ..." if len(self._ledger.scope) > 8 else "") + "). Keelson asks so that unrelated code "
+                  "is not changed.")
+        subject = f"{name} {', '.join(out)}"
+        if self.permission_mode == "dontAsk":
+            return {"action": "deny", "message": f"Auto-denied (dontAsk mode): {subject} {reason} If the request "
+                                                 "really needs it, declare_scope it with the reason first."}
+        return {"action": "confirm", "message": subject, "reason": reason, "rules": ["keelson(out-of-scope)"]}
+
+    def _declare_scope(self, inp: dict) -> str:
+        raw = inp.get("paths") or []
+        entries = [scope_mod.normalize(p) for p in (raw if isinstance(raw, list) else [raw]) if str(p).strip()]
+        if not entries:
+            return "Error: give at least one file, folder or glob in paths."
+        added = [e for e in entries if e not in self._ledger.scope]
+        self._ledger.scope += added
+        reason = str(inp.get("reason") or "").strip()[:300]
+        if reason:
+            self._scope_reasons.append(reason)
+        if added:
+            events.emit(events.SCOPE, paths=added, reason=reason, added=True)
+        return ("Scope for this request: " + ", ".join(self._ledger.scope)
+                + ". Changing other files will ask the user first.")
+
+    def _update_task(self, inp: dict) -> str:
+        plan = inp.get("plan")
+        summary = self._ledger.update(plan if isinstance(plan, list) else None, inp.get("decision"))
+        events.emit(events.TASK, plan=list(self._ledger.plan), decision=str(inp.get("decision") or ""))
+        return summary
+
+    def _fold_kept_note(self) -> str:
+        """What a fold must not lose, appended to the folded summary verbatim."""
+        return self._ledger.render()
 
 
 
@@ -620,6 +734,12 @@ class Agent:
             self._evidence.shell_may_have_changed = True
             return
         read_only = name == "run_shell" and safety.assess_shell(inp.get("command", "")).read_only
+        if name in ("write_file", "edit_file", "delete_files") and self._scope_active() and isinstance(result, str)                 and not result.startswith(("Error", "Action denied", "User denied")):
+            # It ran, so the person allowed it: it joins the scope, and is reported at the end of the turn.
+            for path in scope_mod.outside(self._edit_targets(name, inp), self._ledger.scope):
+                norm = scope_mod.normalize(path)
+                self._out_of_scope.append(norm)
+                self._ledger.scope.append(norm)
         self._evidence.record(name, inp, result if isinstance(result, str) else str(result),
                               read_only_shell=read_only)
 
@@ -764,6 +884,9 @@ class Agent:
                        else "run by the agent and Keelson")
                 outcome = Outcome(verify_mod.PASSED, f"{detail} ({who} at {runs[-1].at})", runs)
         outcome.weakened, outcome.changed = weakened, changed
+        outcome.out_of_scope = list(dict.fromkeys(self._out_of_scope))
+        big = scope_mod.size_warning(self._turn_request, changed)
+        outcome.warnings = [big] if big else []
         backed = outcome.status == verify_mod.PASSED or self._evidence.passing_after_change() is not None
         outcome.unproven = [] if backed else verify_mod.claims(final_text)
         self.last_outcome = outcome
@@ -845,20 +968,46 @@ class Agent:
         else:
             print_assistant_text(text)
 
-    def _build_fold_guidance_section(self) -> str:
+    def _maybe_fold_hint(self) -> None:
+        """When the context gets long or tools keep failing, tell the model once, at the end of the newest message.
+
+        This used to be a section of the system prompt rebuilt after every round of tools; its numbers changed
+        each time, so the first message changed and the provider could not reuse any cached prefix.
+        """
         if self._custom_system_prompt is not None:
-            return ""
+            return
         utilization = self.last_input_token_count / self.effective_window if self.effective_window else 0.0
+        now = set()
+        if utilization >= 0.6:
+            now.add("context-75" if utilization >= 0.75 else "context-60")
+        if self._tool_error_streak >= 3:
+            now.add("errors")
+        if self._same_tool_repeat_count >= 4:
+            now.add("repeats")
+        new = now - self._fold_hints
+        self._fold_hints = now | ({"context-60"} if "context-75" in now else set())
+        if not new:
+            return
         last_fold = "never" if not self._fold_last_time else f"{int((time.time() - self._fold_last_time) / 60)}m ago"
-        return (
-            "\n\n# Runtime Fold Guidance\n"
-            f"- Current context utilization: {utilization:.0%}\n"
-            f"- Recent tool error streak: {self._tool_error_streak}\n"
-            f"- Same tool repeat count: {self._same_tool_repeat_count}\n"
-            f"- Last fold: {last_fold}\n"
-            "- If the context is getting long, the same tool is being retried without progress, or tool failures are accumulating, call `compact_context` before trying more tools.\n"
-            "- If you folded very recently and the next step is clear, prefer continuing rather than folding again.\n"
-        )
+        text = (f"<keelson-fold-hint>Context {utilization:.0%} full; {self._tool_error_streak} tool errors in a row; "
+                f"same tool {self._same_tool_repeat_count} times in a row; last fold: {last_fold}. If the context is "
+                "long, a tool keeps being retried without progress, or failures pile up, call compact_context "
+                "before more tools. If you folded recently and the next step is clear, carry on.</keelson-fold-hint>")
+        self._append_to_last_message(text)
+
+    def _append_to_last_message(self, text: str) -> None:
+        """Add text to the newest message (a tool result), so everything before it stays byte-identical."""
+        messages = self._openai_messages if self.use_openai else self._anthropic_messages
+        if not messages:
+            return
+        last = messages[-1]
+        content = last.get("content")
+        if isinstance(content, str) and last.get("role") in ("tool", "user"):
+            last["content"] = content + "\n\n" + text
+        elif isinstance(content, list) and last.get("role") == "user":
+            content.append({"type": "text", "text": text})
+        else:
+            messages.append({"role": "user", "content": text})
 
     def _refresh_runtime_system_prompt(self) -> None:
         if self._custom_system_prompt is not None:
@@ -868,8 +1017,7 @@ class Agent:
             self._system_prompt = self._base_system_prompt + self._build_plan_mode_prompt()
         else:
             self._system_prompt = self._base_system_prompt
-        self._system_prompt += self._build_fold_guidance_section()
-        if self.use_openai and self._openai_messages:
+        if self.use_openai and self._openai_messages and self._openai_messages[0].get("content") != self._system_prompt:
             self._openai_messages[0]["content"] = self._system_prompt
 
     def _record_tool_outcome(self, tool_name: str, success: bool) -> None:
@@ -1118,6 +1266,9 @@ class Agent:
         self._same_tool_repeat_count = 0
         self._last_tool_name = ""
         self._loop_window = []
+        self._ledger = ledger_mod.Ledger()
+        self._last_git_note = None
+        self._fold_hints = set()
         if self.use_openai:
             self._openai_messages.append({"role": "system", "content":self._system_prompt})
         self.total_input_tokens = 0
@@ -1352,6 +1503,8 @@ class Agent:
             self._openai_messages = _sanitize_for_utf8(data["openaiMessages"])
         if isinstance(data.get("foldedSessionMemories"), list):
             self._folded_session_memories = _sanitize_for_utf8(data["foldedSessionMemories"])
+        if isinstance(data.get("ledger"), dict):
+            self._ledger = ledger_mod.Ledger.from_dict(data["ledger"])
         print_info(f"Session restored ({self._get_message_count()} messages).")
 
 
@@ -1424,6 +1577,7 @@ class Agent:
                 "anthropicMessages": _sanitize_for_utf8(self._anthropic_messages) if not self.use_openai else None,
                 "openaiMessages": _sanitize_for_utf8(self._openai_messages) if self.use_openai else None,
                 "foldedSessionMemories": _sanitize_for_utf8(self._folded_session_memories),
+                "ledger": _sanitize_for_utf8(self._ledger.to_dict()),
             })
         except Exception:
             pass
@@ -1441,8 +1595,9 @@ class Agent:
             else:
                 compacted = await self._compact_anthropic(trigger=trigger)
         if compacted:
-            events.emit(events.CONTEXT_FOLD, trigger=trigger, fold_count=self._fold_count)
-            print_info("Conversation compacted.")
+            kept = self._ledger.kept_summary()
+            events.emit(events.CONTEXT_FOLD, trigger=trigger, fold_count=self._fold_count, kept=kept)
+            print_info("Conversation compacted." + (f" Kept word for word: {kept}." if kept else ""))
         return compacted
 
     async def _compact_anthropic(self, *, trigger: str)->bool:
@@ -1455,9 +1610,9 @@ class Agent:
         memory = await self._generate_folded_session_memory(transcript)
         self._record_folded_session_memory(trigger, memory)
         self._record_fold_event()
-        self._anthropic_messages = [{"role": "user", "content": format_folded_memory(memory)}]
+        self._anthropic_messages = [{"role": "user", "content": self._folded_content(memory)}]
         self.last_input_token_count = 0
-        self._refresh_runtime_system_prompt()
+        self._after_fold()
         return True
 
     async def _compact_openai(self, *, trigger: str)->bool:
@@ -1472,11 +1627,20 @@ class Agent:
         self._record_fold_event()
         self._openai_messages=[
             system_msg,
-            {"role": "user", "content": format_folded_memory(memory)},
+            {"role": "user", "content": self._folded_content(memory)},
         ]
         self.last_input_token_count=0
-        self._refresh_runtime_system_prompt()
+        self._after_fold()
         return True
+
+    def _folded_content(self, memory: dict[str, Any]) -> str:
+        kept = self._fold_kept_note()
+        return format_folded_memory(memory) + ("\n\n" + kept if kept else "")
+
+    def _after_fold(self) -> None:
+        self._refresh_runtime_system_prompt()
+        self._last_git_note = None          # the folded history no longer has it; send it with the next message
+        self._fold_hints.clear()
 
     async def _generate_folded_session_memory(self, transcript: str) -> dict[str, Any]:
         side_query = self._build_side_query(max_tokens=6000)
@@ -1733,7 +1897,7 @@ class Agent:
         with events.span("permission", tool=name, id=call_id):
             perm = check_permission(name, inp, self.permission_mode, self._plan_file_path, self._session_rules)
             if perm["action"] == "allow":
-                perm = self._test_guard(name, inp) or perm
+                perm = self._test_guard(name, inp) or self._scope_guard(name, inp) or perm
             return perm
 
     async def _execute_tool_call(self, name: str, inp: dict) -> str:
@@ -1745,6 +1909,10 @@ class Agent:
             return await self._execute_agent_tool(inp)
         if name == "skill":
             return await self._execute_skill_tool(inp)
+        if name == "update_task":
+            return self._update_task(inp)
+        if name == "declare_scope":
+            return self._declare_scope(inp)
 
         # Loop guard — check before executing, but after the control tools above
         # (which legitimately repeat). Decided pre-await so speculative / gather
@@ -2191,7 +2359,7 @@ class Agent:
             self._context_cleared = False
 
             # 工具结果可能很长，每轮工具执行后检查是否需要压缩上下文。
-            self._refresh_runtime_system_prompt()
+            self._maybe_fold_hint()
             await self._check_and_compact()
 
     @staticmethod
@@ -2481,7 +2649,7 @@ class Agent:
                             {"role": "tool", "tool_call_id": ct["tc"]["id"], "content": res})
 
             self._context_cleared = False
-            self._refresh_runtime_system_prompt()
+            self._maybe_fold_hint()
             await self._check_and_compact()
 
     async def _call_openai_nonstream(self) -> dict:

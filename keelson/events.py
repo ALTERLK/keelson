@@ -55,7 +55,9 @@ SKILL_EVOLUTION = "skill_evolution"    # {action, skill, version, gate}
 SUBAGENT = "subagent"                  # {phase, agent_type, description}
 RETRY = "retry"                        # {attempt, max_retries, reason}
 NOTICE = "notice"                      # {level, message}
-VERIFY = "verify"                      # {phase: running|done, commands | status, detail, runs, weakened, unproven}
+SCOPE = "scope"                        # {paths, reason, added}
+TASK = "task"                          # {plan: [{step, status}], decision}
+VERIFY = "verify"                    # {phase: running|done, commands | status, detail, runs, weakened, unproven}
 TURN_END = "turn_end"                  # {}
 SESSION = "session"                    # {model, permission_mode, cwd, ...}
 

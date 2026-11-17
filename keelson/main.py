@@ -263,6 +263,102 @@ async def handle_verify_command(agent: Agent, inp: str) -> bool:
     return True
 
 
+def handle_task_command(agent: Agent, inp: str) -> bool:
+    """/task, /task goal TEXT, /task add RULE, /task drop N, /task clear. True if it was one."""
+    words = inp.split(maxsplit=2)
+    if not words or words[0] != "/task":
+        return False
+    ledger = agent.ledger
+    sub = words[1] if len(words) > 1 else ""
+    arg = words[2].strip() if len(words) > 2 else ""
+    if sub == "goal" and arg:
+        ledger.goal = arg
+    elif sub == "add" and arg:
+        ledger.add_constraint(arg)
+    elif sub == "drop" and arg.isdigit():
+        if not ledger.drop_constraint(int(arg) - 1):
+            print_warning(f"No constraint {arg}.")
+            return True
+    elif sub == "clear":
+        agent.reset_ledger()
+        print_info("Task ledger cleared.")
+        return True
+    elif sub:
+        print_warning("Usage: /task [goal TEXT | add RULE | drop N | clear]")
+        return True
+    if ledger.is_empty():
+        print_info("The task ledger is empty. It fills in as you work: your goal, your rules word for word, "
+                   "the plan, the files changed.")
+        return True
+    lines = []
+    if ledger.goal:
+        lines.append("Goal: " + ledger.goal.splitlines()[0][:200])
+    if ledger.constraints:
+        lines.append("Constraints (kept word for word; /task drop N removes one):")
+        lines += [f"  {i}. {c['text']}" + (f"  (said {c['count']}×)" if c["count"] > 1 else "")
+                  for i, c in enumerate(ledger.constraints, 1)]
+    if ledger.plan:
+        marks = {"done": "✓", "in_progress": "▸", "blocked": "!", "pending": "○"}
+        lines.append("Plan:")
+        lines += [f"  {marks.get(s['status'], '○')} {s['step']}" for s in ledger.plan]
+    if ledger.decisions:
+        lines.append("Decisions:")
+        lines += [f"  - {d}" for d in ledger.decisions[-10:]]
+    if ledger.files:
+        lines.append(f"Files changed ({len(ledger.files)}): " + ", ".join(ledger.files[-15:]))
+    if ledger.last_verify:
+        v = ledger.last_verify
+        lines.append(f"Last verification ({v['at']}): {v['status']} — {v['detail']}")
+    if ledger.scope:
+        lines.append("Scope of the current request: " + ", ".join(ledger.scope))
+    print_info("\n".join(lines))
+    return True
+
+
+def handle_usage_command(agent: Agent, inp: str) -> bool:
+    if inp.strip() != "/usage":
+        return False
+    from . import usage
+
+    session = usage.totals(days=1, session=agent.session_id)
+    lines = [
+        "This session:      " + usage.fmt(session),
+        "This project today: " + usage.fmt(usage.totals(days=1, project=str(Path.cwd()))),
+        "All projects today: " + usage.fmt(usage.totals(days=1)),
+        "Last 7 days:        " + usage.fmt(usage.totals(days=7)),
+    ]
+    models_used = usage.by_model(7)
+    if models_used:
+        lines.append("By model (7 days):")
+        lines += [f"  {name}: {usage.fmt(t)}" for name, t in sorted(models_used.items(), key=lambda kv: -kv[1].cost_usd)]
+    budget = usage.daily_budget()
+    lines.append(f"Daily budget: ${budget:g} (KEELSON_DAILY_BUDGET_USD)" if budget
+                 else "No daily budget (set KEELSON_DAILY_BUDGET_USD).")
+    lines.append("Costs are estimates from list prices; cache hits are what the provider reported.")
+    print_info("\n".join(lines))
+    return True
+
+
+def offer_rules_for_keelson_md(agent: Agent, read=input) -> None:
+    """At the end of a session: rules the user repeated may belong in KEELSON.md. Written only on a yes."""
+    from . import ledger as ledger_mod
+
+    md = Path.cwd() / "KEELSON.md"
+    existing = md.read_text(encoding="utf-8") if md.exists() else ""
+    repeated = [c for c in agent.ledger.repeated_constraints() if c not in existing]
+    if not repeated:
+        return
+    print_info("You said these more than once this session:\n" + "\n".join(f"  - {c}" for c in repeated)
+               + "\nSave them to KEELSON.md so every session follows them?")
+    try:
+        answer = read("  Save? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return
+    if answer.startswith("y"):
+        path = ledger_mod.append_to_keelson_md(repeated)
+        print_info(f"Added to {path} under ## Rules.")
+
+
 def _confirm_trust() -> None:
     """Before the first turn: a project that would switch on allow rules or MCP servers must be trusted."""
     from . import trust
@@ -360,6 +456,7 @@ async def run_repl(agent: Agent) -> None:
         if not inp:
             continue
         if inp in ("exit", "quit"):
+            offer_rules_for_keelson_md(agent)
             print_goodbye()
             break
 
@@ -376,6 +473,8 @@ async def run_repl(agent: Agent) -> None:
         if handle_checkpoint_command(agent, inp):
             continue
         if await handle_verify_command(agent, inp):
+            continue
+        if handle_task_command(agent, inp) or handle_usage_command(agent, inp):
             continue
         if inp == "/model" or inp.startswith("/model "):
             wanted = inp[len("/model"):].strip()
@@ -614,6 +713,8 @@ REPL commands:
   /revert FILE [N]    Put one file back as it was N turns ago (default 1)
   /checkpoints        List the turns that can be undone
   /verify [init|run]  Show the checks run after each turn; init saves them to KEELSON.md; run runs them now
+  /task               Show the task ledger (goal, your rules word for word, plan, files); /task add|drop|goal|clear
+  /usage              Tokens, cache hit rate and estimated cost: this session, today, last 7 days
   /memory             List saved memories
   /skills             List available skills
   /skill-stats        Show skill usage and evolution stats

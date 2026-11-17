@@ -44,6 +44,8 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
    - Don't add error handling, fallbacks, or validation for scenarios that can't happen. Trust internal code and framework guarantees. Only validate at system boundaries (user input, external APIs). Don't use feature flags or backwards-compatibility shims when you can just change the code.
    - Don't create helpers, utilities, or abstractions for one-time operations. Don't design for hypothetical future requirements. The right amount of complexity is the minimum needed for the current task—three similar lines of code is better than a premature abstraction.
  - Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.
+ - For work with several steps, keep the plan with update_task (steps with their status, and key decisions). Keelson keeps it, together with the user's own constraints word for word, when the conversation is folded, so state the plan there rather than only in prose.
+ - Before changing files, call declare_scope with the files or folders you intend to change and why. Files the user @-mentions are already in scope. Changing a file outside the scope asks the user first, so keep the scope to what the request needs and do not touch unrelated code.
  - If the user asks for help, inform them they can type "exit" to quit or use REPL commands like /clear, /cost, /compact, /memory, /skills.
 
 # Executing actions with care
@@ -95,7 +97,7 @@ Working directory: {{cwd}}
 Date: {{date}}
 Platform: {{platform}}
 Shell: {{shell}}
-{{git_context}}
+Git branch and status are sent with the user's messages when they change (<git-status>).
 {{claude_md}}
 {{memory}}
 {{skills}}
@@ -169,39 +171,61 @@ def _load_rules_dir(directory: Path) -> str:
         return ""
 
 
-def load_claude_md() -> str:
-    """Walk up from cwd collecting all CLAUDE.md files, resolving @includes."""
-    parts: list[str] = []
-    d = Path.cwd().resolve()
+# Instruction files, read from the project folder and every folder above it. KEELSON.md is Keelson's own;
+# AGENTS.md is the cross-tool convention (Codex, Cursor, ...); CLAUDE.md is read so existing projects work.
+INSTRUCTION_FILES = ("KEELSON.md", "AGENTS.md", "CLAUDE.md")
+
+
+def instruction_files(cwd: Path | None = None) -> list[Path]:
+    """The instruction files that apply here: ~/.keelson/KEELSON.md, then from the outermost folder inward."""
+    found: list[Path] = []
+    d = (cwd or Path.cwd()).resolve()
     while True:
-        f = d / "CLAUDE.md"
-        if f.is_file():
-            try:
-                content = f.read_text(encoding="utf-8")
-                content = _resolve_includes(content, d)
-                parts.insert(0, content)
-            except Exception:
-                pass
-        parent = d.parent
-        if parent == d:
+        for name in reversed(INSTRUCTION_FILES):
+            f = d / name
+            if f.is_file():
+                found.insert(0, f)
+        if d.parent == d:
             break
-        d = parent
-    # Load .keelson/rules/*.md from cwd
+        d = d.parent
+    personal = paths.user_home() / "KEELSON.md"
+    if personal.is_file() and personal not in found:
+        found.insert(0, personal)
+    return found
+
+
+def load_claude_md() -> str:
+    """The project instructions: KEELSON.md / AGENTS.md / CLAUDE.md files (with @includes) and .keelson/rules."""
+    parts: list[str] = []
+    for f in instruction_files():
+        try:
+            content = _resolve_includes(f.read_text(encoding="utf-8"), f.parent)
+        except Exception:
+            continue
+        if content.strip():
+            parts.append(f"<!-- {f} -->\n{content.strip()}")
     rules = _load_rules_dir(Path.cwd())
-    claude_md = ""
+    text = ""
     if parts:
-        claude_md = "\n\n# Project Instructions (CLAUDE.md)\n" + "\n\n---\n\n".join(parts)
-    return claude_md + rules
+        text = ("\n\n# Project Instructions (KEELSON.md, AGENTS.md, CLAUDE.md)\n"
+                "Follow these; where they conflict, the more specific (deeper) file wins.\n\n"
+                + "\n\n---\n\n".join(parts))
+    return text + rules
 
 
 def get_git_context() -> str:
-    """Get git branch, recent commits, and status."""
+    """Branch, recent commits and status; empty outside a git repository."""
     try:
-        opts = {"encoding": "utf-8", "timeout": 3, "capture_output": True}
+        opts = {"encoding": "utf-8", "errors": "replace", "timeout": 3, "capture_output": True}
         branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], **opts).stdout.strip()
+        if not branch:
+            return ""
         log = subprocess.run(["git", "log", "--oneline", "-5"], **opts).stdout.strip()
         status = subprocess.run(["git", "status", "--short"], **opts).stdout.strip()
-        result = f"\nGit branch: {branch}"
+        lines = status.splitlines()
+        if len(lines) > 40:
+            status = "\n".join(lines[:40]) + f"\n... and {len(lines) - 40} more"
+        result = f"Git branch: {branch}"
         if log:
             result += f"\nRecent commits:\n{log}"
         if status:
@@ -228,12 +252,12 @@ def _shell_description() -> str:
 
 
 def build_system_prompt() -> str:
-    """Build the full system prompt from embedded template + dynamic context."""
+    """The system prompt. It holds nothing that changes from one request to the next, so the provider's
+    prompt cache can reuse the whole conversation prefix; per-turn facts (git status) go in user messages."""
     from datetime import date
     today = date.today().isoformat()
     plat = f"{platform.system()} {platform.machine()}"
     shell = _shell_description()
-    git_context = get_git_context()
     claude_md = load_claude_md()
     memory_section = build_memory_prompt_section()
     skills_section = build_skill_descriptions()
@@ -250,7 +274,6 @@ def build_system_prompt() -> str:
         "{{date}}": today,
         "{{platform}}": plat,
         "{{shell}}": shell,
-        "{{git_context}}": git_context,
         "{{claude_md}}": claude_md,
         "{{memory}}": memory_section,
         "{{skills}}": skills_section,

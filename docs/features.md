@@ -193,6 +193,96 @@ benchmark. The usual workaround is a hand-written Stop hook.
 tests do not cover the change still passes. Plan mode and sub-agents are not
 verified (the parent's turn is). `KEELSON_VERIFY=0` turns it off.
 
+## Task ledger: no amnesia after a fold
+
+**What it is.** A record of the work that the runtime keeps outside the model's
+context, saved after every turn and put back **word for word** when the context
+is folded:
+
+- the **goal**: the request that started the work, as you typed it;
+- your **constraints**: every sentence of yours that reads like a rule ("don't
+  touch the public API", "只改 parser.py", "always use pathlib"), quoted, never
+  reworded;
+- the **plan**, with each step's status (the model keeps it with `update_task`,
+  and the terminal shows it as a checklist), and the **decisions** it recorded;
+- the **files changed** so far and the **last verification** result.
+
+**The problem.** After compaction, long-running agents forget the constraints
+and how far they got, then carry on and break their own earlier work; Claude
+Code users report it in its issue tracker. A summary written by the model is
+exactly what loses the detail.
+
+**How to use it.** Automatic. `/task` shows the ledger; `/task add RULE`,
+`/task drop N`, `/task goal TEXT` and `/task clear` edit it. A fold prints
+what was kept ("kept word for word: the goal, 3 constraint(s) verbatim, the
+plan (2/5 done) …"). `--resume` brings the ledger back with the session. When
+you exit with `exit`, rules you stated more than once are offered for
+`KEELSON.md` (written only if you say yes).
+
+**Limits.** Rules are recognised by wording (English and Chinese markers such
+as *don't, never, always, must, only, keep* / *不要、必须、只、保持*); a rule
+phrased without one is not picked up, and `/task add` covers that. The ledger
+keeps the 40 most recent rules, dropping one-off rules before repeated ones.
+
+## Scope guard: no unrelated changes
+
+**What it is.** A request's changes stay within what it is about. The scope is
+the files you `@`-mention plus what the model declares with `declare_scope`
+(files, folders or globs, with a reason), shown as `◇ scope: …`. While a scope
+exists, changing a file outside it asks you first, with the reason; in
+`dontAsk` mode it is refused. A file you allow joins the scope. At the end of
+the turn, files changed outside the scope are listed under the badge, and a
+large change for a short request (8+ files for under 200 characters) is
+flagged.
+
+**The problem.** Asked to fix one thing, agents "improve" code nobody asked
+about and introduce regressions; Claude Code users asked for a strict-scope
+mode in its issue tracker.
+
+**Limits, plainly.** With no scope declared and nothing mentioned, the guard is
+idle. The model can widen its own scope with another `declare_scope` (you see
+each one). Shell commands are not checked against the scope (they are covered
+by `/undo` and the permission gate). The scope resets with each new request.
+Answer "this session"/"this project" to stop being asked;
+`KEELSON_SCOPE_GUARD=0` turns it off.
+
+## Prompt caching and cost
+
+**What it is.** Keelson keeps every request a pure extension of the previous
+one, so providers with prefix caching (DeepSeek, OpenAI, Anthropic) bill most
+of the conversation at the cache-hit price:
+
+- the system prompt holds nothing that changes during a session; git branch
+  and status are sent with your message, and only when they changed;
+- the "context is getting long" hint goes on the newest tool result, once, when
+  a threshold is crossed, instead of being rewritten into the system prompt;
+- a test (`tests/test_ledger_scope.py`) checks that each request starts with
+  the previous request's messages, byte for byte.
+
+In one DeepSeek run of the same task before and after this change, the share of
+input tokens billed as cache hits went from 43% to 82% (each call's cache hit
+stopped at about 3,000 tokens before; after, it grew with the conversation).
+One run each, and the two runs took different paths, so treat it as an
+illustration, not a benchmark.
+
+**Usage.** The turn's closing line shows the cache hit rate. Every turn appends
+a record to `~/.keelson/usage.jsonl` (project, session, model, tokens, cache
+hits, estimated cost); `/usage` sums this session, the project today, all
+projects today, the last 7 days, and per model. `KEELSON_DAILY_BUDGET_USD`
+stops new turns once today's estimated spend reaches it. Costs are estimates
+from list prices; cache hits are what the provider reported.
+
+**DeepSeek thinking mode.** Earlier `reasoning_content` is sent back on every
+request: DeepSeek's documentation requires it for requests that carry tools.
+
+## Project instructions: KEELSON.md, AGENTS.md, CLAUDE.md
+
+Keelson reads `KEELSON.md`, `AGENTS.md` (the cross-tool convention) and
+`CLAUDE.md` from the project folder and every folder above it, plus
+`~/.keelson/KEELSON.md` for your own rules everywhere. Outer folders come
+first, so the deeper, more specific file wins. `@./path` includes work in all
+of them; `.keelson/rules/*.md` is added after.
+
 ## Plan mode
 
 **What it is.** A read-only mode. The agent can read and search but cannot edit
@@ -262,7 +352,8 @@ window, cheapest first:
 **The problem.** Long tasks outgrow the window. Truncating makes the model
 forget the goal; summarising everything is expensive and loses detail.
 
-**How to use it.** It is automatic. `/compact` forces a fold.
+**How to use it.** It is automatic. `/compact` forces a fold. After a fold the
+[task ledger](#task-ledger-no-amnesia-after-a-fold) is put back word for word.
 
 **Where you see it.** The *Context window* bar and the *Context folds* counter
 in the inspector.
@@ -483,6 +574,8 @@ shows the same checks.
 | `/undo [--force]` · `/rewind N` · `/redo` | Undo the last turn (shell changes too) · the last N · reverse an undo |
 | `/revert FILE [N]` · `/checkpoints` | Put one file back · list what can be undone |
 | `/verify` · `/verify init` · `/verify run` | Show the end-of-turn checks · save the detected ones to `KEELSON.md` · run them now |
+| `/task` · `/task add RULE` · `/task drop N` · `/task goal TEXT` · `/task clear` | Show or edit the task ledger |
+| `/usage` | Tokens, cache hit rate and estimated cost: session, today, 7 days, per model |
 | `/model [NAME]` | Show or switch the model on this endpoint |
 | `/memory` | Show long-term memory |
 | `/skills` | List skills |
@@ -518,6 +611,8 @@ Set them in `.env` or in the environment.
 | `KEELSON_VERIFY_RETRIES` | How many times failing checks go back to the model | `2` |
 | `KEELSON_VERIFY_TIMEOUT` | Seconds each check may run | `300` |
 | `KEELSON_GUARD_TESTS` | Ask before changing existing tests when the task is not about tests | `1` |
+| `KEELSON_SCOPE_GUARD` | Ask before changing files outside the request's scope | `1` |
+| `KEELSON_DAILY_BUDGET_USD` | Stop new turns once today's estimated spend (all projects) reaches this | none |
 | `KEELSON_TRUST_ALL` | Treat every folder as trusted (for your own machines and CI only) | `0` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | Extract skills from feedback automatically | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | Write new skills at project or user level | `project` |

@@ -6,6 +6,24 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
 ## Unreleased — 0.4.0 (in progress)
 
 ### Added
+- **Task ledger** (`keelson/ledger.py`): the goal, the user's rules word for
+  word, the plan (`update_task`), decisions, files changed and the last
+  verification, saved each turn, put back verbatim after a context fold,
+  restored with `--resume`, shown and edited with `/task`. Rules repeated in a
+  session are offered for `KEELSON.md` on exit.
+- **Scope guard** (`keelson/scope.py`): `@`-mentioned files plus
+  `declare_scope` make a request's scope; changing other files asks first, and
+  out-of-scope changes and large changes for short requests are reported.
+- **Prompt caching that holds**: the system prompt no longer changes during a
+  session (git status moved into user messages; the fold hint goes on the
+  newest tool result), with a test that each request extends the previous one
+  byte for byte. One DeepSeek run each, same task: cache hits 43% → 82% of
+  input tokens.
+- **`/usage`** and `~/.keelson/usage.jsonl` (per-turn tokens, cache hits, model,
+  estimated cost), the cache hit rate in the turn's closing line, and
+  `KEELSON_DAILY_BUDGET_USD`.
+- `KEELSON.md` and `AGENTS.md` are read as project instructions alongside
+  `CLAUDE.md`, from the project folder up, plus `~/.keelson/KEELSON.md`.
 - **Verified completion** (`keelson/verify.py`). A turn that changed code ends
   with a badge from what actually ran: ✓ verified / ✗ checks fail / ! not
   verified, with the reason. Keelson runs the project's checks itself (the

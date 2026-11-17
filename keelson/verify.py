@@ -411,11 +411,13 @@ class Outcome:
     weakened: list[str] = field(default_factory=list)
     unproven: list[str] = field(default_factory=list)
     changed: list[str] = field(default_factory=list)
+    out_of_scope: list[str] = field(default_factory=list)   # changed outside the request's scope (with an OK)
+    warnings: list[str] = field(default_factory=list)       # e.g. a large change for a short request
 
     def event(self) -> dict:
         return {
             "status": self.status, "detail": self.detail, "weakened": self.weakened, "unproven": self.unproven,
-            "changed": self.changed[:50],
+            "changed": self.changed[:50], "out_of_scope": self.out_of_scope, "warnings": self.warnings,
             "runs": [{"command": r.command, "exit_code": r.exit_code, "summary": r.summary, "at": r.at}
                      for r in self.runs],
         }
