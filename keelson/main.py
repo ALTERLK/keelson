@@ -219,6 +219,50 @@ def handle_checkpoint_command(agent: Agent, inp: str) -> bool:
     return True
 
 
+async def handle_verify_command(agent: Agent, inp: str) -> bool:
+    """/verify, /verify init, /verify run. True if it was one."""
+    words = inp.split()
+    if not words or words[0] != "/verify":
+        return False
+    from . import verify as verify_mod
+
+    sub = words[1] if len(words) > 1 else ""
+    commands, source = verify_mod.commands_for()
+    if sub == "init":
+        detected = verify_mod.detect()
+        if not detected:
+            print_warning("Found no test command to put in KEELSON.md. Add a `## Verify` section by hand, "
+                          "one command per line in backticks.")
+            return True
+        path = verify_mod.write_verify_section(detected)
+        print_info(f"Wrote {len(detected)} check(s) to {path}:\n  " + "\n  ".join(detected)
+                   + "\nEdit that section to add lint or type checks.")
+        return True
+    if sub == "run":
+        if not commands:
+            print_warning("No check commands. `/verify init` writes the detected ones to KEELSON.md.")
+            return True
+        runs = await agent.run_checks(commands)
+        for run in runs:
+            ok = run.exit_code == 0
+            (print_info if ok else print_warning)(f"{'✓' if ok else '✗'} {run.command}: {run.summary}")
+            if not ok and run.output:
+                print_info(run.output)
+        return True
+    if sub:
+        print_warning("Usage: /verify [init | run]")
+        return True
+    if commands:
+        where = "KEELSON.md" if source == "KEELSON.md" else "detected (not saved; `/verify init` saves them)"
+        print_info(f"Checks run after every turn that changes code — {where}:\n  " + "\n  ".join(commands))
+    else:
+        print_info("No check commands for this project, so turns that change code end as 'Not verified'.\n"
+                   "  `/verify init` detects them, or add a `## Verify` section to KEELSON.md.")
+    if not verify_mod.enabled():
+        print_warning("End-of-turn checks are off (KEELSON_VERIFY=0).")
+    return True
+
+
 def _confirm_trust() -> None:
     """Before the first turn: a project that would switch on allow rules or MCP servers must be trusted."""
     from . import trust
@@ -330,6 +374,8 @@ async def run_repl(agent: Agent) -> None:
             agent.show_cost()
             continue
         if handle_checkpoint_command(agent, inp):
+            continue
+        if await handle_verify_command(agent, inp):
             continue
         if inp == "/model" or inp.startswith("/model "):
             wanted = inp[len("/model"):].strip()
@@ -567,6 +613,7 @@ REPL commands:
   /redo               Reverse the last /undo
   /revert FILE [N]    Put one file back as it was N turns ago (default 1)
   /checkpoints        List the turns that can be undone
+  /verify [init|run]  Show the checks run after each turn; init saves them to KEELSON.md; run runs them now
   /memory             List saved memories
   /skills             List available skills
   /skill-stats        Show skill usage and evolution stats

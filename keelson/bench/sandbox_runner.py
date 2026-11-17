@@ -113,6 +113,7 @@ async def _run_harness_agent(task: SandboxTask, cfg: SandboxRunConfig, api_key: 
         anthropic_base_url=cfg.api_base if not cfg.use_openai else None,
         api_key=api_key,
         custom_tools=_sandbox_tool_defs(),
+        verify=False,  # the sandbox grades with its own held-back tests
         # no custom_system_prompt -> real build_system_prompt(), fold guidance included
     )
     out = await agent.run_once(task.instruction)

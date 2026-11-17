@@ -101,6 +101,44 @@
 
 **覆盖不了的：** 装好的包、提交和推送、数据库、网络，以及 shell 命令改动的项目外文件。这些正是权限门会先问你的操作。没有 git 时，只有 Keelson 自己的文件工具能撤销，终端会明确提示，普通 shell 命令也会改为先询问再执行。
 
+## 完工验证
+
+**是什么。** 一轮改了代码，Keelson 会在这一轮结束前**自己**检查改动，并给这一轮打上徽章。徽章依据的是真正运行过的命令，不是模型写的话：
+
+```
+✓ Verified  pytest -q: 42 passed in 3.1s (run by Keelson at 14:02)
+✗ Checks fail  pytest -q: 1 failed, 1 passed in 0.23s
+! Not verified  no check command for this project: add a ## Verify section to KEELSON.md (/verify init)
+```
+
+**解决什么问题。** 编码 Agent 会在三种情况下说“做完了，测试都通过了”：根本没跑测试；跑了但没过；靠改测试让它通过。前两种是 Claude Code 用户在 issue 里反映的；第三种（“奖励投机”）有 EvilGenie 基准对 Claude Code 和 Codex 的测量。社区通常的补救是自己写 Stop 钩子。
+
+**原理。**
+
+- **跑哪些检查。** 优先用 `KEELSON.md` 里 `## Verify`（或 `## 验证`）一节：每个列表项是一条反引号包起来的命令，也可以写成代码块。没有这一节时，只自动识别测试：pytest（项目有 `.venv` 就用其中的 Python）、`npm`/`pnpm`/`yarn test`、`cargo test`、`go test ./...`。lint 和类型检查只有写进去才会跑。`/verify init` 把识别出的命令写进 `KEELSON.md`。
+- **证据只看真正运行过的命令。** 本轮每次工具调用都按真实退出码记录。模型在最后一次改动之后已经跑过并通过的检查，不会重跑。同一条命令的不同写法也算同一条，例如 PowerShell 的 `& "...\python.exe"`。
+- **改了代码的一轮结束时**，Keelson 补跑还没跑过的检查：
+  - 和模型自己的命令走同一道权限门；需要你点头的检查会标为“未运行”，绝不背着你跑。补跑时带上 `CI=1`。
+  - 失败时把真实输出交还模型，最多 `KEELSON_VERIFY_RETRIES` 次。要求它修好自己弄坏的地方，但**不要**为了修本来就失败的东西而扩大任务范围。
+  - 如果模型的回答里已经说明哪些还没通过，就不再打回。
+- **未经证实的说法。** 回答里出现“all tests pass”“测试全部通过”之类的话，却没有一次通过的运行记录可以对应，就列在徽章下面。
+- **只改了文档的轮次**，以及没有检查命令的项目，结论为“未验证”，并写明原因。
+
+**测试保护。** 任务不涉及测试时：
+
+- **改动或删除已有的测试文件，要先问你。** `dontAsk` 模式下直接拒绝。
+  - 新建测试文件、只加不删的修改，不会问。
+  - 选“本会话”或“本项目”后不再问；`KEELSON_GUARD_TESTS=0` 关闭这项保护。
+- **识别“削弱测试”的改动。** 方法是对比本轮开头的快照，能识别：
+  - 删除测试、删除测试文件；
+  - 加了 `skip`、`xfail`、`.only`；
+  - 删除断言，或加了 `assert True`；
+  - 改了期望值，例如 `assert f(2) == 4` 改成 `== 5`。
+
+  识别到后先请模型还原一次，仍然存在的列在徽章下面。
+
+**覆盖不了的。** Keelson 只能用你给的命令检查：测试没覆盖到的改动，照样会显示通过。计划模式和子 Agent 不做验证，子 Agent 的改动由父 Agent 那一轮一起验证。`KEELSON_VERIFY=0` 关闭完工验证。
+
 ## 计划模式
 
 **是什么。** 一种只读模式：Agent 可以读代码、搜索，但不能改文件、不能跑命令。它把方案写进一个计划文件，你批准之后才退出计划模式开始动手。
@@ -304,6 +342,7 @@ when_to_use: The user asks to commit, or asks for a commit message
 | `/compact` | 手动折叠上下文 |
 | `/undo [--force]` · `/rewind N` · `/redo` | 撤销上一轮（含 shell 改动）· 撤销最近 N 轮 · 反悔撤销 |
 | `/revert 文件 [N]` · `/checkpoints` | 还原单个文件 · 查看可撤销的轮次 |
+| `/verify` · `/verify init` · `/verify run` | 查看轮末检查命令 · 把识别出的命令写进 `KEELSON.md` · 立即运行检查 |
 | `/model [名字]` | 查看或切换当前地址上的模型 |
 | `/memory` | 查看长期记忆 |
 | `/skills` | 列出技能 |
@@ -334,6 +373,10 @@ when_to_use: The user asks to commit, or asks for a commit message
 | `KEELSON_HOME` | 状态目录（会话、技能、记忆、检查点） | `~/.keelson` |
 | `KEELSON_CHECKPOINTS` | 每轮给项目拍快照，`/undo` 才能用 | `1` |
 | `KEELSON_CHECKPOINT_MAX_FILE_MB` | 超过这个大小的新文件不进快照 | `50` |
+| `KEELSON_VERIFY` | 每轮结束时检查代码改动 | `1` |
+| `KEELSON_VERIFY_RETRIES` | 检查失败时最多交还模型几次 | `2` |
+| `KEELSON_VERIFY_TIMEOUT` | 每条检查命令最多运行多少秒 | `300` |
+| `KEELSON_GUARD_TESTS` | 任务不涉及测试时，改已有测试要先问 | `1` |
 | `KEELSON_TRUST_ALL` | 把所有目录都当作已信任（只用于自己的机器和 CI） | `0` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | 自动从反馈中提取技能 | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | 新技能写到项目级还是用户级 | `project` |

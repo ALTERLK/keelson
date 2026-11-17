@@ -29,6 +29,8 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Snapshotting the cwd on every scripted turn would be slow and is not what
     # most tests are about; tests/test_checkpoints.py turns it back on.
     monkeypatch.setenv("KEELSON_CHECKPOINTS", "0")
+    # Same for end-of-turn checks, which would run the project's tests; tests/test_verify.py turns them on.
+    monkeypatch.setenv("KEELSON_VERIFY", "0")
     import keelson.checkpoints as checkpoints
 
     checkpoints.reset()

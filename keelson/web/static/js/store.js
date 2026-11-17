@@ -193,6 +193,20 @@ const handlers = {
     note(state, event, "model call retried", "warn");
   },
 
+  verify(state, event) {
+    const { data } = event;
+    if (data.phase !== "done") return;
+    closeAssistant(state);
+    const level = data.status === "passed" ? "info" : data.status === "failed" ? "error" : "warning";
+    const head = { passed: "✓ Verified", failed: "✗ Checks fail", unverified: "! Not verified" }[data.status] || data.status;
+    const extra = [
+      ...(data.weakened || []).map((w) => `tests weakened — ${w}`),
+      ...(data.unproven || []).map((c) => `unproven claim — “${c}”`),
+    ];
+    push(state, { kind: "notice", level, text: [`${head}: ${data.detail || ""}`, ...extra].join("\n") });
+    note(state, event, head, data.status === "passed" ? "" : data.status === "failed" ? "bad" : "warn");
+  },
+
   notice(state, event) {
     const { data } = event;
     closeAssistant(state);

@@ -237,6 +237,7 @@ async def _run_harness_task(task: ToolHopTask, cfg: RunConfig, api_key: str, rep
         custom_tools=tool_defs,
         external_tools={d["name"]: tool_runner for d in tool_defs},
         custom_system_prompt=_HARNESS_SYSTEM_PROMPT,
+        verify=False,  # the bench grades the answer itself; no end-of-turn checks
     )
     if cfg.variant == "no_sysprompt":
         # H2 probe: drop the harness system message entirely. Safe because

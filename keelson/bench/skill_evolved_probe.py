@@ -90,6 +90,7 @@ async def _run_one(task: ToolHopTask, model: str, api_base: str, api_key: str, u
         custom_tools=tool_defs,
         external_tools={d["name"]: tool_runner for d in tool_defs},
         custom_system_prompt=_HARNESS_SYSTEM_PROMPT,
+        verify=False,
     )
     try:
         await agent.run_once(_question_prompt(task))

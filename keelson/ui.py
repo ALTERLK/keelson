@@ -201,6 +201,7 @@ class TerminalRenderer:
             events.PERMISSION: self._on_permission,
             events.CONFIRM_PROMPT: self._on_confirm_prompt,
             events.LOOP_GUARD: self._on_loop_guard,
+            events.VERIFY: self._on_verify,
             events.CONTEXT_FOLD: self._on_context_fold,
             events.USAGE: self._on_usage,
             events.SKILL_EVOLUTION: self._on_skill_evolution,
@@ -324,6 +325,21 @@ class TerminalRenderer:
             box=box.ROUNDED,
             padding=(0, 1),
         ))
+
+    def _on_verify(self, data: dict) -> None:
+        if data.get("phase") == "running":
+            console.print(Text("  ⧗ verifying: " + " · ".join(data.get("commands") or []), style=MUTED))
+            return
+        status = data.get("status")
+        label, style = {"passed": ("✓ Verified", OK), "failed": ("✗ Checks fail", BAD)}.get(
+            status, ("! Not verified", WARN))
+        line = Text(f"  {label}", style=f"bold {style}")
+        line.append(f"  {data.get('detail', '')}", style="")
+        console.print(line)
+        for item in data.get("weakened") or []:
+            console.print(Text(f"    ! tests weakened — {item}", style=WARN))
+        for claim in data.get("unproven") or []:
+            console.print(Text(f"    ! unproven claim — “{claim}” (no passing check backs it)", style=WARN))
 
     def _on_loop_guard(self, data: dict) -> None:
         if _QUIET:

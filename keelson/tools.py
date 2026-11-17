@@ -708,7 +708,7 @@ def _run_shell(inp: dict) -> str:
             shell=isinstance(target, str),
             capture_output=True,
             timeout=timeout_ms / 1000,
-            env=platform_shell.child_env(),
+            env={**platform_shell.child_env(), **(inp.get("env") or {})},
             **no_window_flags(),
         )
         encoding = _output_encoding(shell)
@@ -798,7 +798,7 @@ async def _run_prepared_async(target: str | list[str], inp: dict, on_output: Cal
     spawn_options = dict(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=platform_shell.child_env(),
+        env={**platform_shell.child_env(), **(inp.get("env") or {})},
         **(no_window_flags() if IS_WIN else {"start_new_session": True}),
     )
     try:

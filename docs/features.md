@@ -136,6 +136,63 @@ exactly the actions the permission gate asks about first. Without git, only
 Keelson's own file tools can be undone, the terminal says so, and ordinary
 shell commands then ask before they run.
 
+## Verified completion
+
+**What it is.** When a turn changed code, Keelson itself checks the change
+before the turn ends, and every such turn ends with a badge that comes from what
+actually ran, not from what the model wrote:
+
+```
+✓ Verified  pytest -q: 42 passed in 3.1s (run by Keelson at 14:02)
+✗ Checks fail  pytest -q: 1 failed, 1 passed in 0.23s
+! Not verified  no check command for this project: add a ## Verify section to KEELSON.md (/verify init)
+```
+
+**The problem.** Coding agents say "done, all tests pass" when they never ran
+the tests, ran them and they failed, or made them pass by editing the tests.
+Users of Claude Code report the first two in its issue tracker; the third
+("reward hacking") is measured for Claude Code and Codex by the EvilGenie
+benchmark. The usual workaround is a hand-written Stop hook.
+
+**How it works.**
+
+- **Which checks.** The `## Verify` section of `KEELSON.md` (one command per
+  list item in backticks, or a code block). Without one, Keelson detects tests
+  only: pytest (the project's `.venv` Python if there is one), `npm`/`pnpm`/`yarn
+  test`, `cargo test`, `go test ./...`. Lint and type checks run only if you
+  list them. `/verify init` writes the detected commands into `KEELSON.md`.
+- **Evidence is what ran.** Every tool call of the turn is recorded with its
+  real exit code. A check the model already ran successfully after its last
+  change is not run again (spelling differences such as PowerShell's
+  `& "...\python.exe"` are ignored).
+- **At the end of a turn that changed code**, Keelson runs the missing checks,
+  through the same permission gate as the model's own commands (a check that
+  would need your OK is reported as not run, never run behind your back), with
+  `CI=1`. A failure goes back to the model with the real output, at most
+  `KEELSON_VERIFY_RETRIES` times. It is told to fix what it broke, and **not**
+  to widen the task to fix failures that were there before; an answer that
+  already says what still fails is not pushed back.
+- **Unproven claims.** A sentence such as "all tests pass" or "测试全部通过"
+  with no passing run behind it is listed under the badge.
+- **Docs-only turns** and projects without a check end as "Not verified", with
+  the reason.
+
+**Tests are guarded.** When the task does not mention tests:
+
+- changing or deleting an existing test file asks first (in `dontAsk` mode it
+  is refused). New test files and edits that only add lines do not ask. Answer
+  "this session" or "this project" to stop being asked;
+  `KEELSON_GUARD_TESTS=0` turns the guard off.
+- Changes that weaken tests are detected from the diff against the turn's
+  snapshot: tests removed, a test file deleted, `skip`/`xfail`/`.only` added,
+  assertions removed, `assert True`, a changed expected value
+  (`assert f(2) == 4` → `== 5`). The model is asked once to put them back, and
+  whatever remains is listed under the badge.
+
+**Not covered.** Keelson checks with the commands you give it; a project whose
+tests do not cover the change still passes. Plan mode and sub-agents are not
+verified (the parent's turn is). `KEELSON_VERIFY=0` turns it off.
+
 ## Plan mode
 
 **What it is.** A read-only mode. The agent can read and search but cannot edit
@@ -425,6 +482,7 @@ shows the same checks.
 | `/compact` | Fold the context now |
 | `/undo [--force]` · `/rewind N` · `/redo` | Undo the last turn (shell changes too) · the last N · reverse an undo |
 | `/revert FILE [N]` · `/checkpoints` | Put one file back · list what can be undone |
+| `/verify` · `/verify init` · `/verify run` | Show the end-of-turn checks · save the detected ones to `KEELSON.md` · run them now |
 | `/model [NAME]` | Show or switch the model on this endpoint |
 | `/memory` | Show long-term memory |
 | `/skills` | List skills |
@@ -456,6 +514,10 @@ Set them in `.env` or in the environment.
 | `KEELSON_HOME` | State directory (sessions, skills, memory, checkpoints) | `~/.keelson` |
 | `KEELSON_CHECKPOINTS` | Snapshot the project each turn so `/undo` works | `1` |
 | `KEELSON_CHECKPOINT_MAX_FILE_MB` | New files larger than this are left out of snapshots | `50` |
+| `KEELSON_VERIFY` | Check code changes at the end of each turn | `1` |
+| `KEELSON_VERIFY_RETRIES` | How many times failing checks go back to the model | `2` |
+| `KEELSON_VERIFY_TIMEOUT` | Seconds each check may run | `300` |
+| `KEELSON_GUARD_TESTS` | Ask before changing existing tests when the task is not about tests | `1` |
 | `KEELSON_TRUST_ALL` | Treat every folder as trusted (for your own machines and CI only) | `0` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | Extract skills from feedback automatically | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | Write new skills at project or user level | `project` |

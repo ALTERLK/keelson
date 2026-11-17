@@ -291,6 +291,39 @@ class Checkpoints:
                 return
             turn["extras"][key] = {"before": self._store_file(Path(key)), "after": None}
 
+    def turn_changes(self) -> list[str] | None:
+        """Files changed since the running turn started (project-relative where possible); None: no turn open."""
+        with self._lock:
+            turn = self._open
+            if turn is None:
+                return None
+            changed = {self._display(Path(p)) for p in turn["extras"]}
+            if self.mode == GIT and turn["start"]:
+                now = self._safe_snapshot()
+                if now:
+                    changed |= set(self._changed(turn["start"], now))
+            return sorted(changed)
+
+    def start_content(self, path: str) -> bytes | None:
+        """A file's bytes when the running turn started; None if it did not exist (or is not known)."""
+        with self._lock:
+            turn = self._open
+            if turn is None:
+                return None
+            target = Path(path) if Path(path).is_absolute() else self.workspace / path
+            key = os.path.realpath(target)
+            if key in turn["extras"]:
+                digest = turn["extras"][key]["before"]
+                return (self.blob_dir / digest).read_bytes() if digest else None
+            if self.mode == GIT and turn["start"]:
+                try:
+                    rel = Path(key).relative_to(self.workspace).as_posix()
+                except ValueError:
+                    return None
+                result = self._git("cat-file", "blob", f"{turn['start']}:{rel}", check=False)
+                return result.stdout if result.returncode == 0 else None
+            return None
+
     def _covered(self, path: Path) -> bool:
         try:
             rel = Path(os.path.realpath(path)).relative_to(self.workspace)

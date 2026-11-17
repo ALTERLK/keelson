@@ -15,7 +15,8 @@ from typing import Any
 import anthropic
 import openai
 
-from keelson import checkpoints, events, models, paths, trace
+from keelson import checkpoints, events, models, paths, safety, trace
+from keelson import verify as verify_mod
 from keelson.mcp_client import McpManager
 from keelson.memory import MemoryPrefetch, format_memories_for_injection, start_memory_prefetch
 from keelson.prompt import build_system_prompt
@@ -233,7 +234,8 @@ class Agent:
                  custom_system_prompt: str | None=None,
                  custom_tools: list[ToolDef] | None=None,
                  external_tools: dict[str, object] | None=None,
-                 is_sub_agent: bool=False,):
+                 is_sub_agent: bool=False,
+                 verify: bool | None=None,):
         self.permission_mode = permission_mode
         self.thinking = thinking
         self.model = model
@@ -274,6 +276,14 @@ class Agent:
         self._checkpoints: checkpoints.Checkpoints | None = None
         self._checkpoint_notice_shown = False
         self._pending_notes: list[str] = []
+        # Verified completion (keelson/verify.py): what really ran this turn, and the verdict.
+        self._verify_enabled = (verify_mod.enabled() if verify is None else verify) and not is_sub_agent
+        self._evidence = verify_mod.Evidence()
+        self._verify_rounds = 0
+        self._last_failed: tuple[int, list] | None = None
+        self._weakening_nudged = False
+        self._task_about_tests = False
+        self.last_outcome: verify_mod.Outcome | None = None
 
 
         # 计划模式”（Plan Mode）状态的变量
@@ -548,6 +558,12 @@ class Agent:
         self._loop_guard_hits = 0
         self._empty_replies = 0
         self._truncations = 0
+        self._evidence = verify_mod.Evidence()
+        self._verify_rounds = 0
+        self._last_failed = None
+        self._weakening_nudged = False
+        self._task_about_tests = verify_mod.mentions_tests(original_user_message)
+        self.last_outcome = None
         store = await self._begin_checkpoint(original_user_message)
         coro = self._chat_openai(user_message) if self.use_openai else self._chat_anthropic(user_message)
         self._current_task = asyncio.create_task(coro)
@@ -578,6 +594,181 @@ class Agent:
 
 
     # ── checkpoints: /undo, /redo, /revert ─────────────────────
+
+    # ── verified completion (keelson/verify.py) ─────────────────
+
+    _WEAKENED_NOTE = (
+        "[Keelson] Before you finish: these changes make tests weaker, and this task did not ask for test "
+        "changes:\n{items}\n\nPut the tests back and fix the code instead. If a test itself is wrong, leave it "
+        "as it was and explain why in your answer, so the user can decide."
+    )
+    _FAILED_NOTE = (
+        "[Keelson verification] You were about to finish, but the project's checks fail. Keelson ran them "
+        "after your last change; this is the real output:\n\n{outputs}\n\n"
+        "If your change caused a failure, fix it. If a failure is outside what the user asked for (for example "
+        "it was failing before you started), do not widen the task to fix it: leave that code alone and say "
+        "plainly in your answer which checks still fail and why, instead of reporting success. Do not edit, "
+        "skip or delete tests to make them pass unless the user asked for that."
+    )
+
+    def _record_evidence(self, name: str, inp: dict, result: str) -> None:
+        if self.is_sub_agent:
+            return
+        if name == "agent" and (inp.get("type") or "general") == "general":
+            self._evidence.seq += 1                 # a general sub-agent may have changed files
+            self._evidence.last_change = self._evidence.seq
+            self._evidence.shell_may_have_changed = True
+            return
+        read_only = name == "run_shell" and safety.assess_shell(inp.get("command", "")).read_only
+        self._evidence.record(name, inp, result if isinstance(result, str) else str(result),
+                              read_only_shell=read_only)
+
+    def _test_edits_allowed(self) -> bool:
+        from .tools import load_permission_rules
+
+        if "keelson(test-edits)" in self._session_rules:
+            return True
+        return any(r["tool"] == "keelson" and r["pattern"] == "test-edits" for r in load_permission_rules()["allow"])
+
+    def _test_guard(self, name: str, inp: dict) -> dict | None:
+        """Changing an existing test file when the task is not about tests needs a person's OK."""
+        if (name not in ("write_file", "edit_file", "delete_files") or self._task_about_tests
+                or self.permission_mode in ("bypassPermissions", "plan")
+                or not paths.env_flag("KEELSON_GUARD_TESTS", default=True)):
+            return None
+        if name == "delete_files":
+            raw = inp.get("paths") or []
+            targets = [str(t) for t in (raw if isinstance(raw, list) else [raw])]
+        else:
+            targets = [str(inp.get("file_path") or "")]
+        existing = [t for t in targets if t and verify_mod.is_test_file(t) and Path(t).exists()]
+        if not existing:
+            return None                          # new test files add tests; that is welcome
+        old, new = inp.get("old_string") or "", inp.get("new_string") or ""
+        if name == "edit_file" and old and old in new:
+            return None                          # an edit that only adds lines
+        if self._test_edits_allowed():
+            return None
+        reason = ("changes an existing test file, and this task does not mention tests. Keelson asks so that "
+                  "tests are not weakened to make them pass.")
+        subject = f"{name} {', '.join(existing)}"
+        if self.permission_mode == "dontAsk":
+            return {"action": "deny", "message": f"Auto-denied (dontAsk mode): {subject} — {reason}"}
+        return {"action": "confirm", "message": subject, "reason": reason, "rules": ["keelson(test-edits)"]}
+
+    async def _changed_this_turn(self) -> list[str]:
+        store = self.checkpoint_store()
+        if store is not None and store.mode != checkpoints.OFF:
+            changed = await asyncio.to_thread(store.turn_changes)
+            if changed is not None:
+                if store.mode == checkpoints.GIT:
+                    return changed
+                # Without git, shell changes are invisible: assume code changed if a command may have changed it.
+                return changed + (["(changed by shell commands)"] if self._evidence.shell_may_have_changed else [])
+        changed = list(dict.fromkeys(self._evidence.tool_paths))
+        if self._evidence.shell_may_have_changed:
+            changed.append("(changed by shell commands)")
+        return changed
+
+    def _weakened_tests(self, changed: list[str]) -> list[str]:
+        store = self.checkpoint_store()
+        found: list[str] = []
+        for rel in changed:
+            if not verify_mod.is_test_file(rel):
+                continue
+            before = store.start_content(rel) if store is not None else None
+            target = Path(rel)
+            try:
+                after = target.read_bytes() if target.exists() else None
+            except OSError:
+                continue
+            if before is None and store is None:
+                continue                         # nothing to compare with
+            found += verify_mod.weakening(
+                rel, before.decode("utf-8", "replace") if before is not None else None,
+                after.decode("utf-8", "replace") if after is not None else None)
+        return found
+
+    async def run_checks(self, commands: list[str]) -> list[verify_mod.Run]:
+        """Run the project's checks the way run_shell would; refuse any the permission rules would question."""
+        from .tools import check_permission, run_shell_async
+
+        events.emit(events.VERIFY, phase="running", commands=commands)
+        runs = []
+        for command in commands:
+            # The same gate the model's own commands go through, minus the asking: a check that would need
+            # a person's OK is reported as not run rather than run behind their back.
+            perm = check_permission("run_shell", {"command": command}, self.permission_mode,
+                                    self._plan_file_path, self._session_rules)
+            if perm["action"] != "allow":
+                why = perm.get("reason") or perm.get("message") or "needs confirmation"
+                runs.append(verify_mod.Run(command, None, self._evidence.seq, time.strftime("%H:%M"),
+                                           f"not run by Keelson: {why}"))
+                continue
+            with events.span("verify", command=command):
+                result = await run_shell_async({"command": command, "timeout": verify_mod.timeout_s() * 1000,
+                                                "env": {"CI": "1"}})
+            code = verify_mod.exit_code_of(result)
+            runs.append(verify_mod.Run(command, code, self._evidence.seq, time.strftime("%H:%M"),
+                                       verify_mod.summarize(result, code), verify_mod.tail(result)))
+        return runs
+
+    async def _end_of_turn_check(self, final_text: str) -> str | None:
+        """Runs when the model is about to finish. A string: tell the model this and keep going."""
+        if not self._verify_enabled or self.permission_mode == "plan" or self._aborted:
+            return None
+        changed = await self._changed_this_turn()
+        if not changed:
+            return None                          # a question, not a change: nothing to verify
+        weakened = self._weakened_tests(changed)
+        if (weakened and not self._task_about_tests and not self._weakening_nudged
+                and not self._test_edits_allowed()):
+            self._weakening_nudged = True
+            return self._WEAKENED_NOTE.format(items="\n".join(f"- {w}" for w in weakened))
+
+        Outcome = verify_mod.Outcome
+        code_changed = [p for p in changed if not verify_mod.is_doc(p)]
+        commands, source = verify_mod.commands_for()
+        if not code_changed:
+            outcome = Outcome(verify_mod.UNVERIFIED, "only documentation changed")
+        elif not commands:
+            outcome = Outcome(verify_mod.UNVERIFIED, "no check command for this project: add a ## Verify "
+                                                     "section to KEELSON.md (/verify init)")
+        else:
+            unchanged = self._last_failed is not None and self._last_failed[0] == self._evidence.last_change
+            if unchanged:
+                # Nothing changed since Keelson's failing run: the answer stands, the result is that run's.
+                earlier, missing, runs = [], commands, self._last_failed[1]
+            else:
+                # A check the agent already passed since its last change is not run again.
+                earlier = [r for r in (self._evidence.passing_after_change([c]) for c in commands) if r]
+                missing = [c for c in commands if not any(verify_mod.same_command(r.command, c) for r in earlier)]
+                runs = earlier + (await self.run_checks(missing) if missing else [])
+            not_run = [r for r in runs if r.exit_code is None and not r.output]
+            bad = [r for r in runs if r.exit_code != 0 and r not in not_run]
+            # An answer that already says what still fails is honest; pushing back would widen the task.
+            if (bad and not unchanged and self._verify_rounds < verify_mod.retries()
+                    and not verify_mod.acknowledges_failure(final_text)):
+                self._verify_rounds += 1
+                self._last_failed = (self._evidence.last_change, runs)
+                outputs = "\n\n".join(f"$ {r.command}   (exit code {r.exit_code})\n{r.output or r.summary}"
+                                      for r in bad)
+                return self._FAILED_NOTE.format(outputs=outputs)
+            detail = "; ".join(f"{r.command}: {r.summary}" for r in runs)
+            if bad:
+                outcome = Outcome(verify_mod.FAILED, detail, runs)
+            elif not_run:
+                outcome = Outcome(verify_mod.UNVERIFIED, detail, runs)
+            else:
+                who = ("run by the agent" if not missing else "run by Keelson" if not earlier
+                       else "run by the agent and Keelson")
+                outcome = Outcome(verify_mod.PASSED, f"{detail} ({who} at {runs[-1].at})", runs)
+        outcome.weakened, outcome.changed = weakened, changed
+        backed = outcome.status == verify_mod.PASSED or self._evidence.passing_after_change() is not None
+        outcome.unproven = [] if backed else verify_mod.claims(final_text)
+        self.last_outcome = outcome
+        events.emit(events.VERIFY, phase="done", source=source, **outcome.event())
+        return None
 
     def checkpoint_store(self) -> checkpoints.Checkpoints | None:
         if self.is_sub_agent:
@@ -1533,12 +1724,17 @@ class Agent:
         because each task carries its own copy of the context.
         """
         with events.tool_call(call_id), events.span("tool", tool=name, id=call_id):
-            return await self._execute_tool_call(name, inp)
+            result = await self._execute_tool_call(name, inp)
+        self._record_evidence(name, inp, result)
+        return result
 
     def _gate(self, call_id: str | None, name: str, inp: dict) -> dict:
         """Ask the permission gate about one call (timed, to show what the gate costs)."""
         with events.span("permission", tool=name, id=call_id):
-            return check_permission(name, inp, self.permission_mode, self._plan_file_path, self._session_rules)
+            perm = check_permission(name, inp, self.permission_mode, self._plan_file_path, self._session_rules)
+            if perm["action"] == "allow":
+                perm = self._test_guard(name, inp) or perm
+            return perm
 
     async def _execute_tool_call(self, name: str, inp: dict) -> str:
         if name == "compact_context":
@@ -1892,6 +2088,10 @@ class Agent:
                     self._anthropic_messages.pop()
                     self._anthropic_messages.append({"role": "user", "content": EMPTY_REPLY_NUDGE})
                     continue
+                followup = await self._end_of_turn_check(said)
+                if followup:
+                    self._anthropic_messages.append({"role": "user", "content": followup})
+                    continue
                 if not self.is_sub_agent:
                     print_cost(self.total_input_tokens, self.total_output_tokens, self._get_current_cost_usd())
                 break
@@ -2177,6 +2377,10 @@ class Agent:
                 if self._should_retry_empty_reply(message.get("content")):
                     self._openai_messages.pop()          # an empty assistant message is not worth keeping
                     self._openai_messages.append({"role": "user", "content": EMPTY_REPLY_NUDGE})
+                    continue
+                followup = await self._end_of_turn_check(message.get("content") or "")
+                if followup:
+                    self._openai_messages.append({"role": "user", "content": followup})
                     continue
                 if not self.is_sub_agent:
                     print_cost(self.total_input_tokens, self.total_output_tokens, self._get_current_cost_usd())

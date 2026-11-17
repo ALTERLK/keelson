@@ -6,6 +6,19 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
 ## Unreleased — 0.4.0 (in progress)
 
 ### Added
+- **Verified completion** (`keelson/verify.py`). A turn that changed code ends
+  with a badge from what actually ran: ✓ verified / ✗ checks fail / ! not
+  verified, with the reason. Keelson runs the project's checks itself (the
+  `## Verify` section of `KEELSON.md`, else detected tests; `/verify`,
+  `/verify init`, `/verify run`) through the same permission gate as the
+  model's commands, feeds failures back with the real output (at most
+  `KEELSON_VERIFY_RETRIES`, default 2), and does not push the model to widen
+  the task for failures that were already there. "Tests pass" claims without a
+  passing run are flagged.
+- **Test protection.** When the task is not about tests, changing an existing
+  test file asks first, and changes that weaken tests (removed tests or
+  assertions, new skips, `assert True`, changed expected values) are detected
+  against the turn's snapshot, sent back once, and reported.
 - **Undo that covers shell commands.** Each turn starts with a snapshot of the
   project in a separate git repository (`keelson/checkpoints.py`); `/undo`,
   `/rewind N`, `/redo`, `/revert FILE` and `/checkpoints` restore what a turn
