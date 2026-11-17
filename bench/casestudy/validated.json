@@ -1,0 +1,108 @@
+{
+  "more-itertools-1308": {
+    "sound": true,
+    "reason": "",
+    "fail_to_pass": [
+      {
+        "id": "tests.test_more.BucketTests::test_falsey_validator_is_honoured",
+        "at_base": "fails"
+      }
+    ],
+    "pass_to_pass": 619,
+    "known_failures": [],
+    "python": "3.12.13",
+    "platform": "win32"
+  },
+  "cachetools-440": {
+    "sound": true,
+    "reason": "",
+    "fail_to_pass": [
+      {
+        "id": "tests.test_ttl.TTLCacheTest::test_ttl_expiration_overflow",
+        "at_base": "fails"
+      }
+    ],
+    "pass_to_pass": 31,
+    "known_failures": [],
+    "python": "3.12.13",
+    "platform": "win32"
+  },
+  "python-dotenv-699": {
+    "sound": true,
+    "reason": "",
+    "fail_to_pass": [
+      {
+        "id": "tests.test_cli::test_get_empty_string_value",
+        "at_base": "fails"
+      }
+    ],
+    "pass_to_pass": 29,
+    "known_failures": [
+      "tests.test_cli::test_get_default_path",
+      "tests.test_cli::test_run",
+      "tests.test_cli::test_run_interpolation_respects_override[--no-override--\\n/suffix\\n]",
+      "tests.test_cli::test_run_interpolation_respects_override[--no-override-environment-environment\\nenvironment/suffix\\n]",
+      "tests.test_cli::test_run_interpolation_respects_override[--override-environment-file\\nfile/suffix\\n]",
+      "tests.test_cli::test_run_with_command_flags",
+      "tests.test_cli::test_run_with_dotenv_and_command_flags",
+      "tests.test_cli::test_run_with_env_missing_and_invalid_cmd",
+      "tests.test_cli::test_run_with_existing_variable",
+      "tests.test_cli::test_run_with_existing_variable_not_overridden",
+      "tests.test_cli::test_run_with_invalid_cmd",
+      "tests.test_cli::test_run_with_none_value",
+      "tests.test_cli::test_run_with_other_env",
+      "tests.test_cli::test_run_with_version",
+      "tests.test_cli::test_run_without_cmd"
+    ],
+    "python": "3.12.13",
+    "platform": "win32"
+  },
+  "humanize-205": {
+    "sound": true,
+    "reason": "",
+    "fail_to_pass": [
+      {
+        "id": "tests.test_filesize::test_naturalsize[test_args70-1.0 MB]",
+        "at_base": "fails"
+      },
+      {
+        "id": "tests.test_filesize::test_naturalsize[test_args71-1.0 GB]",
+        "at_base": "fails"
+      },
+      {
+        "id": "tests.test_filesize::test_naturalsize[test_args72-1.0 TB]",
+        "at_base": "fails"
+      },
+      {
+        "id": "tests.test_filesize::test_naturalsize[test_args73-1.0 MiB]",
+        "at_base": "fails"
+      },
+      {
+        "id": "tests.test_filesize::test_naturalsize[test_args74-1.0 GiB]",
+        "at_base": "fails"
+      },
+      {
+        "id": "tests.test_filesize::test_naturalsize[test_args75-1.0M]",
+        "at_base": "fails"
+      }
+    ],
+    "pass_to_pass": 70,
+    "known_failures": [],
+    "python": "3.12.13",
+    "platform": "win32"
+  },
+  "tenacity-658": {
+    "sound": true,
+    "reason": "",
+    "fail_to_pass": [
+      {
+        "id": "tests.test_tenacity.TestDecoratorWrapper::test_retry_if_exception_cause_type_handles_cause_cycles",
+        "at_base": "hangs"
+      }
+    ],
+    "pass_to_pass": 133,
+    "known_failures": [],
+    "python": "3.12.13",
+    "platform": "win32"
+  }
+}

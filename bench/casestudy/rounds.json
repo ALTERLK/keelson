@@ -1,0 +1,26 @@
+[
+  {
+    "round": 1,
+    "label": {"en": "Runtime as it was", "zh": "运行时原样"},
+    "change": {
+      "en": "Keelson at commit 6e62a9e, before the case study changed anything.",
+      "zh": "提交 6e62a9e 时的 Keelson，实战案例还没有改动任何东西。"
+    }
+  },
+  {
+    "round": 2,
+    "label": {"en": "After the loop-guard and empty-reply fixes", "zh": "修复循环保护与空回复之后"},
+    "change": {
+      "en": "An empty model reply is retried instead of ending the turn. The loop guard survives a context fold, counts shell commands by program instead of as one tool, and ends the turn itself after three trips.",
+      "zh": "模型返回空回复时重试，而不是当作任务结束。循环保护不再被上下文折叠清零；shell 命令按程序而不是按“一个工具”计数；触发三次后由运行时强制收尾。"
+    }
+  },
+  {
+    "round": 3,
+    "label": {"en": "After the multi-line shell fix", "zh": "修复多行命令之后"},
+    "change": {
+      "en": "On Windows a command of several lines now runs every line (cmd.exe ran only the first and dropped the rest in silence), and a quoted string that spans lines is refused with the reason.",
+      "zh": "在 Windows 上，多行命令的每一行都会执行（此前 cmd.exe 只执行第一行，其余静默丢弃）；跨行的引号字符串会被明确拒绝并说明原因。"
+    }
+  }
+]

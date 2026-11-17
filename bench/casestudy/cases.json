@@ -1,0 +1,82 @@
+[
+  {
+    "id": "more-itertools-1308",
+    "project": "more-itertools",
+    "repo": "more-itertools/more-itertools",
+    "issue": 1308,
+    "pr": 1309,
+    "base_sha": "1ea82a711c69f590054987b5cb194157f8ce8ac4",
+    "fix_sha": "67fcf640477c78605580f5ee703a54c73c1e7a8a",
+    "source_paths": ["more_itertools/more.py"],
+    "test_files": ["tests/test_more.py"],
+    "install": ["pytest"],
+    "summary": {
+      "en": "`bucket()` picks its validator with `validator or default`, so a callable that happens to be falsey (an empty set subclass with `__call__`) is silently replaced by one that accepts every key.",
+      "zh": "`bucket()` 用 `validator or default` 选校验器，于是一个恰好为假值的可调用对象（比如带 `__call__` 的空集合子类）会被悄悄换成“全部放行”的默认实现。"
+    }
+  },
+  {
+    "id": "cachetools-440",
+    "project": "cachetools",
+    "repo": "tkem/cachetools",
+    "issue": 440,
+    "pr": 441,
+    "base_sha": "f4f288579dc3c8f82f62d0eaca7774303d9d3768",
+    "fix_sha": "39f9dd234aabc0859c703e7d9747fbefe7133f4c",
+    "source_paths": ["src/cachetools/__init__.py"],
+    "test_files": ["tests/test_ttl.py"],
+    "install": ["pytest"],
+    "summary": {
+      "en": "`TTLCache.__setitem__` stores the value before computing `timer() + ttl`. If that addition overflows, a half-inserted entry with no expiry is left behind and later membership checks raise `TypeError`.",
+      "zh": "`TTLCache.__setitem__` 先写入值，再计算 `timer() + ttl`。这个加法一旦溢出，缓存里会留下一个没有过期时间的“半成品”条目，之后的成员检查直接抛 `TypeError`。"
+    }
+  },
+  {
+    "id": "python-dotenv-699",
+    "project": "python-dotenv",
+    "repo": "theskumar/python-dotenv",
+    "issue": 699,
+    "pr": 700,
+    "base_sha": "58f2d7c112235b347040bb5cb579d4ebc0a0ad91",
+    "fix_sha": "f215c0274dc4c310e5ca5feb4c6bddade25ece21",
+    "source_paths": ["src/dotenv/cli.py"],
+    "test_files": ["tests/test_cli.py"],
+    "install": ["pytest", "click", "sh; sys_platform != 'win32'"],
+    "summary": {
+      "en": "`dotenv get KEY` tests the stored value for truthiness, so a key that is present but empty (`KEY=`) exits with code 1 exactly like a missing key.",
+      "zh": "`dotenv get KEY` 用真值判断取到的值，所以一个存在但为空的键（`KEY=`）会和不存在的键一样以退出码 1 结束。"
+    }
+  },
+  {
+    "id": "humanize-205",
+    "project": "humanize",
+    "repo": "python-humanize/humanize",
+    "issue": 205,
+    "pr": 329,
+    "base_sha": "976484a655df046aa6849f440a4f0cd44fc4918c",
+    "fix_sha": "823ad6096e1e5ba82ea876ce761fc2efebd76157",
+    "source_paths": ["src/humanize/filesize.py"],
+    "test_files": ["tests/test_filesize.py"],
+    "install": ["pytest", "freezegun"],
+    "summary": {
+      "en": "`naturalsize()` chooses the unit from the unrounded byte count and rounds afterwards, so values just under a boundary print as `1000.0 ZB` instead of rolling over to `1.0 YB`.",
+      "zh": "`naturalsize()` 先按未舍入的字节数选单位，再做舍入，于是恰好在边界下方的值会显示成 `1000.0 ZB`，而不是进位成 `1.0 YB`。"
+    }
+  },
+  {
+    "id": "tenacity-658",
+    "project": "tenacity",
+    "repo": "jd/tenacity",
+    "issue": 658,
+    "pr": 660,
+    "base_sha": "c650fb45204635f07910948d5fc59a8c551ffdda",
+    "fix_sha": "b3c5a9f9212187aaf96353378daa9a9ebd800742",
+    "source_paths": ["tenacity/retry.py"],
+    "test_files": ["tests/test_tenacity.py"],
+    "install": ["pytest", "tornado", "typeguard", "pytest-asyncio"],
+    "summary": {
+      "en": "`retry_if_exception_cause_type` walks `__cause__` until it reaches `None`. A cyclic chain (`raise e from e`) never ends, so the predicate spins at 100% CPU and the stop condition is never consulted.",
+      "zh": "`retry_if_exception_cause_type` 沿 `__cause__` 一直走到 `None`。遇到成环的异常链（`raise e from e`）就永远走不完：判断函数空转占满 CPU，停止条件根本没机会执行。"
+    }
+  }
+]

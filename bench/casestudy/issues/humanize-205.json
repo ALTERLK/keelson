@@ -1,0 +1,6 @@
+{
+  "title": "Decimal filesize YB to ZB rollover doesn't happen where expected",
+  "url": "https://github.com/python-humanize/humanize/issues/205",
+  "created_at": "2024-09-25T14:58:29Z",
+  "body": "For all smaller units, we never see 1000, it always rolls over to the next. \n\n### What did you do?\n```python\nIn [5]: from humanize import filesize\nIn [6]: filesize.naturalsize(100_000_000_000_000_000_000_000)\nOut[6]: '100.0 ZB'\n\nIn [7]: filesize.naturalsize(1_000_000_000_000_000_000_000_000)\nOut[7]: '1000.0 ZB'\n\nIn [8]: filesize.naturalsize(10_000_000_000_000_000_000_000_000)\nOut[8]: '10.0 YB'\n```\n\nThe exact rollover happens here:\n\n```python\nIn [66]: filesize.naturalsize(1_000_000_000_000_000_050_331_648)\nOut[66]: '1000.0 ZB'\n\nIn [67]: filesize.naturalsize(1_000_000_000_000_000_050_331_649)\nOut[67]: '1.0 YB'\n```\n\n### What did you expect to happen?\n\nId expect to see 1 YB rather than 1000 ZB.\n\n### What versions are you using?\n\n* OS: 6.10.9-200.fc40.x86_64 (Fedora 40)\n* Python: 3.11.5\n* Humanize:  4.10.0\n\nI assume this is just a floating point precision limitation, so probably no fix is needed. "
+}

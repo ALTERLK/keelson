@@ -1,0 +1,206 @@
+{
+  "model": "gemini-3.8-flash",
+  "generated": "2026-11-16",
+  "permission_mode": "dontAsk",
+  "max_turns": 30,
+  "round": 1,
+  "cases": [
+    {
+      "id": "more-itertools-1308",
+      "project": "more-itertools",
+      "issue": 1308,
+      "title": "bucket ignores a supplied validator when the callable is falsey",
+      "issue_url": "https://github.com/more-itertools/more-itertools/issues/1308",
+      "fix_url": "https://github.com/more-itertools/more-itertools/pull/1309",
+      "summary": {
+        "en": "`bucket()` picks its validator with `validator or default`, so a callable that happens to be falsey (an empty set subclass with `__call__`) is silently replaced by one that accepts every key.",
+        "zh": "`bucket()` 用 `validator or default` 选校验器，于是一个恰好为假值的可调用对象（比如带 `__call__` 的空集合子类）会被悄悄换成“全部放行”的默认实现。"
+      },
+      "resolved": false,
+      "fail_to_pass": {
+        "passed": 0,
+        "total": 1
+      },
+      "regressions": [],
+      "tests_timed_out": false,
+      "files_changed": [],
+      "same_files_as_upstream": false,
+      "test_files_touched": [],
+      "test_lines_removed": 0,
+      "agent_diff": "",
+      "upstream_diff": "diff --git a/more_itertools/more.py b/more_itertools/more.py\nindex 940b800..9c56ab3 100755\n--- a/more_itertools/more.py\n+++ b/more_itertools/more.py\n@@ -1182,7 +1182,10 @@ class bucket:\n         self._it = iter(iterable)\n         self._key = key\n         self._cache = defaultdict(deque)\n-        self._validator = validator or (lambda x: True)\n+        # Use ``is None`` rather than truthiness: a valid validator may be a\n+        # callable object that is falsey (e.g. an empty ``set`` subclass with\n+        # ``__call__``), and ``validator or ...`` would silently replace it.\n+        self._validator = (lambda x: True) if validator is None else validator\n \n     def __contains__(self, value):\n         if not self._validator(value):",
+      "status": "completed",
+      "wall_time_s": 10.6,
+      "model_calls": 2,
+      "tool_calls": 1,
+      "denied": 0,
+      "loop_guard": 0,
+      "input_tokens": 9958,
+      "output_tokens": 20,
+      "trace": "21-case-more-itertools-1308-round1",
+      "notes": {
+        "en": "The model listed files once, and the next completion came back empty: no text, no tool call. The runtime read \"no tool call\" as \"finished\" and ended the turn after ten seconds with nothing changed. This is a defect in Keelson, not a wrong answer; it was fixed before round 2.",
+        "zh": "模型只列了一次文件，下一次回复是空的：没有文字，也没有工具调用。运行时把“没有工具调用”当成了“做完了”，十秒后就结束了这一轮，什么都没改。这是 Keelson 的缺陷，不是模型答错；第 2 轮之前已修复。"
+      }
+    },
+    {
+      "id": "cachetools-440",
+      "project": "cachetools",
+      "issue": 440,
+      "title": "Failed TTL expiration calculation leaves an unusable cache entry",
+      "issue_url": "https://github.com/tkem/cachetools/issues/440",
+      "fix_url": "https://github.com/tkem/cachetools/pull/441",
+      "summary": {
+        "en": "`TTLCache.__setitem__` stores the value before computing `timer() + ttl`. If that addition overflows, a half-inserted entry with no expiry is left behind and later membership checks raise `TypeError`.",
+        "zh": "`TTLCache.__setitem__` 先写入值，再计算 `timer() + ttl`。这个加法一旦溢出，缓存里会留下一个没有过期时间的“半成品”条目，之后的成员检查直接抛 `TypeError`。"
+      },
+      "resolved": true,
+      "fail_to_pass": {
+        "passed": 1,
+        "total": 1
+      },
+      "regressions": [],
+      "tests_timed_out": false,
+      "files_changed": [
+        "src/cachetools/__init__.py"
+      ],
+      "same_files_as_upstream": true,
+      "test_files_touched": [],
+      "test_lines_removed": 0,
+      "agent_diff": "diff --git a/src/cachetools/__init__.py b/src/cachetools/__init__.py\nindex ac02074..5800051 100644\n--- a/src/cachetools/__init__.py\n+++ b/src/cachetools/__init__.py\n@@ -496,6 +496,7 @@ class TTLCache(_TimedCache):\n     def __setitem__(self, key, value, cache_setitem=Cache.__setitem__):\n         with self.timer as time:\n             self.expire(time)\n+            expires = time + self.__ttl\n             cache_setitem(self, key, value)\n         try:\n             link = self.__getlink(key)\n@@ -503,7 +504,7 @@ class TTLCache(_TimedCache):\n             self.__links[key] = link = TTLCache._Link(key)\n         else:\n             link.unlink()\n-        link.expires = time + self.__ttl\n+        link.expires = expires\n         link.next = root = self.__root\n         link.prev = prev = root.prev\n         prev.next = root.prev = link",
+      "upstream_diff": "diff --git a/src/cachetools/__init__.py b/src/cachetools/__init__.py\nindex ac02074..3b6d857 100644\n--- a/src/cachetools/__init__.py\n+++ b/src/cachetools/__init__.py\n@@ -495,6 +495,7 @@ class TTLCache(_TimedCache):\n \n     def __setitem__(self, key, value, cache_setitem=Cache.__setitem__):\n         with self.timer as time:\n+            expires = time + self.__ttl\n             self.expire(time)\n             cache_setitem(self, key, value)\n         try:\n@@ -503,7 +504,7 @@ class TTLCache(_TimedCache):\n             self.__links[key] = link = TTLCache._Link(key)\n         else:\n             link.unlink()\n-        link.expires = time + self.__ttl\n+        link.expires = expires\n         link.next = root = self.__root\n         link.prev = prev = root.prev\n         prev.next = root.prev = link",
+      "status": "completed",
+      "wall_time_s": 206.4,
+      "model_calls": 30,
+      "tool_calls": 29,
+      "denied": 1,
+      "loop_guard": 4,
+      "input_tokens": 489563,
+      "output_tokens": 2322,
+      "trace": "22-case-cachetools-440-round1",
+      "notes": {
+        "en": "Correct fix at tool call 7, the same idea as upstream: compute the expiry before the value is written. It then tried to verify with multi-line `python -c` scripts; on Windows only their first line ran, so they printed nothing. The loop guard tripped four times and blocked `pytest` as well. The model called `compact_context`, stating that it needed to reset the guard, and carried on to the 30-step limit.",
+        "zh": "第 7 次工具调用就改对了，思路与上游一致：先算过期时间，再写入值。之后它想用多行的 `python -c` 脚本验证；在 Windows 上这些命令只有第一行被执行，所以什么都没输出。循环保护触发了 4 次，连 `pytest` 也一起拦了。模型于是调用 `compact_context`，理由写的就是“需要重置循环保护”，然后一直跑到 30 步上限。"
+      }
+    },
+    {
+      "id": "python-dotenv-699",
+      "project": "python-dotenv",
+      "issue": 699,
+      "title": "dotenv get exits with code 1 for empty string values",
+      "issue_url": "https://github.com/theskumar/python-dotenv/issues/699",
+      "fix_url": "https://github.com/theskumar/python-dotenv/pull/700",
+      "summary": {
+        "en": "`dotenv get KEY` tests the stored value for truthiness, so a key that is present but empty (`KEY=`) exits with code 1 exactly like a missing key.",
+        "zh": "`dotenv get KEY` 用真值判断取到的值，所以一个存在但为空的键（`KEY=`）会和不存在的键一样以退出码 1 结束。"
+      },
+      "resolved": true,
+      "fail_to_pass": {
+        "passed": 1,
+        "total": 1
+      },
+      "regressions": [],
+      "tests_timed_out": false,
+      "files_changed": [
+        "output.txt",
+        "src/dotenv/cli.py"
+      ],
+      "same_files_as_upstream": false,
+      "test_files_touched": [],
+      "test_lines_removed": 0,
+      "agent_diff": "diff --git a/output.txt b/output.txt\nnew file mode 100644\nindex 0000000..8b13789\n--- /dev/null\n+++ b/output.txt\n@@ -0,0 +1 @@\n+\ndiff --git a/src/dotenv/cli.py b/src/dotenv/cli.py\nindex 72c8181..43d433e 100644\n--- a/src/dotenv/cli.py\n+++ b/src/dotenv/cli.py\n@@ -142,7 +142,7 @@ def get(ctx: click.Context, key: Any) -> None:\n         values = dotenv_values(stream=stream)\n \n     stored_value = values.get(key)\n-    if stored_value:\n+    if stored_value is not None:\n         click.echo(stored_value)\n     else:\n         sys.exit(1)",
+      "upstream_diff": "diff --git a/src/dotenv/cli.py b/src/dotenv/cli.py\nindex 72c8181..c78231c 100644\n--- a/src/dotenv/cli.py\n+++ b/src/dotenv/cli.py\n@@ -141,11 +141,10 @@ def get(ctx: click.Context, key: Any) -> None:\n     with stream_file(file) as stream:\n         values = dotenv_values(stream=stream)\n \n-    stored_value = values.get(key)\n-    if stored_value:\n-        click.echo(stored_value)\n-    else:\n+    # Empty strings are valid values; only missing keys / bare keys (None) fail.\n+    if key not in values or values[key] is None:\n         sys.exit(1)\n+    click.echo(values[key])\n \n \n @cli.command()",
+      "status": "completed",
+      "wall_time_s": 121.9,
+      "model_calls": 30,
+      "tool_calls": 29,
+      "denied": 2,
+      "loop_guard": 0,
+      "input_tokens": 350886,
+      "output_tokens": 2033,
+      "trace": "23-case-python-dotenv-699-round1",
+      "notes": {
+        "en": "A one-line fix (`is not None`), reached at tool call 22 after twenty calls of setup and probing — including `pip install python-dotenv[cli]` from the network, which the gate let through. Several of its multi-line commands ran only their first line. It left `output.txt` behind (`del` was denied) and hit the 30-step limit.",
+        "zh": "修复只有一行（`is not None`），但到第 22 次工具调用才改，之前 20 次都在搭环境和试探——其中包括从网络 `pip install python-dotenv[cli]`，权限门放行了。它的多行命令有好几条只执行了第一行。留下了一个 `output.txt`（`del` 被拒绝），并撞上 30 步上限。"
+      }
+    },
+    {
+      "id": "humanize-205",
+      "project": "humanize",
+      "issue": 205,
+      "title": "Decimal filesize YB to ZB rollover doesn't happen where expected",
+      "issue_url": "https://github.com/python-humanize/humanize/issues/205",
+      "fix_url": "https://github.com/python-humanize/humanize/pull/329",
+      "summary": {
+        "en": "`naturalsize()` chooses the unit from the unrounded byte count and rounds afterwards, so values just under a boundary print as `1000.0 ZB` instead of rolling over to `1.0 YB`.",
+        "zh": "`naturalsize()` 先按未舍入的字节数选单位，再做舍入，于是恰好在边界下方的值会显示成 `1000.0 ZB`，而不是进位成 `1.0 YB`。"
+      },
+      "resolved": false,
+      "fail_to_pass": {
+        "passed": 0,
+        "total": 6
+      },
+      "regressions": [],
+      "tests_timed_out": false,
+      "files_changed": [],
+      "same_files_as_upstream": false,
+      "test_files_touched": [],
+      "test_lines_removed": 0,
+      "agent_diff": "",
+      "upstream_diff": "diff --git a/src/humanize/filesize.py b/src/humanize/filesize.py\nindex c495fed..315261a 100644\n--- a/src/humanize/filesize.py\n+++ b/src/humanize/filesize.py\n@@ -97,6 +97,12 @@ def naturalsize(\n         return f\"{int(bytes_)}B\" if gnu else _(\"%d Bytes\") % int(bytes_)\n \n     exp = int(min(log(abs_bytes, base), len(suffix)))\n+    # The suffix is chosen from the unrounded byte count, but `format` rounds the\n+    # mantissa afterward; rounding can push it up to `base` (e.g. 999999 is\n+    # 999.999 kB, which formats to \"1000.0 kB\"). When that happens and a larger\n+    # suffix is available, step up one suffix so the result reads \"1.0 MB\".\n+    if exp < len(suffix) and abs(float(format % (abs_bytes / (base**exp)))) >= base:\n+        exp += 1\n     space = \"\" if gnu else \" \"\n     ret: str = format % (bytes_ / (base**exp)) + space + _(suffix[exp - 1])\n     return ret",
+      "status": "completed",
+      "wall_time_s": 126.0,
+      "model_calls": 30,
+      "tool_calls": 29,
+      "denied": 1,
+      "loop_guard": 0,
+      "input_tokens": 282040,
+      "output_tokens": 2695,
+      "trace": "24-case-humanize-205-round1",
+      "notes": {
+        "en": "It never edited a file. Twenty-five `python -c` probes of the same floating-point fact, each printing something slightly different, so the loop guard — which compares result hashes — never tripped. 30-step limit.",
+        "zh": "一个文件都没改。连续 25 次用 `python -c` 探测同一个浮点精度问题，每次输出都略有不同，所以靠比较结果哈希的循环保护一次都没触发。撞上 30 步上限。"
+      }
+    },
+    {
+      "id": "tenacity-658",
+      "project": "tenacity",
+      "issue": 658,
+      "title": "retry_if_exception_cause_type spins forever when the exception cause chain contains a cycle (e.g. `raise e from e`)",
+      "issue_url": "https://github.com/jd/tenacity/issues/658",
+      "fix_url": "https://github.com/jd/tenacity/pull/660",
+      "summary": {
+        "en": "`retry_if_exception_cause_type` walks `__cause__` until it reaches `None`. A cyclic chain (`raise e from e`) never ends, so the predicate spins at 100% CPU and the stop condition is never consulted.",
+        "zh": "`retry_if_exception_cause_type` 沿 `__cause__` 一直走到 `None`。遇到成环的异常链（`raise e from e`）就永远走不完：判断函数空转占满 CPU，停止条件根本没机会执行。"
+      },
+      "resolved": true,
+      "fail_to_pass": {
+        "passed": 1,
+        "total": 1
+      },
+      "regressions": [],
+      "tests_timed_out": false,
+      "files_changed": [
+        "tenacity/retry.py"
+      ],
+      "same_files_as_upstream": true,
+      "test_files_touched": [],
+      "test_lines_removed": 0,
+      "agent_diff": "diff --git a/tenacity/retry.py b/tenacity/retry.py\nindex e59f4c0..e97b386 100644\n--- a/tenacity/retry.py\n+++ b/tenacity/retry.py\n@@ -177,10 +177,14 @@ class retry_if_exception_cause_type(retry_base):\n \n         if retry_state.outcome.failed:\n             exc = retry_state.outcome.exception()\n+            seen_exceptions: set[int] = set()\n             while exc is not None:\n+                seen_exceptions.add(id(exc))\n                 if isinstance(exc.__cause__, self.exception_cause_types):\n                     return True\n                 exc = exc.__cause__\n+                if exc is not None and id(exc) in seen_exceptions:\n+                    break\n \n         return False\n ",
+      "upstream_diff": "diff --git a/tenacity/retry.py b/tenacity/retry.py\nindex e59f4c0..b1781da 100644\n--- a/tenacity/retry.py\n+++ b/tenacity/retry.py\n@@ -161,7 +161,7 @@ class retry_if_exception_cause_type(retry_base):\n     \"\"\"Retries if any of the causes of the raised exception is of one or more types.\n \n     The check on the type of the cause of the exception is done recursively (until finding\n-    an exception in the chain that has no `__cause__`)\n+    an exception in the chain that has no ``__cause__``, or a cycle is detected).\n     \"\"\"\n \n     def __init__(\n@@ -177,7 +177,12 @@ class retry_if_exception_cause_type(retry_base):\n \n         if retry_state.outcome.failed:\n             exc = retry_state.outcome.exception()\n-            while exc is not None:\n+            # Guard against cyclic __cause__ chains (e.g. ``raise e from e``),\n+            # which would otherwise spin forever inside the predicate and\n+            # prevent stop conditions from ever running (see #658).\n+            seen: set[int] = set()\n+            while exc is not None and id(exc) not in seen:\n+                seen.add(id(exc))\n                 if isinstance(exc.__cause__, self.exception_cause_types):\n                     return True\n                 exc = exc.__cause__",
+      "status": "completed",
+      "wall_time_s": 145.5,
+      "model_calls": 21,
+      "tool_calls": 20,
+      "denied": 1,
+      "loop_guard": 2,
+      "input_tokens": 269543,
+      "output_tokens": 3885,
+      "trace": "25-case-tenacity-658-round1",
+      "notes": {
+        "en": "Three multi-line repro scripts printed nothing (only their first line ran). The loop guard tripped twice; the model then stopped probing, read the code, and wrote a fix equivalent to upstream: remember the `id()` of every exception already visited. 21 calls.",
+        "zh": "三个多行的复现脚本都没有输出（只执行了第一行）。循环保护触发两次后，模型停止试探，去读代码，写出了与上游等价的修复：记录已访问过的异常的 `id()`。共 21 次调用。"
+      }
+    }
+  ]
+}
