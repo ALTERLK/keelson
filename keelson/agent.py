@@ -851,6 +851,17 @@ class Agent:
         self.last_input_token_count = 0
         print_info("Conversation cleared.")
 
+    def set_model(self, model: str) -> None:
+        """Switch the model on the same endpoint and key; the conversation is kept.
+
+        Tokens spent so far stay counted, but the cost estimate from here on uses
+        the new model's price for the whole session (an approximation).
+        """
+        self.model = model.strip()
+        self.effective_window = _get_context_windows(self.model) - 20000
+        self._thinking_mode = self._resolve_thinking_mode()
+        self._emit_usage()
+
     def show_cost(self):
         total = self._get_current_cost_usd()
         budget_info = f" / ${self.max_cost_usd} budget" if self.max_cost_usd else ""

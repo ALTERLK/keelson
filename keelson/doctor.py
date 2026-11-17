@@ -94,6 +94,14 @@ async def run_checks(*, ping_model: bool = True) -> list[dict[str, str]]:
                              "Install Python 3.11+ and recreate the virtual environment (start.bat does this)."))
 
     base, key, use_openai, model = _resolved_config()
+    from . import profiles
+
+    active = profiles.active_profile()
+    if active:
+        exists = profiles.profile_file(active).is_file()
+        checks.append(_check("profile", "Profile", OK if exists else FAIL,
+                             active if exists else f"{active} (no such profile)",
+                             "" if exists else "`keelson use` lists the profiles that exist."))
     if key:
         protocol = "OpenAI-compatible" if use_openai else "Anthropic-compatible"
         checks.append(_check("key", "API key", OK, f"configured ({len(key)} characters)"))
@@ -198,10 +206,25 @@ def render_env(preset: dict[str, str], base: str, model: str, key: str) -> str:
 
 def init_main(argv: list[str] | None = None) -> int:
     # Default: one global file, so every project can use the same key.
-    # `keelson init --project` writes <project>/.keelson/config.env instead.
-    project_only = "--project" in (argv or [])
-    env_path = paths.project_config_file() if project_only else paths.user_config_file()
-    scope = "this project only" if project_only else "every project on this computer"
+    # `keelson init --project` writes <project>/.keelson/config.env instead;
+    # `keelson init --profile NAME` writes a profile and switches to it.
+    from . import profiles
+
+    argv = list(argv or [])
+    profile = None
+    if "--profile" in argv:
+        at = argv.index("--profile")
+        profile = argv[at + 1] if at + 1 < len(argv) else ""
+        if not profiles.valid_name(profile):
+            print("Give the profile a short name: letters, digits, - _ . (for example: deepseek).")
+            return 2
+    project_only = "--project" in argv
+    if profile:
+        env_path, scope = profiles.profile_file(profile), f"profile {profile!r}; switch with `keelson use {profile}`"
+    elif project_only:
+        env_path, scope = paths.project_config_file(), "this project only"
+    else:
+        env_path, scope = paths.user_config_file(), "every project on this computer"
     print(f"\nKeelson setup — this writes {_display_path(env_path)} ({scope}).\n")
     if env_path.exists():
         answer = input(f"{env_path} already exists. Overwrite it? [y/N] ").strip().lower()
@@ -229,7 +252,12 @@ def init_main(argv: list[str] | None = None) -> int:
 
     env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.write_text(render_env(preset, base, model, key), encoding="utf-8", newline="\n")
-    print(f"\nWrote {_display_path(env_path)}. Checking that it works...")
+    print(f"\nWrote {_display_path(env_path)}.")
+    if profile:
+        profiles.set_active(profile)
+        os.environ["KEELSON_PROFILE"] = profile
+        print(f"Switched to profile {profile!r}.")
+    print("Checking that it works...")
     # Variables from an older .env may still be in this process; start clean.
     for name in ("APIKEY", "API", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
                  "KEELSON_API_KEY", "KEELSON_API_BASE", "MODEL"):

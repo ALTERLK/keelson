@@ -383,6 +383,9 @@ Set them in `.env` or in the environment.
 | `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` | Anthropic | — |
 | `APIKEY` + `API` | Generic form; a base URL whose path contains `/anthropic` uses the Anthropic protocol, anything else the OpenAI protocol | — |
 | `MODEL` | Model name | `deepseek-flash` (`deepseek-chat` and `deepseek-reasoner` were retired on 2026-07-24) |
+| `KEELSON_PROFILE` | Which profile to use (`~/.keelson/profiles/<name>.env`). `keelson use <name>` switches and remembers, `keelson -P <name>` is for one run, `keelson init --profile <name>` creates one | none |
+| `KEELSON_SHELL` | The shell run_shell uses on Windows: `pwsh`, `powershell` (5.1) or `cmd` | PowerShell (7 if installed) |
+| `KEELSON_CONTEXT_WINDOW`, `KEELSON_MAX_OUTPUT_TOKENS` | Override the model registry's planning window and per-request `max_tokens` | per model |
 | `KEELSON_HOME` | State directory (sessions, skills, memory) | `~/.keelson` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | Extract skills from feedback automatically | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | Write new skills at project or user level | `project` |

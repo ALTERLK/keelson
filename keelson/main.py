@@ -91,13 +91,25 @@ def _load_env_file() -> list[Path]:
     """Load model settings. Earlier sources win; nothing overrides real env vars.
 
     1. environment variables
-    2. ``<project>/.keelson/config.env``
-    3. ``~/.keelson/config.env`` (written by ``keelson init``)
-    4. ``./.env`` in the current folder only — the pre-0.4 location. It is not
+    2. the active profile, ``~/.keelson/profiles/<name>.env`` (see profiles.py)
+    3. ``<project>/.keelson/config.env``
+    4. ``~/.keelson/config.env`` (written by ``keelson init``)
+    5. ``./.env`` in the current folder only — the pre-0.4 location. It is not
        searched for in parent folders any more: walking up could pick up some
        other application's ``OPENAI_API_KEY``.
     """
+    from . import profiles
+
     loaded: list[Path] = []
+    name = profiles.active_profile()
+    if name:
+        chosen = profiles.profile_file(name)
+        if chosen.is_file():
+            load_dotenv(chosen, override=False)
+            loaded.append(chosen)
+        else:
+            print(f"warning: profile {name!r} does not exist ({chosen}); `keelson use` lists the ones that do.",
+                  file=sys.stderr)
     for candidate in (paths.project_config_file(), paths.user_config_file()):
         if candidate.is_file():
             load_dotenv(candidate, override=False)
@@ -245,6 +257,22 @@ async def run_repl(agent: Agent) -> None:
             continue
         if inp == "/cost":
             agent.show_cost()
+            continue
+        if inp == "/model" or inp.startswith("/model "):
+            wanted = inp[len("/model"):].strip()
+            if wanted:
+                agent.set_model(wanted)
+                note = models.retirement_note(wanted)
+                if note:
+                    print_warning(note)
+                print_info(f"Model: {agent.model} (same endpoint and key). To switch provider, exit and run "
+                           "`keelson use <profile>`.")
+            else:
+                from . import profiles
+
+                active = profiles.active_profile()
+                print_info(f"Model: {agent.model}" + (f" · profile: {active}" if active else "")
+                           + "\n  /model <name> switches the model on this endpoint; `keelson use` lists profiles.")
             continue
         if inp == "/compact":
             try:
@@ -405,7 +433,14 @@ def main() -> None:
         except Exception:
             pass
 
+    # -P/--profile works for every sub-command, so it is taken out first.
+    from . import profiles
+
+    sys.argv = [sys.argv[0], *profiles.take_profile_flag(sys.argv[1:])]
+
     # Subcommands with their own options.
+    if len(sys.argv) > 1 and sys.argv[1] == "use":
+        sys.exit(profiles.use_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "web":
         from .web.cli import main as web_main
 
@@ -425,10 +460,12 @@ def main() -> None:
         print("""
 Usage: keelson [options] [prompt]
        keelson web [--port 8765] [--replay] [--no-open]    start the web console
-       keelson init [--project]                            save model + key (all projects / this one)
+       keelson init [--project | --profile NAME]           save model + key (all projects / this one / a profile)
+       keelson use [NAME]                                  list profiles, or switch to one
        keelson doctor [--offline]                          check that this install works
 
 Options:
+  -P, --profile NAME  Use this profile for one run (see `keelson use`)
   --yolo, -y          Skip all confirmation prompts (bypassPermissions mode)
   --plan              Plan mode: read-only, describe changes without executing
   --accept-edits      Auto-approve file edits, still confirm dangerous shell
@@ -445,6 +482,7 @@ REPL commands:
   /clear              Clear conversation history
   /plan               Toggle plan mode (read-only <-> normal)
   /cost               Show token usage and cost
+  /model [NAME]       Show or switch the model (same endpoint), e.g. /model deepseek-v4-pro
   /compact            Manually compact conversation
   /memory             List saved memories
   /skills             List available skills

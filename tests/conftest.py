@@ -21,6 +21,8 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     for var in (
         "KEELSON_AUTO_SKILL_EVOLUTION",
         "KEELSON_AUTO_SKILL_TARGET",
+        "KEELSON_PROFILE",       # a developer's own `keelson -P` / profile must not leak into tests
+        "KEELSON_SHELL",
     ):
         monkeypatch.delenv(var, raising=False)
 

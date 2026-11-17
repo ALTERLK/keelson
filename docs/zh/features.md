@@ -284,6 +284,9 @@ when_to_use: The user asks to commit, or asks for a commit message
 | `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` | Anthropic 官方 | — |
 | `APIKEY` + `API` | 通用写法；地址路径含 `/anthropic` 走 Anthropic 协议，否则走 OpenAI 协议 | — |
 | `MODEL` | 模型名 | `deepseek-flash`（`deepseek-chat`、`deepseek-reasoner` 已于 2026-07-24 下线） |
+| `KEELSON_PROFILE` | 使用哪个配置档（`~/.keelson/profiles/<名字>.env`）。`keelson use <名字>` 切换并记住，`keelson -P <名字>` 只用这一次，`keelson init --profile <名字>` 新建 | 无 |
+| `KEELSON_SHELL` | Windows 上 run_shell 用哪个 shell：`pwsh`、`powershell`（5.1）、`cmd` | PowerShell（有 pwsh 7 用 7） |
+| `KEELSON_CONTEXT_WINDOW`、`KEELSON_MAX_OUTPUT_TOKENS` | 覆盖模型登记表里的上下文规划窗口和每次请求的 `max_tokens` | 按模型 |
 | `KEELSON_HOME` | 状态目录（会话、技能、记忆） | `~/.keelson` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | 自动从反馈中提取技能 | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | 新技能写到项目级还是用户级 | `project` |
