@@ -141,19 +141,19 @@ Each step of the loop is wrapped in `events.span(name)`, which publishes a
 `skill_retrieval`, `fold`, and `confirm_wait` (time spent waiting for a person,
 reported separately so it is never mistaken for latency).
 
-The inspector's *Timing* tab draws them as a waterfall per turn. Over the three
-recorded demo runs (`python scripts/perf_report.py`):
+The inspector's *Timing* tab draws them as a waterfall per turn. Over the 18
+recorded runs in `demo/traces/` (`python scripts/perf_report.py`):
 
 | step | count | p50 | p95 | share of time |
 |---|---:|---:|---:|---:|
-| model call | 20 | 2.15 s | 6.34 s | 94.43% |
-| tool execution | 14 | 1.51 ms | 1.10 s | 5.56% |
-| permission check | 15 | 0.02 ms | 0.28 ms | < 0.01% |
-| skill retrieval | 5 | 0.85 ms | 0.90 ms | 0.01% |
+| model call | 360 | 2.42 s | 12.71 s | 76.56% |
+| tool execution | 319 | 129 ms | 6.13 s | 19.83% |
+| context folding | 1 | 71.01 s | 71.01 s | 3.62% |
+| permission check | 340 | 0.05 ms | 0.34 ms | < 0.01% |
+| skill retrieval | 20 | 1.08 ms | 1.87 ms | < 0.01% |
 
-The runtime's own checks account for under 0.01% of a run. The sample is small
-(three short runs, one model, one machine); it shows the order of magnitude,
-not a benchmark.
+The runtime's own checks add up to 56 ms in 1,964 s, 0.003% of the time. One
+model and one machine: it shows the order of magnitude, not a benchmark.
 
 ## Replay
 

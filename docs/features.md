@@ -95,6 +95,24 @@ if 6 or more are the same tool **and** their results have stopped changing, it
 skips execution and tells the model to answer. Budgets stop the run when a turn
 or cost limit is passed.
 
+Four details, each changed after the [case study](case-study.md) exposed it:
+
+- Shell commands are counted by program and first argument, not all as
+  `run_shell`. Six `python -c` probes no longer block the `python -m pytest`
+  that follows.
+- Folding the context does not clear the window. It used to, and
+  `compact_context` is a tool the model can call: one run used it to reset the
+  guard.
+- After three trips in one turn the runtime stops asking and closes the turn
+  itself, with one call that carries no tools.
+- An empty model reply (no text, no tool call) is retried, at most twice,
+  instead of being read as "done".
+
+What it does **not** catch: probing whose output differs a little each time.
+The guard compares result hashes, so any change in the output counts as new
+(humanize #205 failed this way in all three rounds of the case study). Only
+the turn cap stops that.
+
 **The problem.** Models sometimes get stuck in "try again with a slightly
 different argument". The benchmark caught exactly that: 15 of 180 runs hit the
 turn cap (see [`bench/spiral-diagnosis.md`](../bench/spiral-diagnosis.md)).

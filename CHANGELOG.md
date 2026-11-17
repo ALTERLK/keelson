@@ -6,6 +6,15 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
 ## 0.3.0 — 2026-11
 
 ### Added
+- **A case study on real issues** ([write-up](docs/case-study.md),
+  `bench/casestudy/`). Five issues from more-itertools, cachetools,
+  python-dotenv, humanize and tenacity, each already fixed upstream. The agent
+  gets the issue text and a checkout of the commit before the fix, with no git
+  history; the maintainers' own tests decide. Three rounds resolved 3/5, 3/5
+  and 4/5, which is too small a sample to be a success rate. Its real output
+  is the five runtime defects listed under *Fixed*, plus four problems that are
+  written up and not fixed. All 15 runs are recorded and replay from the new
+  Cases page.
 - **Sessions in the web console.** One server process now holds several
   independent conversations, each with its own event stream, permission mode,
   prompts and recording. Finished sessions are listed and can be reopened and
@@ -45,6 +54,29 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
 - Demo traces re-recorded with spans and live output.
 
 ### Fixed
+Found by the case study:
+- **On Windows only the first line of a multi-line shell command ran.**
+  `cmd /c` drops the rest without an error, so the model believed it had run
+  commands it had not. None of the 40 multi-line commands in the first two
+  rounds ran completely. Such a command now runs from a temporary batch file,
+  line by line; a quoted string that spans lines, which cmd.exe cannot express,
+  is refused with the reason (`agents/tools.py`, `tests/test_shell_multiline.py`).
+- **An empty model reply ended the turn.** No text and no tool call matched the
+  loop's exit condition, so a failed completion looked like a finished task. It
+  is now retried, at most twice (`tests/test_empty_reply.py`).
+- **The model could reset the loop guard.** Folding the context cleared the
+  guard's window, and `compact_context` is a tool; one run called it saying it
+  needed "to reset". A fold now leaves the window alone.
+- **The loop guard only asked.** After three trips in one turn the runtime now
+  ends the turn itself with one call that carries no tools.
+- **The loop guard blocked the test run after an edit.** It counted by tool
+  name, so six `python -c` probes also blocked `python -m pytest`. Shell
+  commands are now counted by program and first argument.
+- Three more spellings the trace scrubber missed: a directory named after the
+  user (`pytest-of-<user>`), a path abbreviated by pytest, and source code
+  (`as e:` before a line break) mistaken for a drive letter.
+
+Found earlier:
 - **Skill candidates silently discarded.** An OpenAI-compatible gateway in
   non-streaming mode left raw line breaks inside JSON strings (once inside a
   key), so the Maintainer's decision failed to parse and a valid candidate was
@@ -145,6 +177,11 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
   token saving of the feedback pre-filter.
 - Web sessions share one working directory. Isolating files as well would need
   a worktree per session.
+- From the case study, written up in [`docs/case-study.md`](docs/case-study.md):
+  the loop guard misses probing whose output differs slightly each time (one
+  issue failed all three rounds this way); the permission gate judges the text
+  of a call, so a model refused `write_file` used `echo > file` instead — it is
+  not a sandbox; `pip install` from the network needs no confirmation.
 - Plan-mode approval in the web console.
 - Agreement (κ) between the LLM judge and human labels on a 50-sample set.
 - Two known defects, documented in

@@ -65,6 +65,8 @@ keelson web        # 浏览器控制台；或者直接用 keelson 进入终端�
 | **概览**：这是什么、一轮对话怎么跑、当前安装状态 | **权限门**：模型想删文件，运行时停下来等你决定 |
 | [![运行中的会话](docs/assets/screenshots/console-zh.png)](docs/assets/screenshots/console-zh.png) | [![评测页](docs/assets/screenshots/bench-zh.png)](docs/assets/screenshots/bench-zh.png) |
 | **会话**：工具卡片、命令实时输出、右侧检查器与耗时瀑布图 | **评测**：数字由提交在仓库里的原始结果重新计算 |
+| [![实战案例页](docs/assets/screenshots/cases-zh.png)](docs/assets/screenshots/cases-zh.png) | [![技能进化页](docs/assets/screenshots/skills-zh.png)](docs/assets/screenshots/skills-zh.png) |
+| **实战案例**：真实 issue 的三轮结果，每次运行都能回放，改动可与上游修复对比 | **技能进化**：每次采纳或隔离的审计卡片 |
 
 多个会话可以并行，结束的会话能重新打开继续；长命令的输出实时滚动，点“停止”会杀掉整棵进程树。原生 HTML/CSS/JS，没有构建步骤，不依赖 CDN。实现细节见 [Web 控制台](docs/zh/web-console.md)。
 
@@ -107,12 +109,13 @@ keelson web        # 浏览器控制台；或者直接用 keelson 进入终端�
 | | 做了什么 | 结果 |
 |---|---|---|
 | **[ToolHop 评测](bench/REPORT.md)** | 多跳工具调用；n=60，三组对照，配对 bootstrap 95% 置信区间 | 评测抓到了运行时自己的一个真实缺陷：一段提示词让小模型陷入工具调用死循环。[定位根因](bench/spiral-diagnosis.md)、修复、重测：准确率 72.8% → 79.4%，撞轮次上限 15/180 → 0/180，差值的置信区间不含 0 |
+| **[真实 issue 实战](docs/zh/case-study.md)** | 5 个开源项目里已被维护者修复的真实 issue：只给 issue 原文，用项目自己的测试判分，跑了三轮 | 修复 3/5 → 3/5 → 4/5——样本太小，不当成功率看。真正的产出是查出了运行时自己的 5 个缺陷并逐个修掉，例如 Windows 上多行 shell 命令只执行第一行（前两轮 40 条无一完整执行）、循环保护能被模型自己重置。另有 4 个没修的问题连同原因一并写明，15 次运行全部可回放 |
 | **[沙箱编码评测](bench/REPORT.md#sandbox-coding-benchmark--round-3)** | 14 个编码任务（含两道诱导“改测试”的陷阱题），两档模型 | 56 次运行中篡改测试 0 次、越界修改 0 次；抓到一次“没验证就交付”的失败，并重跑确认不是偶然 |
 | **[自进化实弹演示](docs/self-evolution-demo.md)** | 用真实模型把两条技能血缘跑过完整流水线 | 一次**采纳**、一次**隔离**（被门禁拦下，线上文件回滚），各有一张审计卡片 |
-| **运行时开销** | 循环每一步都带计时（`python scripts/perf_report.py`） | 录制的运行里，权限检查 + 技能检索占总耗时不到 0.01%；94% 的时间在等模型。样本很小，说明的是数量级 |
+| **运行时开销** | 循环每一步都带计时（`python scripts/perf_report.py`） | 18 次录制的运行里，权限检查 + 技能检索合计 56 毫秒，占总耗时 0.003%；77% 的时间在等模型，20% 在执行工具。说明的是数量级 |
 | **端到端实测** | [`scripts/smoke_live.py`](scripts/smoke_live.py) 用真实模型验证三件事 | 60 秒的命令在约 3 秒时被停止且子进程消失；两个并行会话的事件互不串台；服务重启后恢复会话，模型仍记得之前的内容 |
 
-255 个测试，全部不需要 API Key。已知的问题和取舍——包括发现了但还没修的——都写在 [设计取舍](docs/design-tradeoffs.md) 里。
+289 个测试，全部不需要 API Key。已知的问题和取舍——包括发现了但还没修的——都写在 [设计取舍](docs/design-tradeoffs.md) 里。
 
 ## 文档
 
@@ -123,6 +126,7 @@ keelson web        # 浏览器控制台；或者直接用 keelson 进入终端�
 | 了解代码怎么组织 | [架构](docs/zh/architecture.md) | [Architecture](docs/architecture.md) |
 | 了解事件流、多会话、回放的实现 | [Web 控制台](docs/zh/web-console.md) | [Web console](docs/web-console.md) |
 | 了解技能自进化的细节 | [技能进化详解](docs/zh/skill-evolution.md) · [在线评测](docs/zh/online-skill-eval.md) | [Self-evolution demo](docs/self-evolution-demo.md) |
+| 看它在真实项目上表现如何、暴露了什么 | [实战案例](docs/zh/case-study.md) | [Case study](docs/case-study.md) |
 | 看做了哪些妥协、还有哪些已知问题 | | [Design trade-offs](docs/design-tradeoffs.md) |
 | 看评测的完整数字 | | [bench/REPORT.md](bench/REPORT.md) |
 | 看每个版本改了什么 | | [CHANGELOG.md](CHANGELOG.md) |

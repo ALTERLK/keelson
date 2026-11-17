@@ -99,6 +99,22 @@ the failure observed in the benchmark was argument fuzzing, not exact repeats
 (see [`bench/spiral-diagnosis.md`](../bench/spiral-diagnosis.md)). Six reads of
 six different files never trip it.
 
+The [case study](case-study.md) changed four things about it. The shell is the
+exception to "keyed on the tool name": `run_shell` is keyed on the program and
+its first argument (`_guard_key`), because one name covered both the probing
+and the test run that should follow it. A context fold no longer clears the
+window, since `compact_context` is a tool and a model used it to reset the
+guard. After `LOOP_GUARD_MAX_HITS` (3) trips in a turn, `_check_budget` reports
+the turn as over and the runtime finishes with a tool-less call, the same path
+a turn or cost limit takes. And an empty completion is retried up to twice
+rather than ending the turn.
+
+The benchmark numbers in [`bench/REPORT.md`](../bench/REPORT.md) were measured
+before these changes and have not been re-run.
+
+Known gap: "stopped changing" is decided by comparing result hashes, so probing
+that prints something slightly different each time never trips the guard.
+
 ## Skills and their evolution
 
 A skill is a `SKILL.md` file with front matter. Skills are retrieved per turn

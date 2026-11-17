@@ -76,6 +76,8 @@ runtime is and takes about twenty minutes.
 | **Overview**: what it is, how one turn works, the state of this install | **Permission gate**: the model wants to delete a file; the runtime waits for you |
 | [![A session in progress](docs/assets/screenshots/console-en.png)](docs/assets/screenshots/console-en.png) | [![Benchmarks page](docs/assets/screenshots/bench-en.png)](docs/assets/screenshots/bench-en.png) |
 | **Session**: tool cards, live command output, the inspector and timing waterfall | **Benchmarks**: recomputed from the raw result rows committed in the repo |
+| [![Cases page](docs/assets/screenshots/cases-en.png)](docs/assets/screenshots/cases-en.png) | [![Skills page](docs/assets/screenshots/skills-en.png)](docs/assets/screenshots/skills-en.png) |
+| **Cases**: three rounds on real issues; every run replays, every change sits next to the upstream fix | **Skills**: an audit card for each admit or quarantine |
 
 Several sessions run side by side, and a finished one can be reopened and
 continued. A long command streams its output, and Stop kills the whole process
@@ -126,12 +128,13 @@ committed and can be recomputed.
 | | What was done | Result |
 |---|---|---|
 | **[ToolHop benchmark](bench/REPORT.md)** | Multi-hop tool calling; n=60, three arms, paired-bootstrap 95% CIs | The benchmark caught a real defect in the harness itself: a prompt that sent a small model into a tool-call loop. [Root-caused](bench/spiral-diagnosis.md), fixed, re-measured: accuracy 72.8% → 79.4%, turn-cap hits 15/180 → 0/180, CI of the difference excludes zero |
+| **[Case study on real issues](docs/case-study.md)** | Five issues from open-source projects, each already fixed upstream: the agent gets the issue text only and is graded by the project's own tests, over three rounds | 3/5, 3/5, 4/5 resolved — too small a sample to read as a success rate. What it produced is five defects found in the runtime itself, each then fixed: on Windows a multi-line shell command ran only its first line (none of 40 ran completely in the first two rounds), and the model could reset the loop guard. Four problems that are not fixed are written up with the reasons. All 15 runs can be replayed |
 | **[Sandbox coding benchmark](bench/REPORT.md#sandbox-coding-benchmark--round-3)** | 14 coding tasks (two are traps that invite editing the tests), two model tiers | 0 test tampering and 0 out-of-scope edits in 56 runs; one "shipped without verifying" failure caught, and re-run to check it was not a fluke |
 | **[Self-evolution, live-fired](docs/self-evolution-demo.md)** | Two skill lineages through the full pipeline with a real model | One **admit**, one **quarantine** (stopped by the gate, live file rolled back), each with an audit card |
-| **Runtime overhead** | Every step of the loop is timed (`python scripts/perf_report.py`) | On the recorded runs, permission checks + skill retrieval are under 0.01% of wall time; 94% is waiting for the model. Small sample: order of magnitude only |
+| **Runtime overhead** | Every step of the loop is timed (`python scripts/perf_report.py`) | Over 18 recorded runs, permission checks + skill retrieval add up to 56 ms, 0.003% of wall time; 77% is waiting for the model and 20% is tool execution. An order of magnitude, not a benchmark only |
 | **End-to-end check** | [`scripts/smoke_live.py`](scripts/smoke_live.py) verifies three things against a real model | A 60-second command is stopped about 3 seconds in and its child process is gone; two parallel sessions never see each other's events; after a server restart a session resumes and the model still remembers it |
 
-255 tests, none of which needs an API key. Known problems and trade-offs —
+289 tests, none of which needs an API key. Known problems and trade-offs —
 including ones found and not yet fixed — are in
 [Design trade-offs](docs/design-tradeoffs.md).
 
@@ -144,6 +147,7 @@ including ones found and not yet fixed — are in
 | see how the code is organised | [Architecture](docs/architecture.md) | [架构](docs/zh/architecture.md) |
 | see how events, sessions and replay are built | [Web console](docs/web-console.md) | [Web 控制台](docs/zh/web-console.md) |
 | read about skill self-evolution | [Self-evolution demo](docs/self-evolution-demo.md) | [技能进化详解](docs/zh/skill-evolution.md) · [在线评测](docs/zh/online-skill-eval.md) |
+| see how it does on real projects, and what that exposed | [Case study](docs/case-study.md) | [实战案例](docs/zh/case-study.md) |
 | know the compromises and known issues | [Design trade-offs](docs/design-tradeoffs.md) | |
 | see the full benchmark numbers | [bench/REPORT.md](bench/REPORT.md) | |
 | see what changed in each version | [CHANGELOG.md](CHANGELOG.md) | |
