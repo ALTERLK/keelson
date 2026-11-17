@@ -8,8 +8,10 @@ import json
 import locale
 import os
 import re
+import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -491,12 +493,74 @@ def get_deferred_tool_names(all_tools: list[ToolDef] | None = None) -> list[str]
     return [t["name"] for t in tools if t.get("deferred") and t["name"] not in _activated_tools]
 
 #执行shell命令
+#
+# 多行命令。POSIX 的 `sh -c` 会把每一行都执行；Windows 的 `cmd /c` 只执行第一行，
+# 其余的静默丢弃——模型以为跑了三条命令，其实只跑了一条（bench/casestudy 第 1、2 轮
+# 里反复出现）。所以在 Windows 上，多行命令写成一个临时批处理文件再执行。
+
+def _multiline_quote_problem(command: str, *, windows: bool = IS_WIN) -> str | None:
+    """Why this command cannot be run as written, or None.
+
+    cmd.exe has no way to continue a quoted string on the next line, so
+    ``python -c "`` followed by a script over several lines never reaches
+    Python as one argument. Refusing with the reason is better than running
+    something else and printing nothing.
+    """
+    if not windows:
+        return None
+    lines = command.strip().splitlines()
+    if len(lines) < 2:
+        return None
+    for number, line in enumerate(lines, 1):
+        if line.count('"') % 2:
+            return (
+                "Command not run. This shell is cmd.exe on Windows, where a quoted string cannot continue on the "
+                f"next line (line {number} has an unclosed double quote). Put the script on one line, for example "
+                "python -c \"exec('first\\nsecond')\", or run a file that already exists."
+            )
+    return None
+
+
+def _batch_line(line: str) -> str:
+    """One line of a batch file. A batch script that starts another one without
+    ``call`` never returns to it, so later lines would be skipped."""
+    words = line.split()
+    if not words or words[0].lower() in {"call", "rem"} or words[0].startswith(("@", ":", "(", ")")):
+        return line
+    target = shutil.which(words[0]) or ""
+    return f"call {line}" if target.lower().endswith((".cmd", ".bat")) else line
+
+
+def _prepare_shell_command(command: str, *, windows: bool = IS_WIN) -> tuple[str, Path | None]:
+    """What to hand the platform shell, and a temporary file to delete afterwards."""
+    if not windows or "\n" not in command.strip():
+        return command, None
+    lines = [_batch_line(line) for line in command.strip().splitlines()]
+    handle, name = tempfile.mkstemp(prefix="keelson-", suffix=".cmd")
+    encoding = "oem" if IS_WIN else "utf-8"       # the code page cmd.exe reads batch files in
+    with os.fdopen(handle, "w", encoding=encoding, errors="replace", newline="\r\n") as script:
+        script.write("@echo off\n" + "\n".join(lines) + "\n")
+    return f'"{name}"', Path(name)
+
+
+def _discard(path: Path | None) -> None:
+    if path is not None:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def _run_shell(inp: dict) -> str:
+    problem = _multiline_quote_problem(inp["command"])
+    if problem:
+        return problem
+    command, script = _prepare_shell_command(inp["command"])
     try:
         timeout_ms = inp.get("timeout", 30000)
         timeout_s = timeout_ms / 1000
         result = subprocess.run(
-            inp["command"],
+            command,
             shell=True,
             capture_output=True,
             text=True,
@@ -508,6 +572,8 @@ def _run_shell(inp: dict) -> str:
         return f"Command timed out after {inp.get('timeout', 30000)}ms"
     except Exception as e:
         return f"Error: {e}"
+    finally:
+        _discard(script)
 
 
 def _format_shell_result(returncode: int, stdout: str, stderr: str) -> str:
@@ -586,10 +652,21 @@ async def run_shell_async(inp: dict, on_output: Callable[[str], None] | None = N
     * output is relayed while the command runs, through ``on_output``;
     * a timeout or a cancelled turn kills the whole process tree.
     """
+    problem = _multiline_quote_problem(inp["command"])
+    if problem:
+        return problem
+    command, script = _prepare_shell_command(inp["command"])
+    try:
+        return await _run_prepared_async(command, inp, on_output)
+    finally:
+        _discard(script)
+
+
+async def _run_prepared_async(command: str, inp: dict, on_output: Callable[[str], None] | None) -> str:
     timeout_ms = inp.get("timeout", 30000)
     try:
         proc = await asyncio.create_subprocess_shell(
-            inp["command"],
+            command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             **({} if IS_WIN else {"start_new_session": True}),
