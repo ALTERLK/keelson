@@ -255,10 +255,12 @@ def overview(lang: str) -> Canvas:
     mcp = c.node(802, 318, 194, 78, t("MCP servers", "MCP 服务"), t("external tools, untrusted by default", "外部工具，默认不信任"))
 
     c.group(30, 548, 980, 122, t("Evidence and state", "证据与状态"))
-    trace = c.node(46, 580, 226, 72, t("Trace recorder", "轨迹录制"), t("every event → JSONL", "每个事件 → JSONL"), ".keelson/traces/")
-    c.node(288, 580, 226, 72, t("Benchmarks", "基准评测"), t("ToolHop · sandbox tasks", "ToolHop · 沙箱任务"), "bench/runs/")
-    c.node(530, 580, 226, 72, t("Live smoke test", "端到端实测"), t("stop · isolation · resume", "停止 · 隔离 · 恢复"), "scripts/smoke_live.py")
-    c.node(772, 580, 222, 72, t("State", "状态"), t("skills · memory · sessions", "技能 · 记忆 · 会话"), "~/.keelson/ · .keelson/")
+    ex = (46, 238, 430, 622, 814)
+    trace = c.node(ex[0], 580, 180, 72, t("Trace recorder", "轨迹录制"), t("every event → JSONL", "每个事件 → JSONL"), ".keelson/traces/")
+    c.node(ex[1], 580, 180, 72, t("Benchmarks", "基准评测"), t("ToolHop · sandbox tasks", "ToolHop · 沙箱任务"), "bench/runs/")
+    c.node(ex[2], 580, 180, 72, t("Case study", "实战案例"), t("real issues, upstream tests", "真实 issue，上游测试判分"), "bench/casestudy/")
+    c.node(ex[3], 580, 180, 72, t("Live smoke test", "端到端实测"), t("stop · isolation · resume", "停止 · 隔离 · 恢复"), "scripts/smoke_live.py")
+    c.node(ex[4], 580, 180, 72, t("State", "状态"), t("skills · memory · sessions", "技能 · 记忆 · 会话"), "~/.keelson/ · .keelson/")
 
     c.edge((fronts.x + fronts.w, loop.cy), loop.left(), label=t("task", "任务"), kind="blue", dy=-11)
     c.edge(bus.left(), (fronts.x + fronts.w, bus.cy), label=t("events", "事件"), kind="brand", dy=-11)
