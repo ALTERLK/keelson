@@ -1413,6 +1413,8 @@ class Agent:
             context_tokens=self.last_input_token_count,
             context_window=self.effective_window,
             turns=self.current_turns,
+            cache_hit_tokens=self.total_cache_hit_tokens,
+            cost_usd=round(self._get_current_cost_usd(), 6),
         )
 
     @staticmethod
@@ -1796,7 +1798,7 @@ class Agent:
                     self._anthropic_messages.append({"role": "user", "content": EMPTY_REPLY_NUDGE})
                     continue
                 if not self.is_sub_agent:
-                    print_cost(self.total_input_tokens, self.total_output_tokens)
+                    print_cost(self.total_input_tokens, self.total_output_tokens, self._get_current_cost_usd())
                 break
 
             # 有工具调用时，进入下一轮工具执行。这里同时检查 turn/budget 限制。
@@ -2088,7 +2090,7 @@ class Agent:
                     self._openai_messages.append({"role": "user", "content": EMPTY_REPLY_NUDGE})
                     continue
                 if not self.is_sub_agent:
-                    print_cost(self.total_input_tokens, self.total_output_tokens)
+                    print_cost(self.total_input_tokens, self.total_output_tokens, self._get_current_cost_usd())
                 break
 
             self.current_turns += 1

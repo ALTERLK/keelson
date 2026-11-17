@@ -56,6 +56,19 @@ _EXACT: dict[str, ModelInfo] = {
         "deepseek", 1_000_000, 65_536, budget=_DEEPSEEK_BUDGET,
         price=Price(cache_hit=0.044, cache_miss=1.32, output=3.96, off_peak_factor=0.5),
     ),
+    # Names some gateways (e.g. 4SAPI) use for the same models; price shown is DeepSeek's own.
+    "deepseek-v4.1-flash": ModelInfo(
+        "deepseek", 1_000_000, 65_536, budget=_DEEPSEEK_BUDGET,
+        price=Price(cache_hit=0.006, cache_miss=0.30, output=1.20, off_peak_factor=0.5),
+    ),
+    "deepseek-v4.1-flash-1017": ModelInfo(
+        "deepseek", 1_000_000, 65_536, budget=_DEEPSEEK_BUDGET,
+        price=Price(cache_hit=0.006, cache_miss=0.30, output=1.20, off_peak_factor=0.5),
+    ),
+    "deepseek-v4-pro-0813": ModelInfo(
+        "deepseek", 1_000_000, 65_536, budget=_DEEPSEEK_BUDGET,
+        price=Price(cache_hit=0.044, cache_miss=1.32, output=3.96, off_peak_factor=0.5),
+    ),
     # Retired by DeepSeek after 2026-07-24; requests to them fail.
     "deepseek-chat": ModelInfo("deepseek", 128_000, 8_192, retired="2026-07-24", replacement="deepseek-flash"),
     "deepseek-reasoner": ModelInfo("deepseek", 128_000, 8_192, retired="2026-07-24", replacement="deepseek-v4-pro"),

@@ -15,6 +15,7 @@ import tempfile
 import pytest
 
 from keelson import tools
+from keelson.platforms import shell as platform_shell
 from keelson.tools import IS_WIN, _batch_line, _multiline_quote_problem, _prepare_shell_command
 
 
@@ -27,7 +28,7 @@ def test_every_line_runs_on_the_blocking_path_too():
 
 
 async def test_the_exit_code_is_the_last_line_s():
-    failing = "exit /b 4" if IS_WIN else "exit 4"
+    failing = "exit /b 4" if platform_shell.current().kind == "cmd" else "exit 4"
     out = await tools.run_shell_async({"command": f"echo before\n{failing}"})
     assert out.startswith("Command failed (exit code 4)") and "before" in out
 
@@ -72,8 +73,17 @@ def test_batch_lines_call_other_batch_scripts(monkeypatch):
     assert _batch_line("unknown-tool --flag") == "unknown-tool --flag"
 
 
+@pytest.fixture
+def cmd_shell(monkeypatch):
+    """The batch-file path is only taken with KEELSON_SHELL=cmd (PowerShell is the default)."""
+    monkeypatch.setenv("KEELSON_SHELL", "cmd")
+    platform_shell._detect.cache_clear()
+    yield
+    platform_shell._detect.cache_clear()
+
+
 @pytest.mark.skipif(not IS_WIN, reason="batch files are a Windows detail")
-async def test_windows_expands_errorlevel_per_line_and_cleans_up():
+async def test_windows_expands_errorlevel_per_line_and_cleans_up(cmd_shell):
     pattern = os.path.join(tempfile.gettempdir(), "keelson-*.cmd")
     before = set(glob.glob(pattern))
 

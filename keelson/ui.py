@@ -150,12 +150,13 @@ def print_divider() -> None:
     events.emit(events.TURN_END)
 
 
-def print_cost(input_tokens: int, output_tokens: int) -> None:
+def print_cost(input_tokens: int, output_tokens: int, cost_usd: float | None = None) -> None:
+    """cost_usd: the agent's estimate from the model's own price; a generic guess if not given."""
     events.emit(
         events.USAGE,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
-        cost_usd=round(estimate_cost_usd(input_tokens, output_tokens), 6),
+        cost_usd=round(estimate_cost_usd(input_tokens, output_tokens) if cost_usd is None else cost_usd, 6),
     )
 
 
@@ -372,7 +373,8 @@ class TerminalRenderer:
         if usage.get("input_tokens") is not None:
             tin, tout = int(usage.get("input_tokens", 0)), int(usage.get("output_tokens", 0))
             parts.append(f"{_fmt_count(tin)} in / {_fmt_count(tout)} out")
-            parts.append(f"est. ${estimate_cost_usd(tin, tout):.4f}")
+            cost = usage.get("cost_usd")
+            parts.append(f"est. ${float(cost) if cost is not None else estimate_cost_usd(tin, tout):.4f}")
         if self._turn_started is not None:
             parts.append(f"{time.time() - self._turn_started:.1f}s")
             self._turn_started = None

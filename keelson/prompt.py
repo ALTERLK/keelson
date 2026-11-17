@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
-import sys
 from pathlib import Path
 
 from keelson import paths
@@ -209,12 +208,28 @@ def get_git_context() -> str:
         return ""
 
 
+def _shell_description() -> str:
+    """The shell run_shell really uses, and the syntax notes that matter for it."""
+    from keelson.platforms import shell as platform_shell
+
+    sh = platform_shell.current()
+    if sh.is_powershell:
+        joins = "`a && b` works" if sh.and_or else "there is no && or ||: use `a; if ($?) { b }`"
+        return (f"{sh.label}. run_shell commands run in PowerShell, not bash: separate commands with `;` ({joins}); "
+                "set variables with `$env:NAME = 'value'`; discard output with `$null`; call a quoted program path "
+                "with `& \"C:\\path\\tool.exe\" args`. Bash-only syntax is refused before it runs, with the "
+                "PowerShell equivalent.")
+    if sh.kind == "cmd":
+        return "cmd.exe (Windows command prompt)"
+    return os.environ.get("SHELL", sh.exe)
+
+
 def build_system_prompt() -> str:
     """Build the full system prompt from embedded template + dynamic context."""
     from datetime import date
     today = date.today().isoformat()
     plat = f"{platform.system()} {platform.machine()}"
-    shell = (os.environ.get("ComSpec") or "cmd.exe") if sys.platform == "win32" else os.environ.get("SHELL", "/bin/sh")
+    shell = _shell_description()
     git_context = get_git_context()
     claude_md = load_claude_md()
     memory_section = build_memory_prompt_section()

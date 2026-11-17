@@ -115,9 +115,10 @@ async def test_timeout_kills_the_process(tmp_path):
     pidfile = tmp_path / "pid"
     command = _script(tmp_path, "hang.py", _CHILD.format(pidfile=pidfile))
 
-    result = await run_shell_async({"command": command, "timeout": 1500})
+    # Long enough for Windows PowerShell 5.1 to start (about 1.5 s) and the script to write its pid.
+    result = await run_shell_async({"command": command, "timeout": 6000})
 
-    assert result == "Command timed out after 1500ms"
+    assert result == "Command timed out after 6000ms"
     pid = int(pidfile.read_text())
     assert await _wait_until(lambda: not _alive(pid)), "the command outlived its timeout"
 

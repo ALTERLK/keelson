@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import codecs
-import fnmatch
 import json
 import locale
 import os
@@ -15,10 +14,11 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from keelson import events, paths
+from keelson import events, paths, search, textio
 from keelson.memory import get_memory_dir
 from keelson.platforms import IS_WINDOWS as IS_WIN
-from keelson.platforms import kill_process_tree
+from keelson.platforms import kill_process_tree, no_window_flags
+from keelson.platforms import shell as platform_shell
 
 ToolDef = dict  # Anthropic tool schema dict
 #权限模式
@@ -44,11 +44,13 @@ CONCURRENCY_SAFE_TOOLS = {"read_file", "list_files", "grep_search"}
 tool_definitions: list[ToolDef] = [
     {
         "name": "read_file",
-        "description": "Read the contents of a file. Returns the file content with line numbers.",
+        "description": "Read a text file (UTF-8 or GBK). Returns lines with line numbers, at most 2000 lines per call; use offset and limit for longer files.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "file_path": {"type": "string", "description": "The path to the file to read"},
+                "offset": {"type": "integer", "description": "Line number to start from (1-based). Default 1."},
+                "limit": {"type": "integer", "description": "How many lines to return. Default 2000."},
             },
             "required": ["file_path"],
         },
@@ -67,20 +69,21 @@ tool_definitions: list[ToolDef] = [
     },
     {
         "name": "edit_file",
-        "description": "Edit a file by replacing an exact string match with new content. The old_string must match exactly (including whitespace and indentation).",
+        "description": "Edit a file by replacing an exact string match with new content. The old_string must match exactly (including whitespace and indentation) and be unique unless replace_all is true. The file's encoding and line endings are kept.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "file_path": {"type": "string", "description": "The path to the file to edit"},
                 "old_string": {"type": "string", "description": "The exact string to find and replace"},
                 "new_string": {"type": "string", "description": "The string to replace it with"},
+                "replace_all": {"type": "boolean", "description": "Replace every occurrence instead of requiring a unique match. Default false."},
             },
             "required": ["file_path", "old_string", "new_string"],
         },
     },
     {
         "name": "list_files",
-        "description": "List files matching a glob pattern. Returns matching file paths.",
+        "description": "List files matching a glob pattern (supports **, *, ?, [abc], {a,b}), most recently changed first. Files ignored by .gitignore are skipped.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -92,13 +95,14 @@ tool_definitions: list[ToolDef] = [
     },
     {
         "name": "grep_search",
-        "description": "Search for a pattern in files. Returns matching lines with file paths and line numbers.",
+        "description": "Search file contents with a regular expression. Returns matching lines as path:line:text. Files ignored by .gitignore and binary files are skipped.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "pattern": {"type": "string", "description": "The regex pattern to search for"},
                 "path": {"type": "string", "description": "Directory or file to search in. Defaults to current directory."},
-                "include": {"type": "string", "description": 'File glob pattern to include (e.g., "*.ts", "*.py")'},
+                "include": {"type": "string", "description": 'File glob pattern to include (e.g., "*.ts", "*.{ts,tsx}", "src/**/*.py")'},
+                "case_insensitive": {"type": "boolean", "description": "Ignore case. Default false."},
             },
             "required": ["pattern"],
         },
@@ -231,8 +235,17 @@ tool_definitions: list[ToolDef] = [
 #----------------------工具调用----------------------------
 
 def _resolve_tool_path(raw_path: str, *, must_exist: bool = True) -> Path:
+    """The path as given, or, for an absolute path from another machine (say
+    ``/workspace/proj/src/a.py``), the same tail under the working folder.
+
+    A path to a new file is only remapped when no folder above it exists (other
+    than the drive root): ``C:\\work\\new\\x.py`` is written there, never
+    redirected into the working folder.
+    """
     path = Path(raw_path)
     if path.exists() or not path.is_absolute():
+        return path
+    if not must_exist and any(parent.exists() for parent in list(path.parents)[:-1]):
         return path
 
     parts = path.parts
@@ -247,24 +260,74 @@ def _resolve_tool_path(raw_path: str, *, must_exist: bool = True) -> Path:
     return path
 
 
+READ_DEFAULT_LIMIT = 2000      # lines returned when no limit is given
+READ_MAX_LINE_CHARS = 2000     # a minified line is cut, not returned whole
+
+
+def _as_positive_int(value, default: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
 #读取文件并且在读取文件的基础上添加行号
 def _read_file(inp:dict) -> str:
     try:
         path = _resolve_tool_path(inp["file_path"])
-        content = path.read_text(encoding="utf-8", errors="replace")
-        lines = content.split("\n")
-        numbered = "\n".join(f"{i + 1:4d} | {line}" for i, line in enumerate(lines))
-        return numbered
+        if path.is_dir():
+            return f"Error reading file: {inp['file_path']} is a directory. Use list_files to see what is in it."
+        try:
+            tf = textio.read(path)
+        except textio.NotTextError as e:
+            return f"Error reading file: {e}. read_file only reads text; use run_shell for other files."
+        lines = tf.lines
+        total = len(lines)
+        start = _as_positive_int(inp.get("offset"), 1)
+        limit = _as_positive_int(inp.get("limit"), READ_DEFAULT_LIMIT)
+        if start > total:
+            return f"Error reading file: {inp['file_path']} has {total} lines; offset {start} is past the end."
+        end = min(total, start + limit - 1)
+        shown = []
+        for number in range(start, end + 1):
+            line = lines[number - 1]
+            if len(line) > READ_MAX_LINE_CHARS:
+                line = line[:READ_MAX_LINE_CHARS] + f" … [line cut: {len(line)} chars]"
+            shown.append(f"{number:4d} | {line}")
+        out = "\n".join(shown)
+        notes = []
+        if start > 1 or end < total:
+            notes.append(f"showing lines {start}-{end} of {total}; pass offset/limit to read more")
+        kind = textio.describe(tf)
+        if kind:
+            notes.append(f"{kind}; edits keep it that way")
+        if notes:
+            out += "\n\n[" + "; ".join(notes) + "]"
+        return out
     except Exception as e:
         return f"Error reading file: {e}"
 
 def _write_file(inp:dict) -> str:
     try:
         path = _resolve_tool_path(inp["file_path"], must_exist=False)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(inp["content"], encoding="utf-8", newline="\n")
+        if path.is_dir():
+            return f"Error writing file: {inp['file_path']} is a directory."
+        like = None
+        if path.exists():
+            try:
+                like = textio.read(path)   # keep its encoding, BOM and line endings
+            except textio.NotTextError:
+                like = None                # replacing a binary file: written as new UTF-8 text
+        content = inp["content"]
+        try:
+            textio.write(path, like.to_file_newlines(content) if like else content, like)
+        except UnicodeEncodeError as e:
+            bad = content[e.start:e.end]
+            return (f"Error writing file: {inp['file_path']} is {textio.describe(like) or like.encoding} and cannot hold "
+                    f"{bad!r}. Use characters that encoding has, or ask the user before converting the file.")
         _auto_update_memory_index(str(path))
-        lines = inp["content"].split("\n")
+        lines = content.split("\n")
         line_count = len(lines)
         preview = "\n".join(f"{i + 1:4d} | {l}" for i, l in enumerate(lines[:30]))
         trunc = f"\n  ... ({line_count} lines total)" if line_count > 30 else ""
@@ -316,42 +379,95 @@ def _find_actual_string(file_content: str, search_string: str) -> str | None:
         return file_content[idx:idx + len(search_string)]
     return None
 
-#生成一个简单的文本差异格式
-def _generate_diff(old_content: str, old_string: str, new_string: str) -> str:
-    before_change = old_content.split(old_string)[0]
-    line_num = before_change.count("\n") + 1
-    old_lines = old_string.split("\n")
-    new_lines = new_string.split("\n")
+DIFF_MAX_LINES = 80
 
-    parts = [f"@@ -{line_num},{len(old_lines)} +{line_num},{len(new_lines)} @@"]
-    for l in old_lines:
-        parts.append(f"- {l}")
-    for l in new_lines:
-        parts.append(f"+ {l}")
-    return "\n".join(parts)
+
+#生成差异（unified diff，带两行上下文）
+def _generate_diff(old_content: str, new_content: str) -> str:
+    import difflib
+
+    old_lines = old_content.replace("\r\n", "\n").split("\n")
+    new_lines = new_content.replace("\r\n", "\n").split("\n")
+    lines = list(difflib.unified_diff(old_lines, new_lines, n=2, lineterm=""))[2:]  # drop the ---/+++ header
+    if len(lines) > DIFF_MAX_LINES:
+        lines = lines[:DIFF_MAX_LINES] + [f"... ({len(lines) - DIFF_MAX_LINES} more diff lines)"]
+    return "\n".join(lines)
+
+
+def _line_numbers_of(text: str, needle: str, limit: int = 10) -> list[int]:
+    numbers, start = [], 0
+    while len(numbers) < limit:
+        idx = text.find(needle, start)
+        if idx < 0:
+            break
+        numbers.append(text.count("\n", 0, idx) + 1)
+        start = idx + max(1, len(needle))
+    return numbers
+
+
+def _locate(tf: textio.TextFile, old: str) -> str | None:
+    """old_string as it actually appears in the file: line endings and quotes adjusted."""
+    lf = old.replace("\r\n", "\n")
+    crlf = lf.replace("\n", "\r\n")
+    if tf.newline == "\r\n" and not tf.mixed_newlines:
+        candidates = [crlf, old]
+    else:
+        candidates = [old, lf, crlf]
+    for candidate in dict.fromkeys(candidates):
+        actual = _find_actual_string(tf.text, candidate)
+        if actual:
+            return actual
+    return None
+
 
 #编辑文件
 def _edit_file(inp: dict) -> str:
     try:
-        path = _resolve_tool_path(inp["file_path"])
-        content = path.read_text(encoding="utf-8", errors="replace")
+        old, new = inp["old_string"], inp["new_string"]
+        replace_all = bool(inp.get("replace_all"))
+        path = _resolve_tool_path(inp["file_path"], must_exist=not old == "")
+        if old == "":
+            if path.exists():
+                return (f"Error: old_string is empty, but {inp['file_path']} already exists. Give the text to "
+                        "replace, or use write_file to replace the whole file.")
+            return _write_file({"file_path": inp["file_path"], "content": new})
+        if old == new:
+            return "Error: old_string and new_string are the same; nothing to change."
+        try:
+            tf = textio.read(path)
+        except textio.NotTextError as e:
+            return f"Error editing file: {e}. Not editing it, so no bytes are damaged."
 
-        actual = _find_actual_string(content, inp["old_string"])
+        actual = _locate(tf, old)
         if not actual:
-            return f"Error: old_string not found in {inp['file_path']}"
+            return (f"Error: old_string not found in {inp['file_path']}. It must match the file exactly, including "
+                    "whitespace and indentation; read_file it again and copy the lines.")
 
-        occurrences = content.count(inp["old_string"])
-        if occurrences > 1:
-            return f"Error: old_string found {occurrences} times in {inp['file_path']}. Must be unique."
+        occurrences = tf.text.count(actual)
+        if occurrences > 1 and not replace_all:
+            where = ", ".join(map(str, _line_numbers_of(tf.text, actual)))
+            return (f"Error: old_string found {occurrences} times in {inp['file_path']} (lines {where}). "
+                    "Add surrounding lines to make it unique, or pass replace_all: true to change every one.")
 
-        new_content = content.replace(actual, inp["new_string"], 1)
-        path.write_text(new_content, encoding="utf-8", newline="\n")
+        uses_crlf = "\r\n" in actual or (tf.newline == "\r\n" and not tf.mixed_newlines)
+        lf_new = new.replace("\r\n", "\n")
+        replacement = lf_new.replace("\n", "\r\n") if uses_crlf else lf_new
+        new_text = tf.text.replace(actual, replacement) if replace_all else tf.text.replace(actual, replacement, 1)
+        try:
+            textio.write(path, new_text, tf)
+        except UnicodeEncodeError as e:
+            bad = new_text[e.start:e.end]
+            return (f"Error editing file: {inp['file_path']} is {textio.describe(tf) or tf.encoding} and cannot hold "
+                    f"{bad!r}. Use characters that encoding has, or ask the user before converting the file.")
+        _auto_update_memory_index(str(path))
 
-        diff = _generate_diff(content, actual, inp["new_string"])
-
-        quote_note = " (matched via quote normalization)" if actual != inp["old_string"] else ""
-
-        return f"Successfully edited {inp['file_path']}{quote_note}\n\n{diff}"
+        notes = []
+        if actual.replace("\r\n", "\n") != old.replace("\r\n", "\n"):
+            notes.append("matched via quote normalization")
+        if replace_all and occurrences > 1:
+            notes.append(f"{occurrences} occurrences replaced")
+        note = f" ({'; '.join(notes)})" if notes else ""
+        return f"Successfully edited {inp['file_path']}{note}\n\n{_generate_diff(tf.text, new_text)}"
     except Exception as e:
         return f"Error editing file: {e}"
 
@@ -359,95 +475,19 @@ def _edit_file(inp: dict) -> str:
 def _list_files(inp: dict) -> str:
     try:
         base = _resolve_tool_path(inp.get("path") or ".")
-        pattern = inp["pattern"]
-        files = []
-        for p in base.glob(pattern):
-            if p.is_file():
-                rel = str(p.relative_to(base) if base != Path(".") else p)
-
-                if "node_modules" in rel or ".git" in rel.split(os.sep):
-                    continue
-                files.append(rel)
-                if len(files) >= 200:
-                    break
-        if not files:
-            return "No files found matching the pattern."
-        result = "\n".join(files[:200])
-
-        if len(files) > 200:
-            result += f"\n...and {len(files) - 200} more files are found ..."
-        return result
+        if not base.exists():
+            return f"Error listing files: {inp.get('path')} does not exist."
+        return search.list_files(inp["pattern"], base)
     except Exception as e:
         return f"Error listing files: {e}"
 
 
 def _grep_search(inp: dict) -> str:
-    pattern = inp["pattern"]
-    path = str(_resolve_tool_path(inp.get("path") or "."))
-    include = inp.get("include")
-
-    if not IS_WIN:
-        try:
-            args = ["grep", "--line-number", "--color=never", "-r"]
-            if include:
-                args.append(f"--include={include}")
-            args.extend(["--", pattern, path])
-
-            result = subprocess.run(
-                args, capture_output=True, text=True, timeout=10
-            )
-            if result.returncode == 1:
-                return "No matches found."
-            if result.returncode == 0:
-                lines = [l for l in result.stdout.split("\n") if l]
-                output = "\n".join(lines[:100])
-                if len(lines) >100:
-                    output += f"\n... and {len(lines) - 100} more matches"
-                return output
-        except Exception:
-            pass
-
-    return _grep_python(pattern, path, include)
-
-
-def _grep_python(pattern: str, directory: str, include: str | None) -> str:
-    regex = re.compile(pattern)
-    include_pattern = include
-    matches: list[str] = []
-
-    def walk(d: str) -> None:
-        if len(matches) >= 200:
-            return
-        try:
-            entries = os.listdir(d)
-        except Exception:
-            return
-        for name in entries:
-            if name.startswith(".") or name == "node_modules":
-                continue
-            full = os.path.join(d, name)
-            if os.path.isdir(full):
-                walk(full)
-                continue
-            if include_pattern and not fnmatch.fnmatch(name, include_pattern):
-                continue
-            try:
-                text = Path(full).read_text(encoding="utf-8", errors="replace")
-                for i, line in enumerate(text.split("\n")):
-                    if regex.search(line):
-                        matches.append(f"{full}:{i+1}:{line}")
-                        if len(matches) >= 200:
-                            return
-            except Exception:
-                pass
-
-    walk(directory)
-    if not matches:
-        return "No matches found."
-    output = "\n".join(matches[:100])
-    if len(matches) > 100:
-        output += f"\n... and {len(matches) - 100} more matches"
-    return output
+    try:
+        base = _resolve_tool_path(inp.get("path") or ".")
+        return search.grep(inp["pattern"], base, inp.get("include"), bool(inp.get("case_insensitive")))
+    except Exception as e:
+        return f"Error searching: {e}"
 
 
 
@@ -550,23 +590,54 @@ def _discard(path: Path | None) -> None:
             pass
 
 
+def _shell_invocation(command: str) -> tuple[str | list[str] | None, Path | None, str | None, platform_shell.Shell]:
+    """(what to run, temp file to delete, or the reason it is not run, the shell)."""
+    shell = platform_shell.current()
+    if shell.is_powershell:
+        problem = platform_shell.preflight(command, shell)
+        if problem:
+            return None, None, problem, shell
+        script = platform_shell.write_powershell_script(command)
+        return platform_shell.powershell_argv(shell, script), script, None, shell
+    if shell.kind == "cmd":
+        problem = _multiline_quote_problem(command, windows=True)
+        if problem:
+            return None, None, problem, shell
+        prepared, script = _prepare_shell_command(command, windows=True)
+        return prepared, script, None, shell
+    return command, None, None, shell
+
+
+def _output_encoding(shell: platform_shell.Shell) -> str:
+    # PowerShell is told to write UTF-8 (see the prelude); cmd and sh write the locale's encoding.
+    return "utf-8" if shell.is_powershell else (locale.getpreferredencoding(False) or "utf-8")
+
+
+def _finish_output(text: str, shell: platform_shell.Shell, script: Path | None) -> str:
+    text = text.replace("\r\n", "\n")
+    if shell.is_powershell and script is not None:
+        text = platform_shell.tidy_powershell_errors(text, script)
+    return text
+
+
 def _run_shell(inp: dict) -> str:
-    problem = _multiline_quote_problem(inp["command"])
+    target, script, problem, shell = _shell_invocation(inp["command"])
     if problem:
         return problem
-    command, script = _prepare_shell_command(inp["command"])
     try:
         timeout_ms = inp.get("timeout", 30000)
-        timeout_s = timeout_ms / 1000
         result = subprocess.run(
-            command,
-            shell=True,
+            target,
+            shell=isinstance(target, str),
             capture_output=True,
-            text=True,
-            errors="replace",
-            timeout=timeout_s,
+            timeout=timeout_ms / 1000,
+            env=platform_shell.child_env(),
+            **no_window_flags(),
         )
-        return _format_shell_result(result.returncode, result.stdout or "", result.stderr or "")
+        encoding = _output_encoding(shell)
+        stdout = _finish_output((result.stdout or b"").decode(encoding, "replace"), shell, script)
+        stderr = _finish_output((result.stderr or b"").decode(encoding, "replace"), shell, script)
+        return _format_shell_result(result.returncode, stdout, stderr)
     except subprocess.TimeoutExpired:
         return f"Command timed out after {inp.get('timeout', 30000)}ms"
     except Exception as e:
@@ -635,32 +706,36 @@ async def run_shell_async(inp: dict, on_output: Callable[[str], None] | None = N
     * output is relayed while the command runs, through ``on_output``;
     * a timeout or a cancelled turn kills the whole process tree.
     """
-    problem = _multiline_quote_problem(inp["command"])
+    target, script, problem, shell = _shell_invocation(inp["command"])
     if problem:
         return problem
-    command, script = _prepare_shell_command(inp["command"])
     try:
-        return await _run_prepared_async(command, inp, on_output)
+        return await _run_prepared_async(target, inp, on_output, shell, script)
     finally:
         _discard(script)
 
 
-async def _run_prepared_async(command: str, inp: dict, on_output: Callable[[str], None] | None) -> str:
+async def _run_prepared_async(target: str | list[str], inp: dict, on_output: Callable[[str], None] | None,
+                              shell: platform_shell.Shell, script: Path | None) -> str:
     timeout_ms = inp.get("timeout", 30000)
+    spawn_options = dict(
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=platform_shell.child_env(),
+        **(no_window_flags() if IS_WIN else {"start_new_session": True}),
+    )
     try:
-        proc = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            **({} if IS_WIN else {"start_new_session": True}),
-        )
+        if isinstance(target, str):
+            proc = await asyncio.create_subprocess_shell(target, **spawn_options)
+        else:
+            proc = await asyncio.create_subprocess_exec(*target, **spawn_options)
     except NotImplementedError:
         # An event loop without subprocess support (Windows selector loop).
         return await asyncio.to_thread(_run_shell, inp)
     except Exception as e:
         return f"Error: {e}"
 
-    encoding = locale.getpreferredencoding(False) or "utf-8"
+    encoding = _output_encoding(shell)
     relay = _OutputRelay(on_output) if on_output else None
     captured: dict[str, list[str]] = {"stdout": [], "stderr": []}
 
@@ -697,9 +772,9 @@ async def _run_prepared_async(command: str, inp: dict, on_output: Callable[[str]
         if relay:
             relay.flush()
 
-    # Same newline handling as subprocess.run(text=True), so both paths read alike.
-    stdout = "".join(captured["stdout"]).replace("\r\n", "\n")
-    stderr = "".join(captured["stderr"]).replace("\r\n", "\n")
+    # Same post-processing as the blocking path, so both read alike.
+    stdout = _finish_output("".join(captured["stdout"]), shell, script)
+    stderr = _finish_output("".join(captured["stderr"]), shell, script)
     return _format_shell_result(proc.returncode or 0, stdout, stderr)
 
 
