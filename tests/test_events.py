@@ -185,7 +185,7 @@ async def test_a_denied_call_publishes_the_verdict_and_never_reaches_a_tool(monk
 
 async def test_a_confirmed_call_publishes_ask_then_the_users_decision(monkeypatch, in_tmp_cwd, collected):
     agent = _scripted_agent(monkeypatch, "default", [
-        _tool_calls(("c1", "run_shell", '{"command": "rm -rf build"}')),
+        _tool_calls(("c1", "run_shell", '{"command": "git push origin main"}')),
         _FINAL,
     ])
 
@@ -196,4 +196,4 @@ async def test_a_confirmed_call_publishes_ask_then_the_users_decision(monkeypatc
     await agent.chat("clean up")
 
     verdicts = [(e.data["action"], e.data["message"]) for e in collected if e.type == events.PERMISSION]
-    assert verdicts == [("confirm", "rm -rf build"), ("deny", "denied by user")]
+    assert verdicts == [("confirm", "git push origin main"), ("deny", "denied by user")]

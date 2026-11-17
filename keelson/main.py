@@ -167,15 +167,85 @@ def _resolve_api_config(cli_api_base: str | None) -> tuple[str | None, str | Non
     return None, None, False
 
 
+def read_confirm_answer(options: list[str], read=input) -> dict:
+    """Read one answer to a permission prompt: y / s / p / n, or `n: reason`."""
+    prompt = "  Allow? [" + "/".join({"once": "y", "session": "s", "project": "p", "deny": "n"}[o]
+                                     for o in options if o in ("once", "session", "project", "deny")) + "]: "
+    try:
+        answer = read(prompt).strip()
+    except EOFError:
+        return {"choice": "deny"}
+    head, _, reason = answer.partition(":")
+    key = head.strip().lower()[:1]
+    choice = {"y": "once", "s": "session", "p": "project"}.get(key, "deny")
+    if choice not in options:
+        choice = "deny"
+    return {"choice": choice, "reason": reason.strip() if choice == "deny" else ""}
+
+
+def handle_checkpoint_command(agent: Agent, inp: str) -> bool:
+    """/undo [N] [--force], /rewind N, /redo, /revert FILE [N], /checkpoints. True if it was one."""
+    words = inp.split()
+    if not words or words[0] not in ("/undo", "/rewind", "/redo", "/revert", "/checkpoints"):
+        return False
+    force = "--force" in words
+    rest = [w for w in words[1:] if w != "--force"]
+    numbers = [int(w) for w in rest if w.isdigit()]
+    if words[0] == "/checkpoints":
+        store = agent.checkpoint_store()
+        rows = store.describe() if store else []
+        if store is not None and store.reason:
+            print_warning(store.reason)
+        if not rows:
+            print_info("No turns to undo yet.")
+        for row in rows[:20]:
+            files = ", ".join(row["files"][:6]) + (" ..." if len(row["files"]) > 6 else "")
+            print_info(f"  /undo {row['steps']:<3} {row['time']}  {row['label']}\n      {files or '(no files)'}")
+        return True
+    if words[0] == "/redo":
+        report = agent.redo()
+    elif words[0] == "/revert":
+        files = [w for w in rest if not w.isdigit()]
+        if not files:
+            print_warning("Usage: /revert <file> [N]  — put one file back as it was N turns ago (default 1).")
+            return True
+        report = agent.revert(" ".join(files), numbers[0] if numbers else 1)
+    else:
+        if words[0] == "/rewind" and not numbers:
+            print_warning("Usage: /rewind N  — undo the last N turns (see /checkpoints).")
+            return True
+        report = agent.undo(numbers[0] if numbers else 1, force=force)
+    (print_info if report.ok else print_warning)(report.summary())
+    return True
+
+
+def _confirm_trust() -> None:
+    """Before the first turn: a project that would switch on allow rules or MCP servers must be trusted."""
+    from . import trust
+
+    pending = trust.needs_decision()
+    if not pending:
+        return
+    print_warning("This folder has settings that would run with your permissions:\n  "
+                  + "\n  ".join(pending)
+                  + "\nThey stay off until you trust the folder. Its deny rules apply either way.")
+    try:
+        answer = input("  Trust this folder? [y/N]: ").strip().lower()
+    except EOFError:
+        answer = ""
+    if answer.startswith("y"):
+        trust.trust()
+        from .tools import reset_permission_cache
+
+        reset_permission_cache()
+        print_info("Trusted. (`keelson trust --revoke` takes it back.)")
+
+
 async def run_repl(agent: Agent) -> None:
     """Interactive REPL loop."""
 
-    async def confirm_fn(message: str) -> bool:
-        try:
-            answer = input("  Allow? (y/n): ")
-            return answer.lower().startswith("y")
-        except EOFError:
-            return False
+    async def confirm_fn(message: str, request: dict | None = None) -> dict:
+        return read_confirm_answer((request or {}).get("options") or ["once", "deny"])
 
     agent.set_confirm_fn(confirm_fn)
 
@@ -224,6 +294,7 @@ async def run_repl(agent: Agent) -> None:
             print_user_prompt()
 
     signal.signal(signal.SIGINT, handle_sigint)
+    _confirm_trust()
     print_welcome(
         model=agent.model,
         permission_mode=agent.permission_mode,
@@ -257,6 +328,8 @@ async def run_repl(agent: Agent) -> None:
             continue
         if inp == "/cost":
             agent.show_cost()
+            continue
+        if handle_checkpoint_command(agent, inp):
             continue
         if inp == "/model" or inp.startswith("/model "):
             wanted = inp[len("/model"):].strip()
@@ -441,6 +514,10 @@ def main() -> None:
     # Subcommands with their own options.
     if len(sys.argv) > 1 and sys.argv[1] == "use":
         sys.exit(profiles.use_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "trust":
+        from . import trust
+
+        sys.exit(trust.trust_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] == "web":
         from .web.cli import main as web_main
 
@@ -463,6 +540,7 @@ Usage: keelson [options] [prompt]
        keelson init [--project | --profile NAME]           save model + key (all projects / this one / a profile)
        keelson use [NAME]                                  list profiles, or switch to one
        keelson doctor [--offline]                          check that this install works
+       keelson trust [--revoke]                            let this folder's allow rules and MCP servers apply
 
 Options:
   -P, --profile NAME  Use this profile for one run (see `keelson use`)
@@ -484,6 +562,11 @@ REPL commands:
   /cost               Show token usage and cost
   /model [NAME]       Show or switch the model (same endpoint), e.g. /model deepseek-v4-pro
   /compact            Manually compact conversation
+  /undo [--force]     Put back every file the last turn changed, shell changes included
+  /rewind N           Undo the last N turns
+  /redo               Reverse the last /undo
+  /revert FILE [N]    Put one file back as it was N turns ago (default 1)
+  /checkpoints        List the turns that can be undone
   /memory             List saved memories
   /skills             List available skills
   /skill-stats        Show skill usage and evolution stats

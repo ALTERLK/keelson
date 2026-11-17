@@ -70,11 +70,11 @@ async def test_three_tool_calls_execute_once_each(oai_agent, monkeypatch):
 
 
 async def test_denied_last_call_is_still_answered(oai_agent, monkeypatch):
-    # write_file to a new path in dontAsk -> denied; it must still get a tool message
+    # something /undo cannot reverse (git push) in dontAsk -> denied; it must still get a tool message
     responses = iter([
         _msg_with_tool_calls([
             ("c1", "read_file", '{"file_path": "a"}'),
-            ("c2", "write_file", '{"file_path": "brand_new_file.txt", "content": "x"}'),
+            ("c2", "run_shell", '{"command": "git push origin main"}'),
         ]),
         _FINAL,
     ])

@@ -115,7 +115,9 @@ const handlers = {
     else { if (!wasAsked) state.counts.allowed++; state.stage = "tool"; }
   },
 
-  confirm_request(state, { data }) { state.confirm = { request_id: data.request_id, message: data.message }; },
+  confirm_request(state, { data }) {
+    state.confirm = { request_id: data.request_id, message: data.message, reason: data.reason || "", options: data.options || ["once", "deny"] };
+  },
   confirm_resolved(state) { state.confirm = null; },
 
   // Live output of a command that is still running.

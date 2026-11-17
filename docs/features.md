@@ -9,6 +9,7 @@ read [Getting started](getting-started.md) first.
 | I want to… | Section |
 |---|---|
 | control how much it may do without asking | [Permission gate and modes](#permission-gate-and-modes) |
+| take back what it did, shell commands included | [Undo: checkpoints](#undo-checkpoints) |
 | see a plan before anything changes | [Plan mode](#plan-mode) |
 | stop it from looping and burning money | [Loop guard and budgets](#loop-guard-and-budgets) |
 | run long tasks without it losing the thread | [Context management](#context-management) |
@@ -28,53 +29,112 @@ read [Getting started](getting-started.md) first.
 
 **What it is.** Every tool call the model proposes goes through
 `check_permission` before it runs, and gets one of three verdicts: allow, ask
-you, or deny.
+you, or deny. Keelson decides by **whether the action can be undone**, not by
+which tool it is.
 
-**The problem.** Models make mistakes, and can be steered by hostile text in a
-file. The runtime cannot assume every proposed action is safe.
+**The problem.** Asking about every command trains people to press "yes"
+without reading; asking about nothing lets one bad command delete a home
+folder. Models make mistakes, and can be steered by hostile text in a file.
 
-**How to use it.** Pick a permission mode:
+**How it decides.**
 
-| Mode | Edit existing files | Create files | Destructive commands | How to start |
-|---|---|---|---|---|
-| `default` | allow | ask | ask | default |
-| `acceptEdits` | allow | allow | ask | `--accept-edits` |
-| `dontAsk` | allow | deny | deny | `--dont-ask` |
-| `plan` | deny | deny | deny | `--plan` or `/plan` |
-| `bypassPermissions` | allow | allow | allow | `--yolo` |
+| The action | Verdict | Why |
+|---|---|---|
+| Edits, new files, ordinary commands inside the project | allow | a checkpoint covers them: `/undo` takes them back |
+| `delete_files` inside the project | allow | goes to the Recycle Bin |
+| Installing packages, network access, `git push`, history rewrites, writing outside the project, MCP and unknown tools | ask, with the reason | `/undo` cannot reverse them |
+| Force-push, `git clean -x`, publishing, `sudo`, `curl … \| sh`, a path with an unset variable | ask, **once only** | never "always allowed" |
+| Deleting from the shell (`rm`, `del`, `Remove-Item`, `find -delete`, …) | deny | use `delete_files` |
+| Moving or deleting the home folder, a drive root, the project folder or a folder above it; writing to system folders | deny, in every mode | nothing should do this |
 
-Reading, listing and searching are allowed in every mode. A *destructive
-command* is a shell command matching a list of patterns (`rm`, `del`,
-`git push`, `Stop-Process`, …).
+Paths are checked after `~`, `$HOME`, `$env:USERPROFILE`, `%VAR%` and `$VAR`
+are expanded, and compound commands (`a && b; c | d`) are judged part by part.
+Details and limits: [Safety and undo](safety.md).
+
+When it asks, you choose: **allow once · allow for this session · always allow
+in this project** (saved to `.keelson/settings.local.json`) **· deny**, or deny
+with a reason the model gets to read. A one-time "yes" is not remembered.
+
+Modes:
+
+| Mode | What changes | How to start |
+|---|---|---|
+| `default` | the table above | default |
+| `acceptEdits` | same as default (kept for compatibility) | `--accept-edits` |
+| `dontAsk` | everything that would ask is denied (CI, sub-agents) | `--dont-ask` |
+| `plan` | no edits and no commands, only the plan file | `--plan` or `/plan` |
+| `bypassPermissions` | nothing asks; the "deny in every mode" row still applies | `--yolo` |
 
 To allow or forbid specific calls, add rules to `~/.keelson/settings.json` (all
-projects) or `.keelson/settings.json` (this project). Rules are checked before
-the mode, and `deny` wins over `allow`:
+projects) or `.keelson/settings.json` (this project); `deny` wins over `allow`:
 
 ```json
 {
   "permissions": {
-    "allow": ["run_shell(npm test*)", "run_shell(git status)"],
+    "allow": ["run_shell(npm install*)", "run_shell(git push*)"],
     "deny": ["run_shell(git push*)", "edit_file(.env)"]
   }
 }
 ```
 
-The pattern in parentheses is matched against the shell command or the file
-path; a trailing `*` means "starts with", otherwise it must be equal.
+The pattern is matched against the shell command (and each part of a compound
+command) or the file path; a trailing `*` means "starts with".
 
-**Where you see it.** The "gate: allowed / approved by you / denied" label on
-every tool card; the three counters under *Permission gate* in the inspector;
-the prompt that appears when it needs to ask.
+**Workspace trust.** A cloned repository could ship `run_shell(*)` in its
+settings or an MCP server in `.mcp.json`. So a project's *allow* rules and MCP
+servers take effect only after you trust the folder: the terminal asks once,
+or run `keelson trust` (`--revoke` undoes it). Its *deny* rules apply at once.
+
+**Where you see it.** The reason in the prompt; the "gate: allowed / approved by
+you / denied" label on every tool card; the counters under *Permission gate* in
+the inspector.
 
 **Worth knowing.**
 
-- A denial is returned to the model as the tool's result, so the model knows
-  why and can change course instead of stalling.
-- Tools the gate does not recognise (MCP tools, tools added later) are not
-  trusted by default: they need confirmation, and are refused in plan mode.
+- A denial is returned to the model as the tool's result, with your reason if
+  you gave one, so the model can change course instead of stalling.
 - A sub-agent never has more permission than its parent.
 - The web console cannot select `bypassPermissions`.
+- This is a guard rail, not a sandbox: a test suite or build script that a
+  command starts can still do anything your account can.
+
+## Undo: checkpoints
+
+**What it is.** At the start of every turn Keelson takes a snapshot of the
+project; `/undo` puts back every file the turn changed — **also the ones a
+shell command changed, created or deleted**.
+
+**The problem.** Claude Code's checkpoints only track its own file-edit tools;
+its documentation says changes made by bash commands are not covered. An agent
+that ran a formatter, a code generator or `mv` could not be rolled back.
+
+**How to use it.**
+
+| Command | Does |
+|---|---|
+| `/undo` | put back what the last turn changed |
+| `/undo --force` | the same, also over files you edited after that turn |
+| `/rewind N` | undo the last N turns |
+| `/redo` | reverse the last `/undo` |
+| `/revert FILE [N]` | put one file back as it was N turns ago |
+| `/checkpoints` | list the turns that can be undone, with their files |
+
+If you changed a file after the turn ended, `/undo` lists it and stops instead
+of overwriting your edit. After an undo the model is told which files changed.
+
+**How it works.** A separate git repository in
+`~/.keelson/projects/<hash>/checkpoints/` with its own index; your project's
+`.git` is never touched. Files are stored byte for byte (no line-ending
+conversion, no filters, no hooks). `node_modules`, `.venv` and other rebuildable
+folders, files ignored by `.gitignore`, and new files over 50 MB are not
+snapshotted; ignored files that Keelson's own tools change are saved
+separately, so `/undo` covers them too.
+
+**Not covered:** installed packages, commits and pushes, databases, the
+network, and files outside the project that a shell command changed. Those are
+exactly the actions the permission gate asks about first. Without git, only
+Keelson's own file tools can be undone, the terminal says so, and ordinary
+shell commands then ask before they run.
 
 ## Plan mode
 
@@ -299,7 +359,9 @@ connects to MCP servers and hands their tools to the model.
 ```
 
 Servers are connected on first use. MCP tools are untrusted by default: each
-call needs confirmation unless a rule in `settings.json` allows it.
+call needs confirmation unless a rule in `settings.json` allows it. Servers
+listed in a project's `.mcp.json` or `.keelson/settings.json` start only after
+you trust the folder (see *Workspace trust* above).
 
 ## Sub-agents
 
@@ -339,6 +401,8 @@ shows the same checks.
 | `keelson "task"` | Run one task and exit |
 | `keelson web` | Start the web console (`--port`, `--replay`, `--no-open`, `--no-record`) |
 | `keelson init` / `keelson doctor` | Configure / check the install |
+| `keelson use [NAME]` | List profiles, or switch to one |
+| `keelson trust [--revoke]` | Let this folder's allow rules and MCP servers apply |
 | `keelson --resume` | Reopen the last session |
 
 **Common options**
@@ -359,6 +423,9 @@ shows the same checks.
 | `/plan` | Toggle plan mode |
 | `/cost` | Tokens and cost |
 | `/compact` | Fold the context now |
+| `/undo [--force]` · `/rewind N` · `/redo` | Undo the last turn (shell changes too) · the last N · reverse an undo |
+| `/revert FILE [N]` · `/checkpoints` | Put one file back · list what can be undone |
+| `/model [NAME]` | Show or switch the model on this endpoint |
 | `/memory` | Show long-term memory |
 | `/skills` | List skills |
 | `/<skill-name> [args]` | Run a skill |
@@ -386,7 +453,10 @@ Set them in `.env` or in the environment.
 | `KEELSON_PROFILE` | Which profile to use (`~/.keelson/profiles/<name>.env`). `keelson use <name>` switches and remembers, `keelson -P <name>` is for one run, `keelson init --profile <name>` creates one | none |
 | `KEELSON_SHELL` | The shell run_shell uses on Windows: `pwsh`, `powershell` (5.1) or `cmd` | PowerShell (7 if installed) |
 | `KEELSON_CONTEXT_WINDOW`, `KEELSON_MAX_OUTPUT_TOKENS` | Override the model registry's planning window and per-request `max_tokens` | per model |
-| `KEELSON_HOME` | State directory (sessions, skills, memory) | `~/.keelson` |
+| `KEELSON_HOME` | State directory (sessions, skills, memory, checkpoints) | `~/.keelson` |
+| `KEELSON_CHECKPOINTS` | Snapshot the project each turn so `/undo` works | `1` |
+| `KEELSON_CHECKPOINT_MAX_FILE_MB` | New files larger than this are left out of snapshots | `50` |
+| `KEELSON_TRUST_ALL` | Treat every folder as trusted (for your own machines and CI only) | `0` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | Extract skills from feedback automatically | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | Write new skills at project or user level | `project` |
 | `KEELSON_JUDGE_MODEL` | Model for side judgements (extraction, the gate); may differ from the main one | same as `MODEL` |

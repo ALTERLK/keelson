@@ -54,7 +54,7 @@ ARMS = ("harness", "raw")
 # found not fixed — it would hit the wrong endpoint) and skill*/tool_search/
 # plan-mode tools (irrelevant here, skill* would trigger extra model calls).
 SANDBOX_TOOL_NAMES = (
-    "read_file", "write_file", "edit_file", "list_files", "grep_search", "run_shell", "compact_context",
+    "read_file", "write_file", "edit_file", "delete_files", "list_files", "grep_search", "run_shell", "compact_context",
 )
 
 

@@ -17,6 +17,7 @@ dependencies = [
     "openai>=1.0",
     "python-dotenv>=1.0",
     "rich>=13.0",
+    "send2trash>=1.8",      # delete_files moves things to the Recycle Bin / Trash
     "tqdm>=4.66",
 ]
 

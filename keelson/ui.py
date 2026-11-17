@@ -142,8 +142,9 @@ def print_warning(msg: str) -> None:
     events.emit(events.NOTICE, level="warning", message=_safe_text(msg))
 
 
-def print_confirmation(command: str) -> None:
-    events.emit(events.CONFIRM_PROMPT, message=_safe_text(command))
+def print_confirmation(command: str, reason: str = "", options: list[str] | None = None) -> None:
+    events.emit(events.CONFIRM_PROMPT, message=_safe_text(command), reason=_safe_text(reason),
+                options=list(options or ["once", "deny"]))
 
 
 def print_divider() -> None:
@@ -308,11 +309,17 @@ class TerminalRenderer:
         console.print(Text(f"    ⛔ denied by permission gate — {data.get('message', '')}", style=BAD))
 
     def _on_confirm_prompt(self, data: dict) -> None:
+        body = Text(data.get("message", ""), style="bold")
+        if data.get("reason"):
+            body.append("\n" + data["reason"], style="")
+        options = data.get("options") or ["once", "deny"]
+        keys = {"once": "y = once", "session": "s = this session", "project": "p = always in this project",
+                "deny": "n = deny (n: reason = deny and say why)"}
         console.print()
         console.print(Panel(
-            Text(data.get("message", ""), style="bold"),
+            body,
             title=f"[bold {WARN}]Permission required[/bold {WARN}]",
-            subtitle="[dim]y = allow once · anything else = deny[/dim]",
+            subtitle="[dim]" + " · ".join(keys[o] for o in options if o in keys) + "[/dim]",
             border_style=WARN,
             box=box.ROUNDED,
             padding=(0, 1),
@@ -468,6 +475,7 @@ def print_welcome(
     commands = Table.grid(padding=(0, 2))
     commands.add_column(style=f"bold {ACCENT}", no_wrap=True)
     commands.add_column(style=MUTED)
+    commands.add_row("/undo", "take back the last turn, shell changes too")
     commands.add_row("/plan", "read-only planning workflow")
     commands.add_row("/skills", "list reusable skills")
     commands.add_row("/skill-history", "show a skill's evolution")
@@ -574,6 +582,9 @@ def _get_tool_summary(name: str, inp: dict) -> str:
         return ""
     if name in ("read_file", "write_file", "edit_file"):
         return inp.get("file_path", "")
+    if name == "delete_files":
+        targets = inp.get("paths") or []
+        return ", ".join(map(str, targets if isinstance(targets, list) else [targets]))[:80]
     if name == "list_files":
         return inp.get("pattern", "")
     if name == "grep_search":

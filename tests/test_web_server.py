@@ -40,7 +40,8 @@ class StubAgent:
         # Like the real loop, this publishes through events.emit(): whichever
         # bus is current in this task's context receives it.
         events.emit(events.USER_MESSAGE, text=message)
-        allowed = await self.confirm_fn("rm -rf build")
+        answer = await self.confirm_fn("git push", request={"options": ["once", "session", "project", "deny"]})
+        allowed = answer["choice"] != "deny"
         events.emit(events.ASSISTANT_DELTA, text=f"{message}: allowed={allowed}")
         events.emit(events.TURN_END)
 
@@ -109,7 +110,8 @@ def test_a_turn_waits_on_the_browser_for_the_permission_decision(live, decision)
 
     assert _wait_for(lambda: _pending(session) is not None)
     request = _pending(session)
-    assert request.data["message"] == "rm -rf build"
+    assert request.data["message"] == "git push"
+    assert request.data["options"] == ["once", "session", "project", "deny"]
     assert client.get(f"/api/sessions/{session_id}").json()["busy"] is True   # parked on the gate
     assert client.post(f"/api/sessions/{session_id}/chat", json={"message": "again"}).status_code == 409
 
@@ -117,7 +119,8 @@ def test_a_turn_waits_on_the_browser_for_the_permission_decision(live, decision)
     assert _wait_for(lambda: not session.busy)
 
     resolved = next(e for e in session.bus.history() if e.type == events.CONFIRM_RESOLVED)
-    assert resolved.data == {"request_id": request.data["request_id"], "allowed": decision}
+    assert resolved.data == {"request_id": request.data["request_id"], "allowed": decision,
+                             "choice": "once" if decision else "deny"}
     reply = next(e for e in session.bus.history() if e.type == events.ASSISTANT_DELTA)
     assert reply.data["text"] == f"clean up: allowed={decision}"
 

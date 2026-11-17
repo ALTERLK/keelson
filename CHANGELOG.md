@@ -3,6 +3,46 @@
 Notable changes, newest first. Benchmark figures quoted here are reproduced in
 [`bench/REPORT.md`](bench/REPORT.md) from the committed run artifacts.
 
+## Unreleased — 0.4.0 (in progress)
+
+### Added
+- **Undo that covers shell commands.** Each turn starts with a snapshot of the
+  project in a separate git repository (`keelson/checkpoints.py`); `/undo`,
+  `/rewind N`, `/redo`, `/revert FILE` and `/checkpoints` restore what a turn
+  changed, including files that commands created, changed or deleted. Files
+  edited after the turn are reported, not overwritten. The project's own
+  `.git` is never touched.
+- **`delete_files`**, the only way to delete: it moves things to the Recycle
+  Bin / Trash (`send2trash`, a new dependency). Deleting from the shell (`rm`,
+  `del`, `Remove-Item`, `find -delete`, also inside `bash -c` / `cmd /c` /
+  script blocks) is refused with a pointer to it.
+- **A path boundary** (`keelson/safety.py`): variables and `~` are expanded
+  before a path is judged; an unset variable makes a command dangerous; moving
+  or deleting the home folder, a drive root or the project, and writing to
+  system folders, are refused in every mode.
+- **Workspace trust**: a project's allow rules and MCP servers apply only after
+  `keelson trust` (or a yes at the prompt). Deny rules apply at once.
+- **Profiles**: `keelson use NAME` switches between saved model setups,
+  `-P NAME` for one run, `keelson init --profile NAME` creates one; `/model`
+  switches the model in a session.
+- DeepSeek as the default model, with its thinking switch, `reasoning_content`
+  passback, truncated tool calls held back, and cache-hit cost accounting.
+- Windows: PowerShell is the default shell (bash habits are caught before they
+  run), files keep their encoding (UTF-8/GBK, BOM) and line endings, edits are
+  atomic.
+
+### Changed
+- **Permissions are decided by reversibility.** What `/undo` covers (edits and
+  ordinary commands inside the project) no longer asks; what it cannot reverse
+  asks, with the reason. Choices are now allow once / this session / always in
+  this project (`.keelson/settings.local.json`) / deny, optionally with a
+  reason the model reads. A one-time OK is no longer cached. Dangerous actions
+  can never be always-allowed. Details: [Safety and undo](docs/safety.md).
+- Compound shell commands are judged part by part; allow and deny rules match
+  each part.
+- `--yolo` still refuses the actions in the "refused in every mode" list.
+- The sandbox benchmark's tool set includes `delete_files`.
+
 ## 0.3.0 — 2026-11
 
 ### Added

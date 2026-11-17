@@ -14,10 +14,10 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from keelson import events, paths, search, textio
+from keelson import checkpoints, events, paths, safety, search, textio
 from keelson.memory import get_memory_dir
 from keelson.platforms import IS_WINDOWS as IS_WIN
-from keelson.platforms import kill_process_tree, no_window_flags
+from keelson.platforms import kill_process_tree, no_window_flags, trash
 from keelson.platforms import shell as platform_shell
 
 ToolDef = dict  # Anthropic tool schema dict
@@ -25,7 +25,7 @@ ToolDef = dict  # Anthropic tool schema dict
 PermissionMode = str  # "default" | "plan" | "acceptEdits" | "bypassPermissions" | "dontAsk"
 
 READ_TOOLS = {"read_file", "list_files", "grep_search", "compact_context"}
-EDIT_TOOLS = {"write_file", "edit_file", "skill_evolve", "skill_create"}
+EDIT_TOOLS = {"write_file", "edit_file", "delete_files", "skill_evolve", "skill_create"}
 
 
 #并发安全的工具可以并行运行（只读，无副作用）
@@ -82,6 +82,21 @@ tool_definitions: list[ToolDef] = [
         },
     },
     {
+        "name": "delete_files",
+        "description": "Delete files or folders by moving them to the Recycle Bin (Trash), so the deletion can be undone. "
+                       "This is the only way to delete: rm, del, Remove-Item and the like are refused in run_shell. "
+                       "Glob patterns such as build/*.tmp are expanded.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "paths": {"type": "array", "items": {"type": "string"},
+                          "description": "Files, folders or glob patterns to delete"},
+                "reason": {"type": "string", "description": "Why these should be deleted (shown to the user)"},
+            },
+            "required": ["paths"],
+        },
+    },
+    {
         "name": "list_files",
         "description": "List files matching a glob pattern (supports **, *, ?, [abc], {a,b}), most recently changed first. Files ignored by .gitignore are skipped.",
         "input_schema": {
@@ -109,7 +124,7 @@ tool_definitions: list[ToolDef] = [
     },
     {
         "name": "run_shell",
-        "description": "Execute a shell command and return its output. Use this for running tests, installing packages, git operations, etc.",
+        "description": "Execute a shell command and return its output. Use this for running tests, builds, git operations, etc. Changes it makes inside the project are covered by checkpoints (/undo). Deleting is refused here: use delete_files. Commands that cannot be undone (installing packages, network access, git push, writing outside the project) are shown to the user first.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -320,6 +335,7 @@ def _write_file(inp:dict) -> str:
             except textio.NotTextError:
                 like = None                # replacing a binary file: written as new UTF-8 text
         content = inp["content"]
+        checkpoints.before_write(path)
         try:
             textio.write(path, like.to_file_newlines(content) if like else content, like)
         except UnicodeEncodeError as e:
@@ -453,6 +469,7 @@ def _edit_file(inp: dict) -> str:
         lf_new = new.replace("\r\n", "\n")
         replacement = lf_new.replace("\n", "\r\n") if uses_crlf else lf_new
         new_text = tf.text.replace(actual, replacement) if replace_all else tf.text.replace(actual, replacement, 1)
+        checkpoints.before_write(path)
         try:
             textio.write(path, new_text, tf)
         except UnicodeEncodeError as e:
@@ -470,6 +487,66 @@ def _edit_file(inp: dict) -> str:
         return f"Successfully edited {inp['file_path']}{note}\n\n{_generate_diff(tf.text, new_text)}"
     except Exception as e:
         return f"Error editing file: {e}"
+
+
+DELETE_MAX_MATCHES = 500
+
+
+def _delete_targets(inp: dict) -> list[str]:
+    raw = inp.get("paths")
+    if raw is None:
+        raw = inp.get("path") or inp.get("file_path") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    return [str(p) for p in raw if str(p).strip()]
+
+
+def _expand_delete_target(raw: str) -> tuple[list[Path], str | None]:
+    """The paths one entry stands for (a glob may stand for many), or why it is skipped."""
+    text, unresolved = safety.expand(raw.strip())
+    if unresolved:
+        return [], f"skipped {raw}: {', '.join(unresolved)} is not set, so the path is unknown"
+    path = _resolve_tool_path(text)
+    if path.exists() or path.is_symlink():
+        return [path], None
+    if any(ch in text for ch in "*?["):
+        import glob as _glob
+
+        matches = sorted(_glob.glob(text, recursive=True))
+        if len(matches) > DELETE_MAX_MATCHES:
+            return [], f"skipped {raw}: matches {len(matches)} paths; narrow the pattern"
+        if matches:
+            return [Path(m) for m in matches], None
+    return [], f"not found: {raw}"
+
+
+def _delete_files(inp: dict) -> str:
+    targets = _delete_targets(inp)
+    if not targets:
+        return "Error: give the files or folders to delete in `paths`."
+    bin_name = trash.bin_name()
+    moved, lines = 0, []
+    for raw in targets:
+        found, problem = _expand_delete_target(raw)
+        if problem:
+            lines.append(problem)
+        for path in found:
+            why = safety.describe_protected(path, destructive=True)
+            if why:
+                lines.append(f"refused: {path} is {why}")
+                continue
+            if path.is_file():
+                checkpoints.before_write(path)    # /undo can put it back even if it is git-ignored
+            try:
+                trash.move_to_trash(path)
+            except Exception as e:  # never fall back to a real delete
+                lines.append(f"not deleted: {path} ({e})")
+                continue
+            moved += 1
+            lines.append(f"moved to {bin_name}: {path}")
+    head = (f"Deleted {moved} item(s) by moving them to {bin_name}; /undo or {bin_name} brings them back."
+            if moved else "Nothing was deleted.")
+    return head + "\n" + "\n".join(lines)
 
 
 def _list_files(inp: dict) -> str:
@@ -782,35 +859,27 @@ def _publish_tool_output(text: str) -> None:
     events.emit(events.TOOL_OUTPUT, id=events.current_call_id(), text=text)
 
 
-#危险命令检测模式列表
+# ─── permissions ────────────────────────────────────────────
+#
+# Asked by reversibility, not by tool: what /undo can take back runs without a
+# prompt; what it cannot (packages, network, git push, history rewrites, paths
+# outside the project, MCP and unknown tools) is confirmed with the reason;
+# what could wreck the machine (deleting from the shell, touching the home
+# folder, a drive root or system folders) is refused in every mode. See
+# keelson/safety.py for the rules and docs/safety.md for the limits.
 
-DANGEROUS_PATTERNS = [
-    re.compile(r"\brm\s"),
-    re.compile(r"\bgit\s+(push|reset|clean|checkout\s+\.)"),
-    re.compile(r"\bsudo\b"),
-    re.compile(r"\bmkfs\b"),
-    re.compile(r"\bdd\s"),
-    re.compile(r">\s*/dev/"),
-    re.compile(r"\bkill\b"),
-    re.compile(r"\bpkill\b"),
-    re.compile(r"\breboot\b"),
-    re.compile(r"\bshutdown\b"),
-    re.compile(r"\bdel\s", re.IGNORECASE),
-    re.compile(r"\brmdir\s", re.IGNORECASE),
-    re.compile(r"\bformat\s", re.IGNORECASE),
-    re.compile(r"\btaskkill\s", re.IGNORECASE),
-    re.compile(r"\bRemove-Item\s", re.IGNORECASE),
-    re.compile(r"\bStop-Process\s", re.IGNORECASE),
-]
+
 def is_dangerous(command: str) -> bool:
-    return any(p.search(command) for p in DANGEROUS_PATTERNS)
+    """Kept for callers of the old API: does this command need a person's OK (or is it refused)?"""
+    return safety.assess_shell(command).action != "allow"
 
-#权限规则
+
 def _parse_rule(rule: str) -> dict:
-    m = re.match(r"^([a-z_]+)\((.+)\)$", rule)
+    m = re.match(r"^([A-Za-z0-9_]+)\((.+)\)$", rule.strip())
     if m:
         return {"tool": m.group(1), "pattern": m.group(2)}
-    return {"tool": rule, "pattern": None}
+    return {"tool": rule.strip(), "pattern": None}
+
 
 def _load_settings(file_path: Path) -> dict | None:
     if not file_path.exists():
@@ -820,32 +889,54 @@ def _load_settings(file_path: Path) -> dict | None:
     except Exception:
         return None
 
+
 _cached_rules: dict | None = None
 
 
-
 def load_permission_rules() -> dict:
+    """allow/deny rules from ~/.keelson/settings.json and the project's settings files.
+
+    A project's *allow* rules only count once the folder is trusted (see
+    keelson/trust.py); its deny rules always count.
+    """
     global _cached_rules
     if _cached_rules is not None:
         return _cached_rules
+    from keelson import trust
 
     allow: list[dict] = []
     deny: list[dict] = []
-
-    user_settings = _load_settings(paths.user_settings_file())
-    project_settings = _load_settings(paths.project_settings_file())
-
-    for settings in [user_settings, project_settings]:
-        if not settings or "permissions" not in settings:
+    trusted = trust.is_trusted()
+    sources = [(_load_settings(paths.user_settings_file()), True),
+               (_load_settings(paths.project_settings_file()), trusted),
+               (_load_settings(paths.project_local_settings_file()), trusted)]
+    for settings, allow_counts in sources:
+        if not isinstance(settings, dict) or not isinstance(settings.get("permissions"), dict):
             continue
         perms = settings["permissions"]
-        for r in perms.get("allow", []):
-            allow.append(_parse_rule(r))
-        for r in perms.get("deny", []):
-            deny.append(_parse_rule(r))
-
+        if allow_counts:
+            allow += [_parse_rule(r) for r in perms.get("allow", [])]
+        deny += [_parse_rule(r) for r in perms.get("deny", [])]
     _cached_rules = {"allow": allow, "deny": deny}
     return _cached_rules
+
+
+def _rule_values(tool_name: str, inp: dict) -> list[str] | None:
+    """What a rule's pattern is matched against (None: the tool has no such value)."""
+    if tool_name == "run_shell":
+        command = inp.get("command", "")
+        return [command, *platform_shell._segments(command)]
+    if "file_path" in inp:
+        return [inp["file_path"]]
+    if tool_name == "delete_files":
+        return _delete_targets(inp)
+    return None
+
+
+def _pattern_matches(pattern: str, value: str) -> bool:
+    if pattern.endswith("*"):
+        return value.startswith(pattern[:-1])
+    return value == pattern
 
 
 def _matches_rule(rule: dict, tool_name: str, inp: dict) -> bool:
@@ -853,30 +944,87 @@ def _matches_rule(rule: dict, tool_name: str, inp: dict) -> bool:
         return False
     if rule["pattern"] is None:
         return True
-
-    value = ""
-    if tool_name == "run_shell":
-        value = inp.get("command", "")
-    elif "file_path" in inp:
-        value = inp["file_path"]
-    else:
+    values = _rule_values(tool_name, inp)
+    if values is None:
         return True
-
-    pattern = rule["pattern"]
-    if pattern.endswith("*"):
-        return value.startswith(pattern[:-1])
-    return value == pattern
+    if tool_name == "delete_files":
+        return all(_pattern_matches(rule["pattern"], v) for v in values)
+    return any(_pattern_matches(rule["pattern"], v) for v in values)
 
 
-def _check_permission_rules(tool_name: str, inp: dict) -> str | None:
+def _check_permission_rules(tool_name: str, inp: dict, extra_allow: list[str] | None = None) -> str | None:
     rules = load_permission_rules()
     for rule in rules["deny"]:
         if _matches_rule(rule, tool_name, inp):
             return "deny"
-    for rule in rules["allow"]:
+    for rule in rules["allow"] + [_parse_rule(r) for r in extra_allow or []]:
         if _matches_rule(rule, tool_name, inp):
             return "allow"
     return None
+
+
+def _rules_cover(verdict: safety.Verdict, extra_allow: list[str] | None) -> bool:
+    """Do "always allow" rules cover every part of this shell command that needs an OK?"""
+    if not verdict.can_always_allow:
+        return False
+    prefixes = [r["pattern"] for r in load_permission_rules()["allow"] + [_parse_rule(r) for r in extra_allow or []]
+                if r["tool"] == "run_shell" and r["pattern"]]
+    return all(any(_pattern_matches(p, key) or key.startswith(p.rstrip("*").rstrip()) for p in prefixes)
+               for key in verdict.rule_keys)
+
+
+def _assess(tool_name: str, inp: dict) -> safety.Verdict | None:
+    if tool_name == "run_shell":
+        return safety.assess_shell(inp.get("command", ""))
+    if tool_name in ("write_file", "edit_file") and inp.get("file_path"):
+        return safety.assess_path(_resolve_tool_path(inp["file_path"], must_exist=False), verb="write")
+    if tool_name == "delete_files":
+        merged = safety.Verdict(read_only=False)
+        for raw in _delete_targets(inp):
+            text, unresolved = safety.expand(raw)
+            if unresolved:
+                continue                      # the tool itself skips these and says why
+            one = safety.assess_path(_resolve_tool_path(text, must_exist=False), verb="delete")
+            if one.action == "block":
+                merged.refuse(one.reasons[0])
+                return merged
+            for reason in one.reasons:
+                merged.need(reason)
+        return merged
+    return None
+
+
+def _subject(tool_name: str, inp: dict) -> str:
+    if tool_name == "run_shell":
+        return inp.get("command", "")
+    if tool_name in ("write_file", "edit_file"):
+        return f"{tool_name} {inp.get('file_path', '')}"
+    if tool_name == "delete_files":
+        return "delete " + ", ".join(_delete_targets(inp))
+    if tool_name == "skill_evolve":
+        return f"evolve skill: {inp.get('skill_name', '')}"
+    if tool_name == "skill_create":
+        return f"create skill: {inp.get('name', '')}"
+    return f"external tool: {tool_name}"
+
+
+def _shell_undo_off() -> str | None:
+    store = checkpoints.active()
+    if store is not None and not store.covers_shell:
+        return store.reason
+    return None
+
+
+def _ask(mode: str, tool_name: str, inp: dict, reason: str, *, rules: list[str] | None = None) -> dict:
+    subject = _subject(tool_name, inp)
+    if mode == "dontAsk":
+        return {"action": "deny", "message": f"Auto-denied (dontAsk mode): {subject} — {reason}"}
+    return {"action": "confirm", "message": subject, "reason": reason, "rules": list(rules or [])}
+
+
+_KNOWN_TOOLS = READ_TOOLS | EDIT_TOOLS | {
+    "run_shell", "skill", "agent", "tool_search", "enter_plan_mode", "exit_plan_mode", "compact_context",
+}
 
 
 def check_permission(
@@ -884,16 +1032,23 @@ def check_permission(
     inp: dict,
     mode: str = "default",
     plan_file_path: str | None = None,
+    session_rules: list[str] | None = None,
 ) -> dict:
-    """Returns {"action": "allow"|"deny"|"confirm", "message": ...}"""
+    """{"action": "allow" | "deny" | "confirm", "message", "reason", "rules"}.
+
+    ``rules``: the "always allow" rules a person may save for this call — empty
+    when it may only be allowed once (anything dangerous). ``session_rules``:
+    rules allowed for the rest of this session.
+    """
+    verdict = _assess(tool_name, inp)
+    if verdict is not None and verdict.action == "block":     # refused in every mode, bypass included
+        return {"action": "deny", "message": verdict.reasons[0]}
     if mode == "bypassPermissions":
         return {"action": "allow"}
 
-    rule_result = _check_permission_rules(tool_name, inp)
+    rule_result = _check_permission_rules(tool_name, inp, session_rules)
     if rule_result == "deny":
         return {"action": "deny", "message": f"Denied by permission rule for {tool_name}"}
-    if rule_result == "allow":
-        return {"action": "allow"}
 
     if tool_name in READ_TOOLS:
         return {"action": "allow"}
@@ -906,55 +1061,62 @@ def check_permission(
             return {"action": "deny", "message": f"Blocked in plan mode: {tool_name}"}
         if tool_name == "run_shell":
             return {"action": "deny", "message": "Shell commands blocked in plan mode"}
+        if tool_name not in _KNOWN_TOOLS:
+            return {"action": "deny", "message": f"Blocked in plan mode: {tool_name}"}
 
     if tool_name in ("enter_plan_mode", "exit_plan_mode"):
         return {"action": "allow"}
 
-    if mode == "acceptEdits" and tool_name in EDIT_TOOLS:
+    if verdict is not None:
+        if verdict.action == "allow":
+            off = _shell_undo_off() if tool_name == "run_shell" and not verdict.read_only else None
+            if off and rule_result != "allow":
+                return _ask(mode, tool_name, inp, off, rules=[f"run_shell({_first_word(inp)}*)"])
+            return {"action": "allow"}
+        if tool_name == "run_shell":
+            if _rules_cover(verdict, session_rules):
+                return {"action": "allow"}
+            rules = [f"run_shell({key}*)" for key in verdict.rule_keys] if verdict.can_always_allow else []
+        else:
+            if rule_result == "allow":
+                return {"action": "allow"}
+            rules = []
+        return _ask(mode, tool_name, inp, "; ".join(verdict.reasons), rules=rules)
+
+    if rule_result == "allow":
         return {"action": "allow"}
+    if tool_name == "skill_evolve":
+        return _ask(mode, tool_name, inp, "changes a skill that later tasks will follow", rules=["skill_evolve"])
+    if tool_name == "skill_create":
+        return _ask(mode, tool_name, inp, "adds a skill that later tasks will follow", rules=["skill_create"])
 
-    needs_confirm = False
-    confirm_message = ""
-
-    if tool_name == "run_shell" and is_dangerous(inp.get("command", "")):
-        needs_confirm = True
-        confirm_message = inp.get("command", "")
-    elif tool_name == "write_file" and not _resolve_tool_path(inp.get("file_path", ""), must_exist=False).exists():
-        needs_confirm = True
-        confirm_message = f"write new file: {inp.get('file_path', '')}"
-    elif tool_name == "edit_file" and not _resolve_tool_path(inp.get("file_path", "")).exists():
-        needs_confirm = True
-        confirm_message = f"edit non-existent file: {inp.get('file_path', '')}"
-    elif tool_name == "skill_evolve":
-        needs_confirm = True
-        confirm_message = f"evolve skill: {inp.get('skill_name', '')}"
-    elif tool_name == "skill_create":
-        needs_confirm = True
-        confirm_message = f"create skill: {inp.get('name', '')}"
-
-    if needs_confirm:
-        if mode == "dontAsk":
-            return {"action": "deny", "message": f"Auto-denied (dontAsk mode): {confirm_message}"}
-        return {"action": "confirm", "message": confirm_message}
-
-    # Anything not in a known class (MCP `mcp__server__tool`, future tools) is
-    # not implicitly trusted: block it in plan mode, confirm it otherwise.
-    _known = READ_TOOLS | EDIT_TOOLS | {
-        "run_shell", "skill", "agent", "tool_search",
-        "enter_plan_mode", "exit_plan_mode", "compact_context",
-    }
-    if tool_name not in _known:
-        if mode == "plan":
-            return {"action": "deny", "message": f"Blocked in plan mode: {tool_name}"}
-        if mode == "dontAsk":
-            return {"action": "deny", "message": f"Auto-denied (dontAsk mode): {tool_name}"}
-        return {"action": "confirm", "message": f"external tool: {tool_name}"}
-
+    # MCP (`mcp__server__tool`) and anything new: Keelson cannot tell what it changes.
+    if tool_name not in _KNOWN_TOOLS:
+        return _ask(mode, tool_name, inp, "an external tool; Keelson cannot tell what it changes or undo it",
+                    rules=[tool_name])
     return {"action": "allow"}
 
 
+def _first_word(inp: dict) -> str:
+    words = safety.tokens(inp.get("command", ""))
+    return words[0] if words else ""
 
 
+def save_project_rule(rule: str) -> Path:
+    """"Always allow in this project": add ``rule`` to .keelson/settings.local.json and trust the folder."""
+    from keelson import trust
+
+    target = paths.project_local_settings_file()
+    data = _load_settings(target) or {}
+    perms = data.setdefault("permissions", {})
+    allow = perms.setdefault("allow", [])
+    if rule not in allow:
+        allow.append(rule)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    trust.trust()
+    reset_permission_cache()
+    return target
 
 
 #----------------执行工具调用-----------------------
@@ -1035,6 +1197,7 @@ async def execute_tool(
     handlers: dict = {
         "write_file": _write_file,
         "edit_file": _edit_file,
+        "delete_files": _delete_files,
         "list_files": _list_files,
         "grep_search": _grep_search,
     }

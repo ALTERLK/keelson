@@ -413,15 +413,22 @@ export function mount(root) {
     if (!pending) return;
 
     const interactive = session.mode === "live";
-    const answer = (allow) => attempt(() => actions.confirm(pending.request_id, allow));
-    const allowButton = h("button", { type: "button", class: "btn primary", disabled: !interactive, onclick: () => answer(true) }, t("confirm.allow"));
+    const options = pending.options || ["once", "deny"];
+    const reasonInput = h("input", { type: "text", class: "confirm-reason", placeholder: t("confirm.deny_reason"), disabled: !interactive });
+    const answer = (allow, scope) => attempt(() => actions.confirm(pending.request_id, allow, scope, allow ? "" : reasonInput.value));
+    const button = (label, onclick, cls = "btn") => h("button", { type: "button", class: cls, disabled: !interactive, onclick }, label);
+    const allowButton = button(t("confirm.allow"), () => answer(true, "once"), "btn primary");
     modalRoot.append(h("div", { class: "modal-backdrop" + (interactive ? "" : " passive") },
       h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "confirm-title" },
         h("h2", { id: "confirm-title" }, t("confirm.title")),
         h("p", {}, t("confirm.body")),
         h("pre", { class: "confirm-action" }, pending.message),
+        pending.reason ? h("p", { class: "confirm-why" }, t("confirm.why") + pending.reason) : null,
+        reasonInput,
         h("div", { class: "modal-actions" },
-          h("button", { type: "button", class: "btn", disabled: !interactive, onclick: () => answer(false) }, t("confirm.deny")),
+          button(t("confirm.deny"), () => answer(false)),
+          options.includes("project") ? button(t("confirm.project"), () => answer(true, "project")) : null,
+          options.includes("session") ? button(t("confirm.session"), () => answer(true, "session")) : null,
           allowButton,
         ),
       ),

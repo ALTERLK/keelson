@@ -44,6 +44,8 @@ class ChatBody(BaseModel):
 class ConfirmBody(BaseModel):
     request_id: str
     allow: bool
+    scope: str | None = None      # "once" | "session" | "project" (when allowing)
+    reason: str | None = None     # why, when denying: passed on to the model
 
 
 class ModeBody(BaseModel):
@@ -196,7 +198,7 @@ def create_app(manager: SessionManager | None = None) -> FastAPI:
 
     @app.post("/api/sessions/{session_id}/confirm")
     async def confirm(session_id: str, body: ConfirmBody) -> dict[str, Any]:
-        if not session_or_404(session_id).resolve_confirm(body.request_id, body.allow):
+        if not session_or_404(session_id).resolve_confirm(body.request_id, body.allow, body.scope, body.reason):
             raise HTTPException(404, "no pending confirmation with that id")
         return {"ok": True}
 

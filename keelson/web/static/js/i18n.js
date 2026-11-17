@@ -177,6 +177,10 @@ const dict = {
     "confirm.body": "The model asked to run the action below. Nothing happens until you choose.",
     "confirm.allow": "Allow once",
     "confirm.deny": "Deny",
+    "confirm.session": "Allow for this session",
+    "confirm.project": "Always allow in this project",
+    "confirm.why": "Why it asks: ",
+    "confirm.deny_reason": "Optional: why you deny it (the model sees this)",
 
     "skills.title": "Skill evolution",
     "skills.lead": "A skill only changes if the candidate is no worse than the version it replaces on that skill's own replay history. Both records below were produced by the real pipeline against a real model.",
@@ -426,6 +430,10 @@ const dict = {
     "confirm.body": "模型请求执行下面的操作。在你选择之前，什么都不会发生。",
     "confirm.allow": "允许一次",
     "confirm.deny": "拒绝",
+    "confirm.session": "本会话内都允许",
+    "confirm.project": "在本项目中一直允许",
+    "confirm.why": "为什么要问：",
+    "confirm.deny_reason": "可选：拒绝的理由（模型会看到）",
 
     "skills.title": "技能进化",
     "skills.lead": "技能只有在候选版本不比被替换的版本差时才会更新——用该技能自己的历史样本回放来比较。下面两条记录都由真实流水线调用真实模型产生。",

@@ -17,7 +17,7 @@ PS7 = platform_shell.Shell("powershell", "pwsh.exe", "PowerShell 7 (pwsh)", and_
 
 
 @pytest.mark.parametrize(("command", "advice"), [
-    ("rm -rf build", "Remove-Item -Recurse -Force build"),
+    ("rm -rf build", "delete_files"),
     ("export API_KEY=abc", "$env:API_KEY = 'abc'"),
     ("NODE_ENV=test npm test", "$env:NODE_ENV = 'test'; npm test"),
     ("pytest 2>/dev/null", "$null"),

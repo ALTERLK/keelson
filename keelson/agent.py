@@ -15,7 +15,7 @@ from typing import Any
 import anthropic
 import openai
 
-from keelson import events, models, paths, trace
+from keelson import checkpoints, events, models, paths, trace
 from keelson.mcp_client import McpManager
 from keelson.memory import MemoryPrefetch, format_memories_for_injection, start_memory_prefetch
 from keelson.prompt import build_system_prompt
@@ -172,6 +172,29 @@ TRUNCATED_TOOL_CALL_NOTE = (
     "section at a time."
 )
 
+CONFIRM_CHOICES = ("once", "session", "project", "deny")
+
+
+def normalize_choice(answer: Any) -> tuple[str, str]:
+    """A confirm hook's answer as (choice, reason). Hooks may answer True/False, a choice, or a dict."""
+    if answer is True:
+        return "once", ""
+    if isinstance(answer, str) and answer.strip().lower() in CONFIRM_CHOICES:
+        return answer.strip().lower(), ""
+    if isinstance(answer, dict):
+        choice = str(answer.get("choice") or ("once" if answer.get("allow") else "deny")).lower()
+        return (choice if choice in CONFIRM_CHOICES else "deny"), str(answer.get("reason") or "").strip()
+    return "deny", ""
+
+
+def _accepts_request(fn: Callable) -> bool:
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == "request" or p.kind is inspect.Parameter.VAR_KEYWORD for p in params)
+
+
 def _assistant_message(content: str | None, tool_calls: list | None, reasoning: str | None) -> dict:
     """An assistant turn as it goes back into the OpenAI-style history."""
     message: dict[str, Any] = {"role": "assistant", "content": content or None, "tool_calls": tool_calls}
@@ -244,8 +267,13 @@ class Agent:
         self._aborted = False
         #存储异步任务
         self._current_task:asyncio.Task | None = None
-        #权限白名单
-        self._confirmed_paths: set[str] = set()
+        # "Allow for this session" rules (same form as settings.json rules). A
+        # one-time OK is never cached: the next call is asked about again.
+        self._session_rules: list[str] = []
+        # Checkpoints (/undo): opened on the first turn; sub-agents share the parent's.
+        self._checkpoints: checkpoints.Checkpoints | None = None
+        self._checkpoint_notice_shown = False
+        self._pending_notes: list[str] = []
 
 
         # 计划模式”（Plan Mode）状态的变量
@@ -509,12 +537,18 @@ class Agent:
         if not self.is_sub_agent:
             events.emit(events.USER_MESSAGE, text=original_user_message)
 
+        if self._pending_notes and not self.is_sub_agent:
+            # What happened between turns (an /undo, say), so the model does not work from stale file contents.
+            user_message = "\n".join(self._pending_notes) + "\n\n" + user_message
+            self._pending_notes = []
+
         self._aborted = False
         self._turn_output_buffer = []
         self._loop_window = []
         self._loop_guard_hits = 0
         self._empty_replies = 0
         self._truncations = 0
+        store = await self._begin_checkpoint(original_user_message)
         coro = self._chat_openai(user_message) if self.use_openai else self._chat_anthropic(user_message)
         self._current_task = asyncio.create_task(coro)
         try:
@@ -524,6 +558,8 @@ class Agent:
 
         finally:
             self._current_task = None
+            if store is not None:
+                await asyncio.shield(asyncio.to_thread(store.end_turn))
         assistant_text = "".join(self._turn_output_buffer or []).strip()
         self._turn_output_buffer = None
         if not self.is_sub_agent and not self._aborted:
@@ -540,6 +576,54 @@ class Agent:
             self._auto_save()
 
 
+
+    # ── checkpoints: /undo, /redo, /revert ─────────────────────
+
+    def checkpoint_store(self) -> checkpoints.Checkpoints | None:
+        if self.is_sub_agent:
+            return None
+        if self._checkpoints is None:
+            self._checkpoints = checkpoints.for_workspace()
+        return self._checkpoints
+
+    async def _begin_checkpoint(self, label: str) -> checkpoints.Checkpoints | None:
+        store = self.checkpoint_store()
+        if store is None or store.mode == checkpoints.OFF:
+            return None
+        with events.span("checkpoint"):
+            await asyncio.to_thread(store.begin_turn, label)
+        if store.mode != checkpoints.GIT and not self._checkpoint_notice_shown:
+            self._checkpoint_notice_shown = True
+            events.emit(events.NOTICE, level="warn",
+                        message=f"Limited undo: {store.reason}. Shell commands will ask before they run.")
+        return store
+
+    def _restored(self, verb: str, report: checkpoints.Report) -> checkpoints.Report:
+        if report.ok and (report.restored or report.removed):
+            files = ", ".join((report.restored + report.removed)[:30])
+            self._pending_notes.append(
+                f"[Keelson: the user ran {verb}; these files changed on disk since your last look: {files}. "
+                "Read a file again before editing it.]")
+            self._read_file_state.clear()       # earlier reads are stale now
+        return report
+
+    def undo(self, steps: int = 1, *, force: bool = False) -> checkpoints.Report:
+        store = self.checkpoint_store()
+        if store is None or store.mode == checkpoints.OFF:
+            return checkpoints.Report(False, "Checkpoints are off.")
+        return self._restored(f"/undo {steps}" if steps > 1 else "/undo", store.undo(steps, force=force))
+
+    def redo(self) -> checkpoints.Report:
+        store = self.checkpoint_store()
+        if store is None or store.mode == checkpoints.OFF:
+            return checkpoints.Report(False, "Checkpoints are off.")
+        return self._restored("/redo", store.redo())
+
+    def revert(self, file: str, steps: int = 1) -> checkpoints.Report:
+        store = self.checkpoint_store()
+        if store is None or store.mode == checkpoints.OFF:
+            return checkpoints.Report(False, "Checkpoints are off.")
+        return self._restored(f"/revert {file}", store.revert(file, steps))
 
    #执行一次对话，收集本轮模型输出文本，并返回本轮消耗的 token 数
     async def run_once(self, prompt:str)->None:
@@ -1454,7 +1538,7 @@ class Agent:
     def _gate(self, call_id: str | None, name: str, inp: dict) -> dict:
         """Ask the permission gate about one call (timed, to show what the gate costs)."""
         with events.span("permission", tool=name, id=call_id):
-            return check_permission(name, inp, self.permission_mode, self._plan_file_path)
+            return check_permission(name, inp, self.permission_mode, self._plan_file_path, self._session_rules)
 
     async def _execute_tool_call(self, name: str, inp: dict) -> str:
         if name == "compact_context":
@@ -1870,19 +1954,13 @@ class Agent:
                                          "content": f"Action denied: {perm.get('message', '')}"})
                     continue
 
-                if perm["action"] == "confirm" and perm.get("message") and perm["message"] not in self._confirmed_paths:
-                    # 高风险操作需要用户确认；同一个 message 确认过后会缓存，避免重复询问。
-                    confirmed = await self._confirm_dangerous(perm["message"])
-                    self._emit_permission(tu.id, tu.name, {
-                        "action": "allow" if confirmed else "deny",
-                        "message": "approved by user" if confirmed else "denied by user",
-                    })
-                    if not confirmed:
+                if perm["action"] == "confirm":
+                    # 撤销不了的操作要用户确认；可选"本次 / 本会话 / 本项目 / 拒绝（可附理由）"。
+                    denial = await self._ask_user(tu.id, tu.name, perm)
+                    if denial is not None:
                         self._record_tool_outcome(tu.name, False)
-                        tool_results.append(
-                            {"type": "tool_result", "tool_use_id": tu.id, "content": "User denied this action."})
+                        tool_results.append({"type": "tool_result", "tool_use_id": tu.id, "content": denial})
                         continue
-                    self._confirmed_paths.add(perm["message"])
 
                 # 权限通过后执行工具，并把大输出持久化为可回传的摘要或引用。
                 try:
@@ -2135,18 +2213,13 @@ class Agent:
                     oai_checked.append({"tc": tc, "fn": fn_name, "inp": inp, "allowed": False,
                                         "result": f"Action denied: {perm.get('message', '')}"})
                     continue
-                if perm["action"] == "confirm" and perm.get("message") and perm["message"] not in self._confirmed_paths:
-                    confirmed = await self._confirm_dangerous(perm["message"])
-                    self._emit_permission(tc.get("id"), fn_name, {
-                        "action": "allow" if confirmed else "deny",
-                        "message": "approved by user" if confirmed else "denied by user",
-                    })
-                    if not confirmed:
+                if perm["action"] == "confirm":
+                    denial = await self._ask_user(tc.get("id"), fn_name, perm)
+                    if denial is not None:
                         self._record_tool_outcome(fn_name, False)
                         oai_checked.append({"tc": tc, "fn": fn_name, "inp": inp, "allowed": False,
-                                            "result": "User denied this action."})
+                                            "result": denial})
                         continue
-                    self._confirmed_paths.add(perm["message"])
                 oai_checked.append({"tc": tc, "fn": fn_name, "inp": inp, "allowed": True})
 
             oai_batches: list[dict] = []
@@ -2315,12 +2388,16 @@ class Agent:
 
         return await _with_retry(_do)
 
-    async def _confirm_dangerous(self, command: str) -> bool:
-        print_confirmation(command)
+    async def _confirm_dangerous(self, command: str, request: dict | None = None) -> Any:
+        """Ask the person; returns what the confirm hook answered (bool, a choice, or {choice, reason})."""
+        request = request or {"message": command, "reason": "", "options": ["once", "deny"], "rules": []}
+        print_confirmation(command, request.get("reason", ""), request.get("options"))
         if self.confirm_fn:
             # Time spent waiting for a person is reported separately, so it is
             # never mistaken for model or tool latency.
             with events.span("confirm_wait"):
+                if _accepts_request(self.confirm_fn):
+                    return await self.confirm_fn(command, request=request)
                 return await self.confirm_fn(command)
         # Fallback: blocking input
         try:
@@ -2328,3 +2405,28 @@ class Agent:
             return answer.lower().startswith("y")
         except EOFError:
             return False
+
+    async def _ask_user(self, call_id: str | None, name: str, perm: dict) -> str | None:
+        """Confirm one call. None: go ahead. Otherwise the tool result that tells the model it was refused."""
+        rules = list(perm.get("rules") or [])
+        options = ["once", "session", "project", "deny"] if rules else ["once", "deny"]
+        request = {"message": perm.get("message", ""), "reason": perm.get("reason", ""), "tool": name,
+                   "rules": rules, "options": options}
+        choice, reason = normalize_choice(await self._confirm_dangerous(perm.get("message", ""), request))
+        if choice == "session" and rules:
+            self._session_rules += [r for r in rules if r not in self._session_rules]
+        elif choice == "project" and rules:
+            from .tools import save_project_rule
+
+            for rule in rules:
+                save_project_rule(rule)
+            self._session_rules += [r for r in rules if r not in self._session_rules]
+        allowed = choice in ("once", "session", "project")
+        self._emit_permission(call_id, name, {
+            "action": "allow" if allowed else "deny",
+            "message": {"once": "approved by user (once)", "session": "approved by user for this session",
+                        "project": "approved by user for this project"}.get(choice, "denied by user"),
+        })
+        if allowed:
+            return None
+        return f"User denied this action. Their reason: {reason}" if reason else "User denied this action."

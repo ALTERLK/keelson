@@ -23,8 +23,15 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "KEELSON_AUTO_SKILL_TARGET",
         "KEELSON_PROFILE",       # a developer's own `keelson -P` / profile must not leak into tests
         "KEELSON_SHELL",
+        "KEELSON_TRUST_ALL",
     ):
         monkeypatch.delenv(var, raising=False)
+    # Snapshotting the cwd on every scripted turn would be slow and is not what
+    # most tests are about; tests/test_checkpoints.py turns it back on.
+    monkeypatch.setenv("KEELSON_CHECKPOINTS", "0")
+    import keelson.checkpoints as checkpoints
+
+    checkpoints.reset()
 
     # Reset module-level caches that depend on cwd / env.
     import keelson.tools as tools
@@ -32,6 +39,7 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     tools.reset_permission_cache()
     yield
     tools.reset_permission_cache()
+    checkpoints.reset()
 
 
 @pytest.fixture

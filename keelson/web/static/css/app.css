@@ -388,7 +388,9 @@ a { color: var(--brand); }
 .modal h2 { font-size: 17px; }
 .modal p { color: var(--text-2); }
 .confirm-action { padding: 11px 13px; background: var(--warn-soft); border-left: 3px solid var(--warn); border-radius: var(--radius-sm); max-height: 40vh; overflow: auto; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.confirm-why { margin: 0; color: var(--muted); }
+.confirm-reason { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
 
 .palette-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: start center; padding: 14vh 16px 16px; background: rgba(6, 7, 9, .55); backdrop-filter: blur(2px); }
 .palette { width: min(560px, 100%); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; animation: rise .14s ease-out; }

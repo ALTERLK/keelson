@@ -70,24 +70,30 @@ class Session:
     # POST .../confirm, which resolves the matching future. This reuses the
     # runtime's existing confirm hook, so the loop itself is unchanged.
 
-    async def confirm(self, message: str) -> bool:
+    async def confirm(self, message: str, request: dict | None = None) -> dict:
+        request = request or {}
         request_id = uuid.uuid4().hex[:12]
-        future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        future: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
         self._confirms[request_id] = future
-        self.bus.emit(events.CONFIRM_REQUEST, request_id=request_id, message=message)
-        allowed = False
+        self.bus.emit(events.CONFIRM_REQUEST, request_id=request_id, message=message,
+                      reason=request.get("reason", ""), options=request.get("options") or ["once", "deny"])
+        answer: dict = {"choice": "deny"}
         try:
-            allowed = await future
+            answer = await future
         finally:
             self._confirms.pop(request_id, None)
-            self.bus.emit(events.CONFIRM_RESOLVED, request_id=request_id, allowed=allowed)
-        return allowed
+            self.bus.emit(events.CONFIRM_RESOLVED, request_id=request_id,
+                          allowed=answer.get("choice") in ("once", "session", "project"),
+                          choice=answer.get("choice"))
+        return answer
 
-    def resolve_confirm(self, request_id: str, allowed: bool) -> bool:
+    def resolve_confirm(self, request_id: str, allowed: bool, scope: str | None = None,
+                        reason: str | None = None) -> bool:
         future = self._confirms.get(request_id)
         if future is None or future.done():
             return False
-        future.set_result(allowed)
+        choice = (scope if scope in ("once", "session", "project") else "once") if allowed else "deny"
+        future.set_result({"choice": choice, "reason": (reason or "").strip()})
         return True
 
     # -- turns --------------------------------------------------------------
@@ -116,7 +122,7 @@ class Session:
     def abort(self) -> None:
         for future in list(self._confirms.values()):
             if not future.done():
-                future.set_result(False)
+                future.set_result({"choice": "deny"})
         self.agent.abort()
 
     def set_mode(self, mode: str) -> None:

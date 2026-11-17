@@ -309,13 +309,16 @@ class McpManager:
         global_path = paths.user_settings_file()
         self._merge_config_file(global_path, merged)
 
-        # 2. 当前项目配置：<cwd>/.keelson/settings.json
-        project_path = paths.project_settings_file()
-        self._merge_config_file(project_path, merged)
+        # 2/3. 项目配置（<cwd>/.keelson/settings.json 与 .mcp.json）会启动本机进程，
+        # 所以只有在用户信任该目录后才生效（见 keelson/trust.py）。
+        from . import trust
 
-        # 3. Claude Code 约定配置：<cwd>/.mcp.json
-        mcp_json_path = Path.cwd() / ".mcp.json"
-        self._merge_config_file(mcp_json_path, merged)
+        project_files = [paths.project_settings_file(), Path.cwd() / ".mcp.json"]
+        if trust.is_trusted():
+            for path in project_files:
+                self._merge_config_file(path, merged)
+        elif any(p.exists() for p in project_files) and trust.what_it_enables():
+            print_info("MCP servers from this project are off until you trust the folder (`keelson trust`).")
 
         return merged
 

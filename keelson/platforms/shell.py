@@ -181,9 +181,8 @@ def _segment_advice(seg: str) -> str | None:
     if head == "export" and "=" in rest:
         name, _, value = rest.partition("=")
         return f"`{seg}` → `$env:{name.strip()} = '{value.strip().strip(chr(34)).strip(chr(39))}'`"
-    if head == "rm" and flags:
-        targets = " ".join(w for w in words[1:] if not w.startswith("-"))
-        return f"`{seg}` → `Remove-Item -Recurse -Force {targets}`"
+    if head == "rm" and flags:   # deleting is refused anyway (safety.py); this only catches bash syntax
+        return f"`{seg}` → use the delete_files tool (it moves files to the Recycle Bin)"
     if head == "cp" and any("r" in f.lower() for f in flags):
         targets = " ".join(w for w in words[1:] if not w.startswith("-"))
         return f"`{seg}` → `Copy-Item -Recurse {targets}`"

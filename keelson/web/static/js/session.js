@@ -192,5 +192,5 @@ export const actions = {
   send: (message) => post(scoped("chat"), { message }),
   stop: () => post(scoped("abort")),
   setMode: (mode) => post(scoped("mode"), { mode }),
-  confirm: (request_id, allow) => post(scoped("confirm"), { request_id, allow }),
+  confirm: (request_id, allow, scope = "once", reason = "") => post(scoped("confirm"), { request_id, allow, scope, reason }),
 };

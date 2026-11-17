@@ -7,6 +7,7 @@
 | 我想…… | 看这一节 |
 |---|---|
 | 控制它能不问我就做多少事 | [权限门与权限模式](#权限门与权限模式) |
+| 撤回它做的事，包括 shell 命令的改动 | [撤销：检查点](#撤销检查点) |
 | 让它先出方案、别急着改 | [计划模式](#计划模式) |
 | 防止它反复调用同一个工具、烧钱 | [循环保护与预算上限](#循环保护与预算上限) |
 | 跑很长的任务而不“失忆” | [上下文管理](#上下文管理) |
@@ -24,43 +25,81 @@
 
 ## 权限门与权限模式
 
-**是什么。** 模型提出的每一个工具调用，在执行之前都要经过 `check_permission`，得到三种结论之一：放行、询问你、拒绝。
+**是什么。** 模型提出的每一个工具调用，在执行之前都要经过 `check_permission`，得到三种结论之一：放行、询问你、拒绝。Keelson 按**这个操作能不能撤销**来决定，而不是按它是哪个工具。
 
-**解决什么问题。** 模型会犯错，也可能被文件里的恶意内容带偏。运行时不能假设它提出的每个操作都是安全的。
+**解决什么问题。** 什么都问，人会养成不看就点“是”的习惯；什么都不问，一条坏命令就能删掉主目录。模型会犯错，也可能被文件里的恶意内容带偏。
 
-**怎么用。** 选一个权限模式：
+**怎么判断。**
 
-| 模式 | 改已有文件 | 新建文件 | 危险命令 | 启动方式 |
-|---|---|---|---|---|
-| `default` | 放行 | 询问 | 询问 | 默认 |
-| `acceptEdits` | 放行 | 放行 | 询问 | `--accept-edits` |
-| `dontAsk` | 放行 | 拒绝 | 拒绝 | `--dont-ask` |
-| `plan` | 拒绝 | 拒绝 | 拒绝 | `--plan` 或 `/plan` |
-| `bypassPermissions` | 放行 | 放行 | 放行 | `--yolo` |
+| 操作 | 结论 | 原因 |
+|---|---|---|
+| 项目内的修改、新建文件、普通命令 | 放行 | 检查点覆盖，`/undo` 能撤回 |
+| 项目内的 `delete_files` | 放行 | 进回收站 |
+| 装包、联网、`git push`、改写历史、写项目外的文件、MCP 和未知工具 | 询问，并写明原因 | `/undo` 撤不回 |
+| 强推、`git clean -x`、发布、`sudo`、`curl … \| sh`、路径里有没设置的变量 | 询问，**只能允许一次** | 永远不能“一直允许” |
+| 在 shell 里删除（`rm`、`del`、`Remove-Item`、`find -delete` 等） | 拒绝 | 改用 `delete_files` |
+| 移动或删除主目录、盘符根、项目目录本身或它的上级；写系统目录 | 任何模式都拒绝 | 不该有任何操作这样做 |
 
-读文件、列目录、搜索在所有模式下都直接放行。“危险命令”指匹配了危险模式清单的 shell 命令（`rm`、`del`、`git push`、`Stop-Process` 等）。
+判断路径之前，先展开 `~`、`$HOME`、`$env:USERPROFILE`、`%VAR%` 和 `$VAR`；复合命令（`a && b; c | d`）拆开逐段判断。细节和边界见[安全与撤销](safety.md)。
 
-想按工具单独放行或禁止，在 `~/.keelson/settings.json`（对所有项目生效）或 `.keelson/settings.json`（只对当前项目）里写规则。规则先于模式生效，`deny` 优先于 `allow`：
+询问时你可以选：**允许一次 · 本会话内都允许 · 在本项目中一直允许**（写入 `.keelson/settings.local.json`）**· 拒绝**，或者拒绝并写上理由，模型会看到这个理由。“允许一次”不会被记住。
+
+权限模式：
+
+| 模式 | 区别 | 启动方式 |
+|---|---|---|
+| `default` | 按上表 | 默认 |
+| `acceptEdits` | 与 default 相同（为兼容保留） | `--accept-edits` |
+| `dontAsk` | 凡是要询问的一律拒绝（CI、子 Agent） | `--dont-ask` |
+| `plan` | 不改文件、不跑命令，只写计划文件 | `--plan` 或 `/plan` |
+| `bypassPermissions` | 什么都不问；“任何模式都拒绝”那一行照样拒绝 | `--yolo` |
+
+想按工具单独放行或禁止，在 `~/.keelson/settings.json`（对所有项目生效）或 `.keelson/settings.json`（只对当前项目）里写规则，`deny` 优先于 `allow`：
 
 ```json
 {
   "permissions": {
-    "allow": ["run_shell(npm test*)", "run_shell(git status)"],
+    "allow": ["run_shell(npm install*)", "run_shell(git push*)"],
     "deny": ["run_shell(git push*)", "edit_file(.env)"]
   }
 }
 ```
 
-括号里的模式匹配 shell 命令或文件路径；以 `*` 结尾表示前缀匹配，否则要求完全相等。
+括号里的模式匹配 shell 命令（复合命令的每一段都会单独匹配）或文件路径；以 `*` 结尾表示前缀匹配。
 
-**在哪里能看到。** 控制台里每张工具卡片右上角的“权限门：放行 / 你已批准 / 拒绝”；检查器“权限门”一栏的三个计数；需要询问时弹出的确认框。
+**工作区信任。** 克隆来的仓库可能在设置里带一条 `run_shell(*)`，或在 `.mcp.json` 里带一个 MCP 服务。所以项目的 *allow* 规则和 MCP 服务，要等你信任这个目录后才生效：终端会问一次，也可以运行 `keelson trust`（`--revoke` 撤销）。项目的 *deny* 规则立即生效。
+
+**在哪里能看到。** 确认框里写着的原因；控制台每张工具卡片右上角的“权限门：放行 / 你已批准 / 拒绝”；检查器“权限门”一栏的计数。
 
 **值得知道的细节。**
 
-- 拒绝会作为工具结果返回给模型，所以模型知道原因并能换一种做法，而不是卡住。
-- 权限门不认识的工具（MCP 工具、未来新增的工具）默认不信任：需要询问，计划模式下直接拒绝。
+- 拒绝会作为工具结果返回给模型（你写了理由就带上理由），模型能换一种做法，而不是卡住。
 - 子 Agent 的权限不会高于它的父 Agent。
 - Web 控制台选不了 `bypassPermissions`。
+- 这是护栏，不是沙箱：命令启动的测试或构建脚本，仍然能做你的账户能做的任何事。
+
+## 撤销：检查点
+
+**是什么。** 每一轮开始时，Keelson 给项目拍一个快照；`/undo` 把这一轮改过的文件全部还原——**包括 shell 命令改动、新建、删除的文件**。
+
+**解决什么问题。** Claude Code 的检查点只跟踪它自己的改文件工具，官方文档写明不跟踪 bash 命令造成的改动。Agent 跑了格式化、代码生成或 `mv` 之后，就撤不回来了。
+
+**怎么用。**
+
+| 命令 | 作用 |
+|---|---|
+| `/undo` | 还原上一轮改过的文件 |
+| `/undo --force` | 同上，连你在那一轮之后改过的文件也覆盖 |
+| `/rewind N` | 撤销最近 N 轮 |
+| `/redo` | 反悔上一次 `/undo` |
+| `/revert 文件 [N]` | 只把一个文件还原到 N 轮之前 |
+| `/checkpoints` | 列出可以撤销的轮次和涉及的文件 |
+
+如果那一轮结束后你又改过某个文件，`/undo` 会列出它并停下，不会覆盖你的修改。撤销之后，模型会被告知哪些文件变了。
+
+**原理。** 一个独立的 git 仓库，放在 `~/.keelson/projects/<哈希>/checkpoints/`，使用独立的索引；你项目自己的 `.git` 绝不会被碰。文件逐字节保存（不转换换行、不走过滤器、不跑钩子）。`node_modules`、`.venv` 等能重新生成的目录、`.gitignore` 忽略的文件、超过 50 MB 的新文件不进快照；被忽略的文件如果是 Keelson 自己的工具改的，会单独保存原样，所以 `/undo` 也能还原。
+
+**覆盖不了的：** 装好的包、提交和推送、数据库、网络，以及 shell 命令改动的项目外文件。这些正是权限门会先问你的操作。没有 git 时，只有 Keelson 自己的文件工具能撤销，终端会明确提示，普通 shell 命令也会改为先询问再执行。
 
 ## 计划模式
 
@@ -210,7 +249,7 @@ when_to_use: The user asks to commit, or asks for a commit message
 }
 ```
 
-第一次需要时才连接。MCP 工具默认不受信任：每次调用都要确认，除非你在 `settings.json` 里显式放行。
+第一次需要时才连接。MCP 工具默认不受信任：每次调用都要确认，除非你在 `settings.json` 里显式放行。项目 `.mcp.json` 或 `.keelson/settings.json` 里的服务，要等你信任该目录后才会启动（见上文“工作区信任”）。
 
 ## 子 Agent
 
@@ -241,6 +280,8 @@ when_to_use: The user asks to commit, or asks for a commit message
 | `keelson "任务"` | 执行一个任务后退出 |
 | `keelson web` | 启动 Web 控制台（`--port`、`--replay`、`--no-open`、`--no-record`） |
 | `keelson init` / `keelson doctor` | 配置 / 检查安装 |
+| `keelson use [名字]` | 列出配置档，或切换到某一个 |
+| `keelson trust [--revoke]` | 让本目录的 allow 规则和 MCP 服务生效 |
 | `keelson --resume` | 恢复上一次会话 |
 
 **常用参数**
@@ -261,6 +302,9 @@ when_to_use: The user asks to commit, or asks for a commit message
 | `/plan` | 切换计划模式 |
 | `/cost` | Token 用量与成本 |
 | `/compact` | 手动折叠上下文 |
+| `/undo [--force]` · `/rewind N` · `/redo` | 撤销上一轮（含 shell 改动）· 撤销最近 N 轮 · 反悔撤销 |
+| `/revert 文件 [N]` · `/checkpoints` | 还原单个文件 · 查看可撤销的轮次 |
+| `/model [名字]` | 查看或切换当前地址上的模型 |
 | `/memory` | 查看长期记忆 |
 | `/skills` | 列出技能 |
 | `/<技能名> [参数]` | 调用一条技能 |
@@ -287,7 +331,10 @@ when_to_use: The user asks to commit, or asks for a commit message
 | `KEELSON_PROFILE` | 使用哪个配置档（`~/.keelson/profiles/<名字>.env`）。`keelson use <名字>` 切换并记住，`keelson -P <名字>` 只用这一次，`keelson init --profile <名字>` 新建 | 无 |
 | `KEELSON_SHELL` | Windows 上 run_shell 用哪个 shell：`pwsh`、`powershell`（5.1）、`cmd` | PowerShell（有 pwsh 7 用 7） |
 | `KEELSON_CONTEXT_WINDOW`、`KEELSON_MAX_OUTPUT_TOKENS` | 覆盖模型登记表里的上下文规划窗口和每次请求的 `max_tokens` | 按模型 |
-| `KEELSON_HOME` | 状态目录（会话、技能、记忆） | `~/.keelson` |
+| `KEELSON_HOME` | 状态目录（会话、技能、记忆、检查点） | `~/.keelson` |
+| `KEELSON_CHECKPOINTS` | 每轮给项目拍快照，`/undo` 才能用 | `1` |
+| `KEELSON_CHECKPOINT_MAX_FILE_MB` | 超过这个大小的新文件不进快照 | `50` |
+| `KEELSON_TRUST_ALL` | 把所有目录都当作已信任（只用于自己的机器和 CI） | `0` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | 自动从反馈中提取技能 | `1` |
 | `KEELSON_AUTO_SKILL_TARGET` | 新技能写到项目级还是用户级 | `project` |
 | `KEELSON_JUDGE_MODEL` | 辅助判断用的模型（提取、门禁），可与主模型不同 | 同 `MODEL` |
