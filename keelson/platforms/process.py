@@ -80,6 +80,11 @@ def kill_process_tree(pid: int) -> None:
                 capture_output=True, timeout=10, check=False, **no_window_flags(),
             )
         else:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            group = os.getpgid(pid)
+            if group == os.getpgrp():
+                # Not started in its own session: its group is ours, and killing it would kill us too.
+                os.kill(pid, signal.SIGKILL)
+            else:
+                os.killpg(group, signal.SIGKILL)
     except (OSError, subprocess.SubprocessError):
         pass  # already gone

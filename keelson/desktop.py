@@ -219,7 +219,9 @@ class ConsoleServer:
         self._log = log
         self.proc = subprocess.Popen(
             server_command(self.port), cwd=str(self.project), env=env,
-            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, **no_window_flags(),
+            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+            # POSIX: its own process group, which stop() kills as a whole without touching ours.
+            **(no_window_flags() if sys.platform == "win32" else {"start_new_session": True}),
         )
 
     def wait_ready(self, timeout: float = START_TIMEOUT) -> bool:

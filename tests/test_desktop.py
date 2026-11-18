@@ -303,6 +303,18 @@ def test_reopening_the_running_project_reuses_its_server_until_the_model_changes
     assert api.open_project(str(two))["ok"] and len(started) == 3
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups are POSIX")
+def test_killing_a_child_in_our_own_group_kills_only_the_child():
+    import subprocess
+
+    from keelson.platforms.process import kill_process_tree
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])   # no new session
+    kill_process_tree(child.pid)            # before the fix this SIGKILLed the whole group: pytest included
+    assert child.wait(timeout=10) != 0
+    assert pid_alive(os.getpid())
+
+
 def test_pid_alive():
     assert pid_alive(os.getpid())
     assert not pid_alive(0)
