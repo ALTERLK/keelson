@@ -3,6 +3,42 @@
 Notable changes, newest first. Benchmark figures quoted here are reproduced in
 [`bench/REPORT.md`](bench/REPORT.md) from the committed run artifacts.
 
+## Unreleased
+
+### Fixed
+- **Verification found no checks in small projects.** Test files beside the
+  code (`test_x.py` next to `x.py`, no `tests/` folder) were not detected, so
+  the badge said "no check command". The project root is searched too.
+- **Live shell output showed a temporary script path.** On PowerShell the
+  streamed `tool_output` carried the path of Keelson's temporary script (under
+  the user's home folder) in error positions; the tidied text the model gets
+  was not applied to the live view. The live relay now applies the same
+  transform, so the console and recorded traces no longer show it.
+- **Permission reasons were always English.** The reasons in the confirm
+  dialog (why something cannot be undone) now follow the interface language.
+  Refusal messages to the model stay English.
+- **Markdown tables in answers were shown as raw pipes** in the console; GFM
+  tables are now rendered (cells escaped like the rest of model output).
+
+### Changed
+- The Overview page and the guided tour describe 0.4: the five safeguards in
+  the order *learns your ways, checks its own work, stays out of trouble,
+  keeps your rules, takes it all back*; tour captions for the Recycle Bin,
+  the verify badge and undo.
+- Demo traces re-recorded with DeepSeek: the failing-test fix now ends
+  verified; the deletion demo shows the model going to `delete_files` and the
+  Recycle Bin; two new traces, `/undo` after shell changes and a confirm for a
+  package install (denied).
+- Screenshots and the replay GIF regenerated from the 0.4 console.
+- Getting started, the security policy, the architecture pages and the
+  package description updated for 0.4 (reversibility-based gate, the key in
+  `~/.keelson/config.env`, checkpoints, verification, ledger, scope, the
+  desktop app).
+
+### Added
+- **Desktop app guide** ([English](docs/desktop.md), [中文](docs/zh/desktop.md)):
+  download to undo, step by step, with screenshots of a real run.
+
 ## 0.4.0 — 2026-11
 
 ### Added

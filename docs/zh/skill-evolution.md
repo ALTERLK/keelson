@@ -310,7 +310,7 @@ evolve_skill(gate=True)
 | 回滚 | 无需回滚 | `skill_history.py::rollback()`；SKILL.md frontmatter 记录 `rolled-back-from`/`rolled-back-to`，回滚本身也是一次被追踪的事件 |
 | 审计 | 生成 Evolution Card | 同样生成 Evolution Card，标题带 "— REJECTED" |
 
-关键代码：`keelson/skill_gate.py`（打分与判定）、`keelson/skill_history.py`（快照与回滚）、`keelson/evolution_card.py`（审计卡渲染）。这套机制不只是单元测试覆盖——项目用真实模型驱动过两条独立的演化链路，一条真实判定 `admit`，另一条真实判定 `quarantine` 并回滚，完整记录见 [`docs/self-evolution-demo.md`](../docs/self-evolution-demo.md)。
+关键代码：`keelson/skill_gate.py`（打分与判定）、`keelson/skill_history.py`（快照与回滚）、`keelson/evolution_card.py`（审计卡渲染）。这套机制不只是单元测试覆盖——项目用真实模型驱动过两条独立的演化链路，一条真实判定 `admit`，另一条真实判定 `quarantine` 并回滚，完整记录见 [`docs/self-evolution-demo.md`](../self-evolution-demo.md)。
 
 ## 10. Provenance：每次沉淀都可追溯
 

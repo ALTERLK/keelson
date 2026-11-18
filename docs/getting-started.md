@@ -5,13 +5,18 @@
 This page assumes you have never used an AI agent tool. Reading it takes about
 ten minutes; following along, about twenty.
 
+On Windows and just want to double-click? Read the [desktop app guide](desktop.md),
+with a screenshot for every step. This page covers installing from source and
+using the terminal and the browser console; the ideas are the same in both.
+
 - [What it is](#what-it-is)
 - [Step 1: run it (no API key needed)](#step-1-run-it-no-api-key-needed)
 - [Step 2: watch a guided replay](#step-2-watch-a-guided-replay)
 - [Step 3: connect a model](#step-3-connect-a-model)
 - [Step 4: give it a first task](#step-4-give-it-a-first-task)
 - [Step 5: meet the permission gate](#step-5-meet-the-permission-gate)
-- [Step 6: teach it a preference](#step-6-teach-it-a-preference)
+- [Step 6: undo](#step-6-undo)
+- [Step 7: make it remember what you said](#step-7-make-it-remember-what-you-said)
 - [Troubleshooting](#troubleshooting)
 
 ## What it is
@@ -30,25 +35,33 @@ notes. Keelson is the assistant outside: it takes each note, decides whether
 the request is acceptable, carries it out if so, and writes the result on a
 note passed back in.
 
-Because every note goes through it, the runtime can do a few things the model
-cannot do for itself:
+Because every note goes through it, the runtime can do things the model cannot
+do for itself, or cannot be trusted to:
 
-| What the model cannot do alone | What Keelson does | The concept |
+| | What the model gets wrong alone | What Keelson does |
 |---|---|---|
-| Judge whether an action is dangerous | Checks every request before it runs; stops and asks you before deleting files or pushing code | **Permission gate** |
-| Notice it is going in circles | Stops a tool that keeps being called with no new result | **Loop guard** |
-| Stay coherent in a very long task | Compresses old conversation into a structured summary | **Context folding** |
-| Remember what you told it last time | Turns durable feedback into reusable rules, and checks a new rule is no worse than the old one | **Skills and self-evolution** |
-| Account for what it did afterwards | Records every step as an event that can be replayed exactly | **Traces and replay** |
+| **Learns your ways** | Forgets the preferences you gave it last time | Turns durable feedback into skills; a new version goes live only if it is no worse than the old one |
+| **Checks its own work** | Says "done, all tests pass" when they never ran or failed | Runs the checks itself at the end of the turn and shows a Verified / Checks fail / Not verified badge from the real result; a "pass" with no evidence is flagged |
+| **Stays out of trouble** | Can't judge whether an action is dangerous | No real deletion: deletes go to the Recycle Bin; the home folder and drive roots are off limits; anything undo can't reverse asks you first and says why |
+| **Keeps your rules** | Loses your instructions when a long conversation is compressed | Keeps your rules word for word in a task ledger and puts them back after every fold |
+| **Takes it all back** | Can't roll back a change that went wrong | Snapshots before every turn; `/undo` restores everything, shell changes included |
 
-Those five things are the point of the project. The steps below let you see
-each one.
+The steps below let you see each one.
 
 ![One turn, start to finish](assets/diagrams/turn.en.svg)
 
 ## Step 1: run it (no API key needed)
 
-You need Python 3.11 or newer, and git.
+> **On Windows and don't want Python?** Download the zip from
+> [Releases](https://github.com/ALTERLK/keelson/releases/latest), unzip it and
+> double-click `Keelson.exe`; the [desktop app guide](desktop.md) walks you
+> through the three setup steps. The zip also has the command-line
+> `keelson-cli.exe`. Then skip to [Step 2](#step-2-watch-a-guided-replay).
+>
+> Don't want to install anything? The hosted demo at
+> <https://alterlk.github.io/keelson/> is the same console in replay mode.
+
+From source you need Python 3.11 or newer, and git.
 
 ```bash
 git clone https://github.com/ALTERLK/keelson.git
@@ -65,14 +78,7 @@ start.bat        # Windows: double-clicking it works too
 
 The browser opens `http://localhost:8765`. No model is configured yet, so the
 console is in **replay mode**: you can watch real recorded runs but not start
-new ones. That is the right place to begin — understand it first.
-
-> Prefer not to install anything? The hosted demo at
-> <https://alterlk.github.io/keelson/> is the same console in replay mode.
->
-> On Windows you can also skip Python entirely: the desktop app (`Keelson.exe`)
-> walks you through the model, the project folder and a first task. See
-> [The desktop app](features.md#the-desktop-app).
+new ones. That is the right place to begin: understand it first.
 
 ## Step 2: watch a guided replay
 
@@ -84,25 +90,30 @@ step with an explanation; click "Continue" to move on. Things to notice:
 
 1. **Each tool call is a card.** `read_file` shows source, `edit_file` shows a
    diff, `run_shell` shows terminal output.
-2. **Each card says "gate: allowed" in its corner.** Nothing runs without being
-   checked. Reading a file is safe, so it is allowed straight away.
-3. **The inspector on the right counts as it goes.** Turns, tool calls, tokens,
-   and how often the gate allowed, asked or refused.
-4. **The inspector's *Timing* tab** draws the turn as a waterfall. Nearly all
-   the time is spent waiting for the model; the runtime's own checks barely
-   register.
+2. **Each card says "gate: allowed".** Nothing runs without being checked.
+3. **There is a "Verified" badge under the answer.** The model didn't put it
+   there: Keelson checked that the tests really ran, and passed, after the last
+   change.
+4. **The inspector on the right counts as it goes**: turns, tool calls, tokens,
+   and how often the gate allowed, asked or refused. Its *Timing* tab draws the
+   turn as a waterfall; nearly all the time is spent waiting for the model.
 
-Then open *Traces* in the side bar and play the second one: **"The gate stops a
-destructive command"**. The user asks for a file to be deleted, the runtime
-stops and shows a prompt, the user says no — and the model, having received
-"denied" as the result, **does not look for another way to delete it**. It
-reports that the file is still there. That is what the gate is for.
+Then open *Traces* in the side bar and play the others:
+
+- **"Deletes go to the Recycle Bin"**: the user asks for a file to be deleted
+  with the shell. Shell deletes are refused, so the model uses `delete_files`
+  and the file goes to the Recycle Bin.
+- **"/undo covers shell changes"**: the turn changes and creates files only
+  with shell commands. One undo puts everything back.
+- **"Only what undo cannot reverse asks"**: the model wants to install a
+  package; the runtime stops and asks, saying that /undo can't reverse an
+  install. The user denies it, and the model finds a way that needs no package.
 
 ## Step 3: connect a model
 
 Keelson does not ship a model; you supply an API key for one. Any
-OpenAI-compatible or Anthropic-compatible provider works (OpenAI, Anthropic,
-DeepSeek, gateways, …).
+OpenAI-compatible or Anthropic-compatible provider works (DeepSeek, OpenAI,
+Anthropic, gateways, …), and DeepSeek has a preset.
 
 Stop the server (`Ctrl+C` in the terminal), then:
 
@@ -114,7 +125,13 @@ keelson init
 ```
 
 `keelson init` asks which kind of provider, the base URL, the model name and
-the key (hidden while you type), writes a `.env` file and checks that it works.
+the key (hidden while you type), writes them to `~/.keelson/config.env` and
+checks that it works. That file is in your user folder, not in any project, so
+it is never committed, and every project shares it. For one project only, use
+the project's `.keelson/config.env`.
+
+Switch between models often? `keelson init --profile <name>` saves a profile,
+and `keelson use <name>` switches to it.
 
 Whenever something seems off, run:
 
@@ -135,7 +152,8 @@ It checks each requirement and says how to fix what is wrong:
 ✓  State directory   ~/.keelson
 ```
 
-A ✗ must be fixed; a ! is a suggestion. `.env` is already in `.gitignore`.
+A ✗ must be fixed; a ! is a suggestion. The key itself is never printed, only
+its length.
 
 ## Step 4: give it a first task
 
@@ -146,8 +164,13 @@ messing up:
 ```bash
 mkdir playground
 cd playground
+git init
 keelson web
 ```
+
+`git init` is optional, but with git available, undo also covers changes made
+by shell commands. (Keelson keeps its own snapshot repository; it never touches
+your `.git`.)
 
 The status at the bottom left changes from "Replay" to "Live · model name".
 Open the Console page and start with something read-only:
@@ -158,9 +181,18 @@ Then something that needs action:
 
 > Write fizzbuzz.py and a test file for it, then run the tests.
 
-It stops to ask before creating a new file; click "Allow once". When it runs the
-tests, the command's output appears **line by line as it is produced**. If a
-command runs too long, Stop really terminates it.
+This time it doesn't stop to ask: creating and editing files and running tests
+all happen inside the project and can all be undone. When it runs the tests,
+the output appears **line by line as it is produced**; if a command runs too
+long, Stop really terminates it.
+
+When it finishes, a verify badge appears under the answer. If it finds pytest, it
+checks that the tests ran and passed after the model's last change, and runs
+them itself if not: ✓ Verified, ✗ Checks fail (with the real output), or ! Not verified
+(no check command in the project). The checks are detected automatically; to
+pin them, run `/verify init` in the terminal, which writes them to a
+`## Verify` section of `KEELSON.md` in the project root. Edit that file to
+change them.
 
 Prefer a terminal? Leave out `web`; the features are the same:
 
@@ -169,37 +201,95 @@ keelson                              # interactive
 keelson "explain this project"       # one task, then exit
 ```
 
+In the terminal, `/help` lists every command, Shift+Tab switches the permission
+mode, and Ctrl+C interrupts the current turn.
+
 ## Step 5: meet the permission gate
 
-Below the input box is the permission mode: how much the agent may do without
-asking.
+Keelson decides whether to ask by **whether the action can be undone**:
 
-| Mode | Read files | Edit existing files | Create files | Destructive commands | Good for |
-|---|---|---|---|---|---|
-| `default` | yes | yes | asks | asks | everyday use |
-| `acceptEdits` | yes | yes | yes | asks | when you trust it with the code |
-| `dontAsk` | yes | yes | refused | refused | unattended runs, CI |
-| `plan` (CLI only) | yes | refused | refused | refused | seeing the plan before any change |
-| `bypassPermissions` (CLI only, `--yolo`) | yes | yes | yes | yes | a throwaway sandbox |
+| Action | Result |
+|---|---|
+| Changes, new files and ordinary commands inside the project | goes ahead (snapshotted, so undoable) |
+| Deleting project files with `delete_files` | goes ahead (to the Recycle Bin) |
+| Installing packages, network access, `git push`, rewriting history, writing outside the project, MCP tools | asks, and says why |
+| Force-push, `sudo`, `curl … \| sh`, unset variables in a path | asks, and can only be allowed once |
+| Deleting from the shell (`rm`, `del`, `Remove-Item`, …) | refused; the model is told to use `delete_files` |
+| Touching the home folder, a drive root, the project itself or its parents; writing system folders | refused in every mode |
 
-The web page deliberately cannot select the last one: turning the gate off is
-a command-line decision.
+The permission mode below the input box adjusts this:
 
-Try it. In `default` mode, type:
+| Mode | What it does | Good for |
+|---|---|---|
+| Default | as in the table | everyday use |
+| Plan (read-only) | reads and writes a plan; changes nothing | seeing the plan before any change |
+| Don't ask | refuses anything that would ask | unattended runs, CI |
+| `bypassPermissions` (CLI only, `--yolo`) | asks nothing, but the last row above is still refused | a throwaway sandbox |
+
+The web console and the desktop app deliberately cannot select the last one:
+turning the questions off is a command-line decision.
+
+Try two things. First:
 
 > Delete fizzbuzz.py with a shell command.
 
-When the prompt appears, click **Deny** and watch what the model does: it is
-told the user refused, and it stops and says so rather than trying a different
-command.
+The shell delete is refused, the model uses `delete_files` instead, and the
+file goes to the Recycle Bin. You can fetch it from there, and the next step's
+undo puts it back too.
 
-## Step 6: teach it a preference
+Then:
 
-Ask it to explain some code, then give it an instruction that is meant to last:
+> Install the requests package.
+
+This time a dialog appears, saying /undo can't reverse an install. Your
+choices are Allow once, Allow for this session, Always allow in this project
+and Deny. Click **Deny** and optionally give a reason: the model sees it, and
+stops and tells you or finds a way that needs no package.
+
+Details and limits: [Safety and undo](safety.md).
+
+## Step 6: undo
+
+Open the **Review** tab in the inspector on the right. It shows the files each
+turn changed, with diffs. **Put back** restores one file, **Undo this turn**
+restores the whole turn, and **Redo** takes the undo back.
+
+In the terminal:
+
+| Command | What it does |
+|---|---|
+| `/undo` | restore the files the last turn changed, including those changed, created or deleted by the shell |
+| `/redo` | take back the last `/undo` |
+| `/rewind N` | undo the last N turns |
+| `/revert <file>` | restore one file |
+| `/checkpoints` | list the turns that can be undone |
+
+Try it: ask it to "use shell commands to create a build folder with a
+report.txt in it, and append a comment line to fizzbuzz.py", then undo the turn.
+The build folder is gone and fizzbuzz.py is as it was.
+
+If you changed a file yourself after that turn, undo stops and lists it rather
+than overwrite your edit. What can't be undone: installed packages, commits and
+pushes, databases, anything sent over the network. Those are exactly the
+actions that ask first in Step 5.
+
+## Step 7: make it remember what you said
+
+**Rules for this task.** Say in the conversation:
+
+> Don't change any file starting with test_.
+
+Open the inspector's **Task** tab: the sentence is kept word for word under
+"Your rules". When the conversation grows long and older parts are compressed,
+these rules are put back exactly as you said them. You can add one there
+directly as well.
+
+**Lasting preferences.** Ask it to explain some code, then give it an
+instruction that is meant to last:
 
 > From now on, when you explain code, always use a bullet list, one line each.
 
-Ask it to explain another file. This time it uses bullets on its own — your
+Ask it to explain another file. This time it uses bullets on its own: your
 sentence was extracted into a **skill**, saved under `.keelson/skills/`, and
 retrieved for the next matching task.
 
@@ -219,7 +309,8 @@ doctor` tells you which; so does the "This install" card on the Overview page.
 
 **`keelson`: command not found.**
 The virtual environment is not active. Run `.venv\Scripts\activate` (Windows)
-or `source .venv/bin/activate`.
+or `source .venv/bin/activate`. With the release zip, the command is
+`keelson-cli.exe`.
 
 **`keelson doctor` shows ✗ for "Model answers".**
 A key is configured but the request fails. Read the error on that line: `401`
@@ -227,22 +318,37 @@ means the key is wrong; `404` usually means the model name or base URL is
 wrong. One rule to know: a base URL whose path contains `/anthropic` is spoken
 to with the Anthropic protocol, anything else with the OpenAI protocol.
 
+**Does my old `.env` still work?**
+Yes. A `.env` in the project folder is still read, with the lowest priority.
+`keelson init` writing to `~/.keelson/config.env` is the better place: every
+project shares it.
+
+**The badge always says "Not verified".**
+Keelson found no check command. Add a `## Verify` section to `KEELSON.md` in
+the project root with the commands as a list (for example
+`` `python -m pytest -q` ``); `/verify` in the terminal shows which commands are
+in use.
+
 **Will it change files I care about?**
-It only works in the directory you start it in, and in the default mode new
-files and destructive commands need your approval. To be stricter, use
-`keelson --plan`: read-only, it produces a plan and changes nothing.
+It only works in the directory you start it in, and its changes can be undone;
+anything undo can't reverse asks first; deletions go to the Recycle Bin. It
+declares which files it means to change before it starts, and changing others
+asks you. To be stricter, use `keelson --plan`: read-only, it produces a plan.
 
 **Is it expensive?**
-That depends entirely on the model you choose. The inspector shows token usage
-and an estimated cost as it goes; `--max-cost 0.5` sets a ceiling.
+That depends entirely on the model you choose. The inspector shows tokens,
+estimated cost and cache hit rate as it goes; `/usage` sums them up;
+`--max-cost 0.5` sets a ceiling.
 
 **The answer arrives all at once instead of word by word.**
-Your `.env` sets `KEELSON_OPENAI_STREAM=0` (useful when a gateway's streaming
-endpoint is unreliable). Remove that line to stream again.
+Your configuration sets `KEELSON_OPENAI_STREAM=0` (useful when a gateway's
+streaming endpoint is unreliable). Remove that line to stream again.
 
 **Where next?**
 
+- [Desktop app guide](desktop.md): the Windows desktop window, step by step with screenshots.
 - [Feature guide](features.md): what each feature is, when to use it, and how.
+- [Safety and undo](safety.md): what is stopped, how, and what isn't covered.
 - [Architecture](architecture.md): how the code is organised.
 - [Web console](web-console.md): how events, sessions and replay are built.
 - [Design trade-offs](design-tradeoffs.md): where compromises were made, and why.

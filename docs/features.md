@@ -473,6 +473,8 @@ is printed as raw text. `KEELSON_MARKDOWN=0` turns off the Markdown rendering.
 
 ## The desktop app
 
+> For a step-by-step walkthrough with screenshots, see the [desktop app guide](desktop.md).
+
 **What it is.** Keelson in its own window on Windows (WebView2, which Windows 10
 and 11 already have). The window shows the same console as `keelson web`; behind
 it, a console server runs in the project folder you picked.
@@ -627,8 +629,9 @@ more permission than the agent that started it.
 
 **What it is.** Two commands for getting an install right.
 
-- `keelson init` writes `.env` step by step (provider, base URL, model, key)
-  and then checks it.
+- `keelson init` asks step by step (provider, base URL, model, key), writes
+  `~/.keelson/config.env` and then checks it. `--project` writes the project's
+  `.keelson/config.env` instead, `--profile NAME` a profile.
 - `keelson doctor` checks the Python version, whether a key is configured,
   whether the model actually answers, git and ripgrep, the web dependencies and
   whether the state directory is writable — with a fix for each failure.
@@ -703,7 +706,9 @@ new session, theme, language).
 
 ## Environment variables
 
-Set them in `.env` or in the environment.
+Set them in `~/.keelson/config.env`, a profile, the project's
+`.keelson/config.env`, or the environment (which wins). A legacy `.env` in the
+project is still read, last.
 
 | Variable | Purpose | Default |
 |---|---|---|

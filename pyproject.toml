@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "keelson"
 version = "0.4.0"
-description = "A self-evolving agent harness: permission-gated tool execution, context folding, long-term memory, and skills that only change when a non-inferiority gate lets them."
+description = "A self-evolving coding agent that checks its own work, refuses catastrophic commands, keeps your rules and undoes shell changes. Desktop app and CLI."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "lk" }]
-keywords = ["agent", "llm", "tool-calling", "mcp", "benchmark"]
+keywords = ["agent", "coding-agent", "llm", "tool-calling", "mcp", "undo", "deepseek", "windows", "desktop"]
 dependencies = [
     "anthropic>=0.25",
     "openai>=1.0",

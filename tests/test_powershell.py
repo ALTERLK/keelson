@@ -93,6 +93,23 @@ async def test_a_failing_cmdlet_fails_and_reports_plain_text():
 
 
 @needs_powershell
+async def test_the_live_view_does_not_show_the_temporary_script_path():
+    # The live output goes to the console and into recorded traces; the script lives under the home folder.
+    live: list[str] = []
+    await tools.run_shell_async({"command": "Get-Item 'C:\\definitely-not-here-keelson'"}, on_output=live.append)
+    text = "".join(live)
+    assert text and ".ps1" not in text
+
+
+def test_the_relay_applies_its_transform_to_what_it_publishes():
+    sent: list[str] = []
+    relay = tools._OutputRelay(sent.append, lambda text: text.replace("secret", "<x>"))
+    relay.feed("a secret here")
+    relay.flush()
+    assert sent == ["a <x> here"]
+
+
+@needs_powershell
 async def test_the_temporary_script_is_removed():
     pattern = os.path.join(tempfile.gettempdir(), "keelson-*.ps1")
     before = set(glob.glob(pattern))

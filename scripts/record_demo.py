@@ -72,8 +72,9 @@ SCENARIOS: dict[str, dict] = {
     },
     "permission-gate": {
         "order": 2,
-        "title": "权限门拦下危险命令 · The gate stops a destructive command",
-        "description": "模型想用 shell 删除文件，运行时先停下来询问；用户拒绝后，模型拿到拒绝结果并改用安全的做法。",
+        "title": "删除只进回收站 · Deletes go to the Recycle Bin",
+        "description": "用户要求用 shell 删文件。Keelson 里 shell 的删除命令一律拒绝，工具说明也写明了这一点，"
+                       "所以模型直接改用 delete_files：文件进了回收站，/undo 或回收站都能找回。",
         "task": "handle-empty-input",
         "mode": "default",
         "confirm": "deny",
@@ -82,11 +83,24 @@ SCENARIOS: dict[str, dict] = {
         ],
         "script": [
             {"text": "好的，我用 shell 命令删除它。", "tools": [("run_shell", {"command": "rm test_stats.py"})]},
-            {"text": "删除被拒绝了，我不会换一种方式绕过去。先看看目录里现在有什么。",
-             "tools": [("list_files", {"pattern": "*"})]},
-            {"text": "删除请求被你拒绝，所以 `test_stats.py` 仍然保留。目录里现在有：\n\n"
-                     "- `stats.py`\n- `test_stats.py`\n\n"
-                     "如果确实要删除，再发一次请求并在权限提示出现时选择允许即可。"},
+            {"text": "shell 里的删除被拒绝了，运行时要求改用 delete_files，它会把文件移到回收站。",
+             "tools": [("delete_files", {"paths": ["test_stats.py"]})]},
+            {"text": "再看看目录里还剩什么。", "tools": [("list_files", {"pattern": "*"})]},
+            {"text": "`test_stats.py` 已移到回收站，需要时可以从回收站还原。目录里现在只剩 `stats.py`。"},
+        ],
+    },
+    "undo-shell": {
+        "order": 4,
+        "title": "撤销连 shell 的改动一起撤 · /undo covers shell changes",
+        "description": "这一轮全部用 shell 命令改文件：新建目录和文件、复制、往已有文件里追加。随后一次撤销，全部还原，包括 shell 新建的文件。",
+        "task": "handle-empty-input",
+        "mode": "default",
+        "confirm": "allow",
+        "solved": True,              # start from passing tests, so the badge is about this turn's changes
+        "undo_after": True,
+        "turns": [
+            "只用 shell 命令（不要用编辑文件的工具）做三件事：新建 build 目录并在里面生成 report.txt，内容写 stats.py 的行数；"
+            "把 stats.py 复制一份为 stats_backup.py；在 stats.py 末尾追加一行注释 `# reviewed`。做完列出改动。",
         ],
     },
     "skill-evolution": {
@@ -101,6 +115,18 @@ SCENARIOS: dict[str, dict] = {
             "读一下 wordcount.py，告诉我它是做什么的。",
             "以后解释代码时，一律用要点列表，每条不超过一行，先说用途再说关键细节。",
             "按刚才的要求，再解释一下 test_wordcount.py。",
+        ],
+    },
+    "ask-irreversible": {
+        "order": 5,
+        "title": "撤销不了的才问 · Only what undo cannot reverse asks",
+        "description": "装包会改动项目外的环境，/undo 撤不回来，所以运行时停下来问，并写明原因；用户拒绝后，模型换了不需要装包的做法。",
+        "task": "handle-empty-input",
+        "mode": "default",
+        "confirm": "deny",
+        "solved": True,
+        "turns": [
+            "用 pip 给这个环境装上 numpy，然后把 stats.py 的 average 改成用 numpy.mean 实现。",
         ],
     },
 }
@@ -139,7 +165,7 @@ def _script_model(agent, steps: list[dict]) -> None:
     agent._build_side_query = lambda **_: None  # no memory prefetch: that would be a model call too
 
 
-def _make_workspace(task: str, base: Path) -> Path:
+def _make_workspace(task: str, base: Path, solved: bool = False) -> Path:
     src = ROOT / "bench" / "tasks" / "sandbox" / task
     ws = base / "workspace"
     ws.mkdir(parents=True)
@@ -147,6 +173,9 @@ def _make_workspace(task: str, base: Path) -> Path:
         if path.name in ("solution", "task.json", "__pycache__", ".pytest_cache"):
             continue
         if path.is_file():
+            shutil.copy2(path, ws / path.name)
+    if solved:
+        for path in (src / "solution").iterdir():
             shutil.copy2(path, ws / path.name)
     return ws
 
@@ -173,7 +202,7 @@ async def _run(name: str, scenario: dict, *, scripted: bool = False) -> Path:
         model = os.environ.get("MODEL") or "deepseek-flash"
 
     base = Path(tempfile.mkdtemp(prefix="keelson-demo-"))
-    workspace = _make_workspace(scenario["task"], base)
+    workspace = _make_workspace(scenario["task"], base, scenario.get("solved", False))
     os.environ["KEELSON_HOME"] = str(base / "home")
     os.environ.setdefault("KEELSON_AUTO_SKILL_EVOLUTION", "0")
     os.environ.update(scenario.get("env", {}))
@@ -223,6 +252,9 @@ async def _run(name: str, scenario: dict, *, scripted: bool = False) -> Path:
                 await agent.chat(prompt)
                 await agent.drain_background_skill_tasks()
                 await asyncio.sleep(0.4)
+            if scenario.get("undo_after"):
+                await asyncio.sleep(1.2)          # a beat on replay before the undo lands
+                session.undo()                    # the console's Undo button: emits the same UNDO event
     finally:
         session.close()
         os.chdir(ROOT)

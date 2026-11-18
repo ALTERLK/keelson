@@ -18,16 +18,18 @@ Keelson 更接近：
 
 ```text
 用户输入
-  -> CLI / REPL
+  -> CLI / REPL / Web 控制台 / 桌面窗口
   -> Agentic Harness
+  -> 给项目拍快照（检查点）、把用户的规则记进任务账本
   -> Prompt / Skills / Memory / MCP 初始化
   -> 模型推理
   -> tool call
-  -> 权限检查
+  -> 权限检查（按能不能撤销）+ 范围护栏
   -> 工具执行
   -> tool result 回写
   -> 多轮循环
-  -> session 保存
+  -> 轮末验证：真的跑过检查并通过了吗
+  -> session 和任务账本保存
   -> Skills usage tracking
   -> online skill evolution
 ```
@@ -40,23 +42,27 @@ Keelson 更接近：
 
 本页的图都由 `scripts/build_diagrams.py` 生成；要改图请改脚本，不要直接改 SVG。
 
-从层次上看，系统可以分成七层：
+从层次上看，系统可以分成这几层：
 
 | 层级 | 主要文件 | 职责 |
 |------|----------|------|
-| 入口层 | `keelson/main.py`、`keelson/ui.py`、`keelson/web/`、`keelson/doctor.py` | 参数解析、REPL、one-shot、终端渲染、Web 控制台与多会话、`doctor` / `init` |
+| 入口层 | `keelson/main.py`、`ui.py`、`commands.py`、`terminal_input.py`、`keelson/web/`、`desktop.py`、`doctor.py` | 参数解析、REPL、one-shot、终端渲染、Web 控制台与多会话、Windows 桌面窗口、`doctor` / `init` |
 | 事件总线 | `keelson/events.py` | 运行时只发布事件，所有前端都订阅同一条事件流；耗时 span；按会话绑定总线 |
-| Harness 层 | `keelson/agent.py` | Agent Loop、协议适配、工具调度、上下文压缩、session 保存 |
-| 能力层 | `keelson/tools.py`、`keelson/skills.py`、`keelson/memory.py`、`keelson/mcp_client.py`、`keelson/subagent.py` | 工具、Skills、Memory、MCP、子 Agent |
-| Prompt 层 | `keelson/prompt.py` | 动态构建 system prompt |
+| Harness 层 | `keelson/agent.py` | Agent Loop、协议适配、工具调度、上下文压缩、session 保存、轮末验证 |
+| 安全与撤销 | `keelson/safety.py`、`checkpoints.py`、`trust.py`、`keelson/platforms/` | 按可逆性判断命令和路径、快照与 `/undo`、工作区信任；各平台的 shell、回收站和进程管理 |
+| 完工保障 | `keelson/verify.py`、`ledger.py`、`scope.py` | 完工验证、任务账本、范围护栏 |
+| 能力层 | `keelson/tools.py`、`textio.py`、`search.py`、`skills.py`、`memory.py`、`mcp_client.py`、`subagent.py` | 工具与权限门、保编码的文件读写、搜索、Skills、Memory、MCP、子 Agent |
+| Prompt 层 | `keelson/prompt.py` | 动态构建 system prompt，前缀保持稳定以命中缓存 |
+| 成本层 | `keelson/models.py`、`usage.py` | 模型登记表（上下文窗口、输出上限、价格）、用量账本与预算 |
 | 演化层 | `keelson/online_skill_evolution.py`、`keelson/skill_evolution.py`、`keelson/online_skill_eval.py` | Skills 抽取、演化、审计、评测 |
-| 持久化层 | `.keelson/`、`~/.keelson/` | Skills、Memory、Session、审计和大结果持久化 |
+| 持久化层 | `.keelson/`、`KEELSON.md`、`~/.keelson/` | 项目规则与检查命令；用户级的 `config.env`、配置档，以及每个项目的会话、轨迹、检查点、账本和用量 |
 
 这几个层级的边界比较清楚：
 
 - `main.py` 只管入口。
 - `agent.py` 只管运行时调度。
-- `tools.py` 只管工具和权限。
+- `tools.py` 只管工具和权限；`safety.py` 只管“这个操作能不能撤销、该不该问”。
+- `checkpoints.py`、`verify.py`、`ledger.py`、`scope.py` 各管一个运行时保障，由 `agent.py` 在一轮的开头、工具调用前后和结尾调用。
 - `skills.py` / `skill_evolution.py` 只管能力沉淀。
 - `memory.py` 只管长期事实。
 - `mcp_client.py` 只管外部工具接入。
@@ -72,15 +78,17 @@ Keelson 更接近：
 用户输入
   -> run_repl() / run_one_shot()
   -> Agent.chat(user_message)
+  -> 给项目拍快照（_begin_checkpoint），把用户的规则记进账本
   -> 首次 chat 初始化 MCP
   -> 检索 Skills 并注入用户消息
   -> 异步预取 Memory
   -> 选择 _chat_openai() 或 _chat_anthropic()
   -> 模型返回文本或工具调用
   -> _execute_tool_call()
-  -> 权限检查与工具执行
+  -> 权限检查、范围护栏与工具执行
   -> tool result 回写模型
-  -> 模型继续推理或结束
+  -> 模型继续推理或准备结束
+  -> 轮末验证（_end_of_turn_check）：没通过就把真实输出交还模型
   -> 后台执行 Skill usage tracking / online evolution
   -> 保存新的 pending window
   -> 自动保存 session
@@ -99,7 +107,7 @@ Keelson 更接近：
 它负责：
 
 - 解析 CLI 参数。
-- 加载 `.env`。
+- 按优先级加载配置：环境变量 > 配置档（`~/.keelson/profiles/<名字>.env`）> 项目的 `.keelson/config.env` > `~/.keelson/config.env` > 项目里旧的 `.env`。
 - 判断模型协议。
 - 创建 `Agent`。
 - 启动 REPL 或一次性任务。
@@ -110,7 +118,7 @@ Keelson 更接近：
 | 函数 | 作用 |
 |------|------|
 | `parse_args()` | 解析模型、权限、计划模式、resume 等参数 |
-| `_load_env_file()` | 加载当前目录或父目录的 `.env` |
+| `_load_env_file()` | 按上面的优先级加载配置文件 |
 | `_resolve_api_config()` | 判断 OpenAI-compatible 还是 Anthropic-compatible |
 | `run_repl()` | 交互式主循环 |
 | `run_one_shot()` | 一次性执行 |
@@ -210,6 +218,7 @@ else:
 - `read_file`
 - `write_file`
 - `edit_file`
+- `delete_files`（移到回收站）
 - `list_files`
 - `grep_search`
 - `run_shell`
@@ -217,7 +226,10 @@ else:
 - `compact_context`
 - `skill_evolve`
 - `skill_create`
+- `enter_plan_mode` / `exit_plan_mode`
 - `agent`
+- `update_task`（更新任务账本）
+- `declare_scope`（声明要改的文件）
 - `tool_search`
 
 执行流程：
@@ -233,17 +245,31 @@ else:
   -> tool result 回写模型
 ```
 
-权限边界包括：
+0.4 起，权限判断的核心问题是**这个操作能不能撤销**（`keelson/safety.py`）：
+
+| 操作 | 结论 |
+|------|------|
+| 项目内的修改、新建文件、普通命令 | 放行：本轮快照覆盖，`/undo` 能撤回 |
+| 项目内的 `delete_files` | 放行：进回收站 |
+| 装包、联网、`git push`、改写历史、写项目外的文件、MCP 和未知工具 | 询问，并用界面语言写明原因 |
+| 强推、`sudo`、`curl … \| sh`、路径里有没设置的变量 | 询问，只能允许一次 |
+| shell 里的删除（`rm`、`del`、`Remove-Item` 等） | 拒绝，提示模型改用 `delete_files` |
+| 动主目录、盘符根、项目本身或其上级；写系统目录 | 任何模式都拒绝 |
+
+判断路径前先展开 `~`、`$HOME`、`$env:USERPROFILE`、`%VAR%`；复合命令拆开逐段判断。
+
+其它边界：
 
 - 只读工具默认允许。
 - Plan Mode 下阻断普通写操作和 Shell。
-- `acceptEdits` 允许编辑类操作。
-- `bypassPermissions` 直接放行。
+- `acceptEdits` 与 `default` 相同（为兼容保留）。
+- `bypassPermissions` 不再询问，但“任何模式都拒绝”的那些照样拒绝。
 - `dontAsk` 自动拒绝需要确认的动作。
 - 编辑前要先读文件，并检查 mtime。
-- 危险 Shell、Skill 创建和演化需要确认。
+- 克隆来的项目，其 allow 规则和 MCP 服务要等目录被信任后才生效（`keelson/trust.py`）。
+- 改范围外的文件要询问（`keelson/scope.py`）。
 
-这一层的目标不是阻止 Agent 工作，而是把风险动作显式化。
+这一层的目标不是阻止 Agent 工作，而是让能撤销的事情不打扰你、撤不回的事情一定先问你。完整的表和边界见[安全与撤销](safety.md)。
 
 ### 7.1 Shell 的执行方式
 
@@ -253,6 +279,21 @@ else:
 - **输出实时流出。** 边读边增量解码，按小批量发布为 `tool_output` 事件（`_OutputRelay`：约 80ms 一批，单条命令最多 40000 字符）。输出属于哪一次调用，通过 `ContextVar` 里的“当前调用 id”得知，所以 `_execute_tool_call` 的签名没有变。
 - **超时或取消时杀掉整棵进程树。** Windows 用 `taskkill /F /T`，POSIX 杀进程组。只杀 shell 的话，它启动的 `pytest` 之类会变成孤儿进程继续跑。
 - **返回给模型的字符串不变**（`Command failed (exit code N)…`），所以模型行为和已有评测结果不受影响。
+
+### 7.2 检查点、完工验证、任务账本、范围护栏
+
+这四项都由运行时强制执行，不靠提示词要求模型自觉。
+
+- **检查点**（`keelson/checkpoints.py`）。每轮开始时，把项目写进一个独立的 git 仓库 `~/.keelson/projects/<哈希>/checkpoints/shadow.git`，用自己的 `GIT_DIR`、索引和配置（不跑钩子、不走过滤器、不转换换行），绝不碰项目自己的 `.git`。`/undo`、`/redo`、`/rewind N`、`/revert 文件` 比较的是整棵树，所以 shell 命令造成的修改、新建、删除都能还原。那一轮之后又被改过的文件只列出、不覆盖。没有 git 时退回到只给 Keelson 自己的编辑做字节快照，并明确提示。
+- **完工验证**（`keelson/verify.py`）。检查命令来自 `KEELSON.md` 的 `## Verify` 一节，或自动识别（pytest、npm、cargo、go、ruff、eslint、tsc 等）。证据只来自事件流：最后一次改动之后，哪些命令真的跑过、退出码是多少。改过代码的一轮结束时如果没有通过的检查，运行时自己跑；失败就把真实输出交还模型接着修（有次数上限），最后发出 `verify` 事件，界面据此显示“已验证 / 未通过验证 / 未验证”。模型声称测试通过却找不到对应的成功运行，标为“未经证实的说法”；削弱测试的改动也会被标出。
+- **任务账本**（`keelson/ledger.py`）。目标、用户的规则原话、计划、关键决定、改过的文件、最近一次验证，都放在对话之外；随会话保存，折叠时原样附在摘要后面，恢复会话时一起恢复。
+- **范围护栏**（`keelson/scope.py`）。改代码前，模型用 `declare_scope` 声明要改的文件；用户提到的文件自动算进范围。改范围外的文件要询问，审阅里单独标出。
+
+### 7.3 平台层与桌面版
+
+平台相关的代码都在 `keelson/platforms/`：shell（Windows 上优先 PowerShell 7，否则 Windows PowerShell 5.1，输出统一为 UTF-8；其它系统用 bash）、回收站（`send2trash`）、进程管理（不弹黑框、杀整棵进程树）。`keelson/textio.py` 编辑文件时保留原编码（UTF-8、BOM、GBK）、换行和未改动的字节，无法原样往返的文件拒绝编辑。
+
+`keelson/desktop.py` 用 pywebview（Windows 上是 WebView2）把同一个控制台装进窗口。窗口里的桥接对象 `DesktopApi` 负责首次运行向导；控制台服务作为子进程在所选项目目录里运行，切换项目时重启，关窗口时一起退出。`scripts/build_desktop.py` 用 PyInstaller 打出 `Keelson.exe` 和 `keelson-cli.exe`。使用说明见[桌面版使用手册](desktop.md)。
 
 ## 8. Skills 架构
 
@@ -462,6 +503,7 @@ Prompt 在 `keelson/prompt.py` 中动态构建。
 | `_run_compression_pipeline()` | 压缩消息和工具结果 |
 | `compact_context` | 主动触发上下文压缩 |
 | `_persist_large_result()` | 大工具结果写文件，只把引用留在上下文中 |
+| 任务账本 | 折叠时原样附在摘要后面，用户的规则不经过模型总结 |
 
 这部分保证 Keelson 不只是一轮任务工具，而是能支撑长程任务的 runtime。
 
@@ -480,6 +522,11 @@ Web 控制台在此之上提供了会话的浏览与恢复：每个会话的事�
 | Skill 演化审计 | `.keelson/skill-evolution/` | provenance、usage stats、history |
 | Memory | `~/.keelson/projects/<project_hash>/memory/` | 项目隔离的长期记忆 |
 | Session | `~/.keelson/sessions/` | 会话恢复数据 |
+| 模型配置 | `~/.keelson/config.env`、`~/.keelson/profiles/<名字>.env`、项目的 `.keelson/config.env` | 接口地址、模型、Key |
+| 检查点 | `~/.keelson/projects/<project_hash>/checkpoints/` | 每轮快照，供 `/undo` 使用 |
+| 任务账本、用量、轨迹 | `~/.keelson/projects/<project_hash>/` | 每个项目的运行数据 |
+| 检查命令 | 项目根目录 `KEELSON.md` 的 `## Verify` | 完工验证用 |
+| 桌面版 | `~/.keelson/desktop.json`、`~/.keelson/logs/` | 最近项目、日志 |
 | 大工具结果 | `~/.keelson/tool-results/` | 大输出持久化引用 |
 | Plan 文件 | `~/.keelson/plans/` | Plan Mode 计划 |
 | MCP 配置 | `.mcp.json`、`~/.keelson/settings.json` | 外部工具配置 |
@@ -497,7 +544,11 @@ Web 控制台在此之上提供了会话的浏览与恢复：每个会话的事�
 | 一次请求怎么跑完整 Agent Loop？ | `keelson/agent.py` |
 | 模型怎么调用工具？ | `keelson/agent.py::_execute_tool_call()` |
 | 工具具体怎么执行？ | `keelson/tools.py` |
-| 权限怎么判断？ | `keelson/tools.py::check_permission()` |
+| 权限怎么判断？ | `keelson/tools.py::check_permission()`、`keelson/safety.py` |
+| 怎么撤销？ | `keelson/checkpoints.py` |
+| “做完了”怎么核实？ | `keelson/verify.py`、`keelson/agent.py::_end_of_turn_check()` |
+| 压缩后怎么不丢规则？ | `keelson/ledger.py` |
+| 桌面窗口怎么起服务？ | `keelson/desktop.py` |
 | system prompt 怎么生成？ | `keelson/prompt.py` |
 | Skill 怎么加载和检索？ | `keelson/skills.py` |
 | Skill 怎么新增或合并？ | `keelson/online_skill_evolution.py`、`keelson/skill_evolution.py` |
@@ -514,7 +565,8 @@ Keelson 不是单纯的聊天 CLI，也不是只提供几个文件工具。
 
 - 管模型协议。
 - 管工具调用。
-- 管权限。
+- 管权限（按能不能撤销）。
+- 管撤销和完工验证。
 - 管上下文。
 - 管长期记忆。
 - 管 Skills。

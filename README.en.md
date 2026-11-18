@@ -65,7 +65,8 @@ Download `Keelson-<version>-windows-x64.zip` from **[Releases](https://github.co
   below (`keelson-cli.exe init`, `keelson-cli.exe -p "..."`). Add the unzipped folder to PATH to use it anywhere.
 
 The build is not code-signed, so Windows may show "Windows protected your PC" the first time: choose
-"More info → Run anyway". The desktop app needs the WebView2 runtime, which comes with Windows 11.
+"More info → Run anyway". The desktop app needs the WebView2 runtime, which Windows 10/11 normally include. The
+[desktop app guide](docs/desktop.md) walks through every step with screenshots.
 
 ### Option 2: install with pip (any OS)
 
@@ -89,7 +90,8 @@ keelson desktop     # the desktop window (tested on Windows only so far)
 - Without a key: `keelson web --replay` replays recorded runs, or open the [live demo](https://alterlk.github.io/keelson/?lang=en).
 - Build the Windows package yourself: `python scripts/build_desktop.py`.
 
-New to all this? Start with **[Getting started](docs/getting-started.md)**.
+New to all this? Start with **[Getting started](docs/getting-started.md)**; for the desktop app, the
+**[desktop app guide](docs/desktop.md)**.
 
 ## Measured
 
@@ -118,10 +120,13 @@ Keelson, with outcome, cost, cache hits, refusals and undos.
 | | |
 |---|---|
 | [![A session](docs/assets/screenshots/console-en.png)](docs/assets/screenshots/console-en.png) | [![Permission prompt](docs/assets/screenshots/gate-en.png)](docs/assets/screenshots/gate-en.png) |
-| **A session**: tool cards, live command output, verification badges; the Review tab shows each file's diff, with whole-turn undo and per-file put-back | **The permission gate** asks only about what cannot be undone, and says why |
+| **A session**: tool cards, live command output; the badge under the answer comes from checks that really ran | **The permission gate** asks only about what cannot be undone, and says why |
+| [![Desktop first-run wizard](docs/assets/screenshots/desktop-wizard-task-en.png)](docs/assets/screenshots/desktop-wizard-task-en.png) | [![Desktop review and undo](docs/assets/screenshots/desktop-review-en.png)](docs/assets/screenshots/desktop-review-en.png) |
+| **The desktop wizard**: connect a model, pick a project, detect its checks, suggest a first task | **Review and undo**: each file's diff; undo a whole turn (shell changes included) or put back one file |
 
 The desktop app is the same console in its own window (pywebview + WebView2), one background server per project,
-stopped when the window closes, with no console windows popping up. See [Web console](docs/web-console.md).
+stopped when the window closes, with no console windows popping up. How to use it: [desktop app guide](docs/desktop.md);
+how it is built: [Web console](docs/web-console.md).
 
 ## Architecture
 
@@ -137,6 +142,7 @@ underneath: the loop, permissions, checkpoints, verification and context folding
 | I want to… | English | 中文 |
 |---|---|---|
 | get started from zero | [Getting started](docs/getting-started.md) | [上手指南](docs/zh/getting-started.md) |
+| use the Windows desktop app `Keelson.exe` | [Desktop app guide](docs/desktop.md) | [桌面版使用手册](docs/zh/desktop.md) |
 | look up a feature, every command and setting | [Feature guide](docs/features.md) | [功能手册](docs/zh/features.md) |
 | know what is and is not protected | [Safety and undo](docs/safety.md) | [安全与撤销](docs/zh/safety.md) |
 | see the five safeguards measured | [bench/FEATURES.md](bench/FEATURES.md) | |

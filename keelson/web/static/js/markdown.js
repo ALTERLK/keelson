@@ -23,6 +23,19 @@ function inline(text) {
 }
 
 const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+// Cells of a table row: split on pipes outside `code`, without the outer pipes.
+function tableCells(line) {
+  const cells = [];
+  let cell = "", code = false;
+  for (const c of line.trim().replace(/^\|/, "").replace(/\|$/, "")) {
+    if (c === "`") code = !code;
+    if (c === "|" && !code) { cells.push(cell.trim()); cell = ""; } else cell += c;
+  }
+  cells.push(cell.trim());
+  return cells;
+}
 
 export function renderMarkdown(source) {
   const lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
@@ -61,6 +74,19 @@ export function renderMarkdown(source) {
       flush();
       const level = Math.min(heading[1].length + 2, 6); // keep page headings above message headings
       html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    // A table: a row of cells, then a rule like |---|:---:|, then body rows.
+    if (line.includes("|") && i + 1 < lines.length && lines[i + 1].includes("|") && TABLE_RULE.test(lines[i + 1])) {
+      flush();
+      const head = tableCells(line);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) rows.push(tableCells(lines[i++]));
+      i--;
+      const row = (cells, tag) => `<tr>${head.map((_, k) => `<${tag}>${inline(cells[k] ?? "")}</${tag}>`).join("")}</tr>`;
+      html.push(`<div class="table-wrap"><table><thead>${row(head, "th")}</thead><tbody>${rows.map((r) => row(r, "td")).join("")}</tbody></table></div>`);
       continue;
     }
 

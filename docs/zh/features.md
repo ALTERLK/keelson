@@ -328,6 +328,8 @@ when_to_use: The user asks to commit, or asks for a commit message
 
 ## 桌面版
 
+> 一步一步带截图的说明见[桌面版使用手册](desktop.md)。
+
 **是什么。** Windows 上一个独立窗口里的 Keelson，用的是 Windows 10/11 自带的 WebView2。窗口里就是 `keelson web` 那个控制台；窗口背后，控制台服务在你选的项目文件夹里运行。
 
 **解决什么问题。** 不用开终端、不用装 Python、不用记端口：解压，双击 `Keelson.exe`，走完三步就能派任务。
@@ -436,7 +438,7 @@ keelson -p --output-format json "修好失败的测试" > result.json
 
 **是什么。** 两个帮你把安装弄对的命令。
 
-- `keelson init`：一步步生成 `.env`（选服务商、填接口地址、模型名、API Key），然后自动检查。
+- `keelson init`：一步步问你（选服务商、填接口地址、模型名、API Key），写进 `~/.keelson/config.env`，然后自动检查。`--project` 改写项目的 `.keelson/config.env`，`--profile 名字` 写成一个配置档。
 - `keelson doctor`：检查 Python 版本、是否配置了 Key、模型是否真的能回答、git 和 ripgrep 是否可用、Web 依赖是否装了、状态目录是否可写，每一项不通过都给出修复方法。`--offline` 跳过联网检查。
 
 **在哪里能看到。** 控制台“概览”页的“当前安装状态”卡片显示的就是同一份检查结果。
@@ -506,7 +508,7 @@ keelson -p --output-format json "修好失败的测试" > result.json
 
 ## 环境变量
 
-写在 `.env` 里，或直接设为环境变量。
+写在 `~/.keelson/config.env`、配置档、项目的 `.keelson/config.env` 里，或直接设为环境变量（环境变量优先）。项目里旧的 `.env` 仍会读取，优先级最低。
 
 | 变量 | 作用 | 默认 |
 |---|---|---|

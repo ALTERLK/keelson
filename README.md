@@ -52,7 +52,7 @@ Keelson 有两种用法，功能相同，共用同一份配置（`~/.keelson/`�
 - **`Keelson.exe`**：桌面窗口版。双击打开，首次运行的向导会带你填模型 Key、选项目文件夹、派出第一个任务。
 - **`keelson-cli.exe`**：命令行版。在项目文件夹里运行，用法和下面的 `keelson` 命令完全一样（`keelson-cli.exe init`、`keelson-cli.exe -p "…"`）。想在任何目录直接用，把解压出来的文件夹加进 PATH。
 
-安装包没有代码签名，第一次打开时 Windows 可能提示“已保护你的电脑”，点“更多信息 → 仍要运行”。窗口版需要 WebView2 运行时，Windows 11 自带。
+安装包没有代码签名，第一次打开时 Windows 可能提示“已保护你的电脑”，点“更多信息 → 仍要运行”。窗口版需要 WebView2 运行时，Windows 10/11 一般都自带。每一步带截图的说明见 **[桌面版使用手册](docs/zh/desktop.md)**。
 
 ### 方式二：用 pip 安装（任何系统）
 
@@ -75,7 +75,7 @@ keelson desktop     # 桌面窗口（目前只在 Windows 上测过）
 - 没有 Key 也能先看：`keelson web --replay` 回放录制好的运行，或者直接打开[在线演示](https://alterlk.github.io/keelson/?lang=zh)。
 - 自己打 Windows 包：`python scripts/build_desktop.py`。
 
-第一次用请看 **[上手指南](docs/zh/getting-started.md)**。
+第一次用请看 **[上手指南](docs/zh/getting-started.md)**；用桌面版请看 **[桌面版使用手册](docs/zh/desktop.md)**。
 
 ## 实测
 
@@ -101,9 +101,11 @@ keelson desktop     # 桌面窗口（目前只在 Windows 上测过）
 | | |
 |---|---|
 | [![运行中的会话](docs/assets/screenshots/console-zh.png)](docs/assets/screenshots/console-zh.png) | [![权限确认](docs/assets/screenshots/gate-zh.png)](docs/assets/screenshots/gate-zh.png) |
-| **会话**：工具卡片、命令实时输出、验证徽章；审阅页看每个文件的 diff，可以整轮撤销或单个文件放回 | **权限门**：撤销不了的操作才问你，并写明为什么撤销不了 |
+| **会话**：工具卡片、命令实时输出；回答下面的验证徽章来自真实运行的检查命令 | **权限门**：撤销不了的操作才问你，并写明为什么撤销不了 |
+| [![桌面版首次运行向导](docs/assets/screenshots/desktop-wizard-task-zh.png)](docs/assets/screenshots/desktop-wizard-task-zh.png) | [![桌面版审阅与撤销](docs/assets/screenshots/desktop-review-zh.png)](docs/assets/screenshots/desktop-review-zh.png) |
+| **桌面版向导**：连接模型、选项目、识别检查命令、推荐第一个任务 | **审阅与撤销**：每个文件的 diff，可以整轮撤销（连 shell 的改动）或单个文件还原 |
 
-桌面版是同一个控制台装在自己的窗口里（pywebview + WebView2），每个项目一个后台服务，关窗时一并退出，全程不弹黑框。实现见 [Web 控制台](docs/zh/web-console.md)。
+桌面版是同一个控制台装在自己的窗口里（pywebview + WebView2），每个项目一个后台服务，关窗时一并退出，全程不弹黑框。用法见[桌面版使用手册](docs/zh/desktop.md)，实现见 [Web 控制台](docs/zh/web-console.md)。
 
 ## 架构
 
@@ -116,6 +118,7 @@ keelson desktop     # 桌面窗口（目前只在 Windows 上测过）
 | 我想…… | 中文 | English |
 |---|---|---|
 | 从零开始用起来 | [上手指南](docs/zh/getting-started.md) | [Getting started](docs/getting-started.md) |
+| 用 Windows 桌面版 `Keelson.exe` | [桌面版使用手册](docs/zh/desktop.md) | [Desktop app guide](docs/desktop.md) |
 | 查某个功能怎么用、全部命令和环境变量 | [功能手册](docs/zh/features.md) | [Feature guide](docs/features.md) |
 | 知道它能防什么、不能防什么 | [安全与撤销](docs/zh/safety.md) | [Safety and undo](docs/safety.md) |
 | 看五个保障的实测 | | [bench/FEATURES.md](bench/FEATURES.md) |

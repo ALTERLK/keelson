@@ -15,15 +15,18 @@ script, not the SVG.
 
 | Layer | Files | Owns |
 |---|---|---|
-| Front ends | `keelson/main.py`, `keelson/ui.py`, `keelson/web/` | CLI/REPL, terminal rendering, web console and its sessions |
+| Front ends | `keelson/main.py`, `ui.py`, `commands.py`, `terminal_input.py`, `keelson/web/`, `desktop.py` | CLI/REPL, terminal rendering, web console and its sessions, the Windows desktop window |
 | Event bus | `keelson/events.py` | The one stream every front end observes; timing spans; the per-session binding |
-| Runtime | `keelson/agent.py` | The loop, protocol adapters, tool dispatch, context folding, sessions |
-| Capabilities | `keelson/tools.py`, `skills.py`, `memory.py`, `mcp_client.py`, `subagent.py` | Tools and the permission gate, skills, long-term memory, MCP, sub-agents |
-| Prompt | `keelson/prompt.py` | Assembling the system prompt for the current state |
+| Runtime | `keelson/agent.py` | The loop, protocol adapters, tool dispatch, context folding, sessions, the end-of-turn check |
+| Safety and undo | `keelson/safety.py`, `checkpoints.py`, `trust.py`, `keelson/platforms/` | Judging commands and paths by reversibility, snapshots and `/undo`, workspace trust, shell, Recycle Bin and process handling per platform |
+| Completion | `keelson/verify.py`, `ledger.py`, `scope.py` | Verified completion, the task ledger, the scope guard |
+| Capabilities | `keelson/tools.py`, `textio.py`, `search.py`, `skills.py`, `memory.py`, `mcp_client.py`, `subagent.py` | Tools and the permission gate, encoding-safe file I/O, search, skills, long-term memory, MCP, sub-agents |
+| Prompt | `keelson/prompt.py` | Assembling the system prompt for the current state, with a stable prefix for caching |
+| Cost | `keelson/models.py`, `usage.py` | Model registry (context window, output limit, prices), usage ledger and budgets |
 | Evolution | `keelson/online_skill_evolution.py`, `skill_evolution.py`, `skill_gate.py`, `skill_history.py`, `evolution_card.py` | Extracting, gating, versioning and auditing skill changes |
-| Evidence | `keelson/bench/`, `bench/` | Benchmarks, metrics, committed run artifacts |
-| Setup | `keelson/doctor.py` | `keelson doctor` and `keelson init` |
-| State | `.keelson/`, `~/.keelson/` (`keelson/paths.py`) | Skills, memory, sessions, traces, audit records |
+| Evidence | `keelson/bench/`, `bench/` | Benchmarks, feature experiments, metrics, committed run artifacts |
+| Setup | `keelson/doctor.py`, `profiles.py` | `keelson doctor`, `keelson init` and profiles |
+| State | `.keelson/`, `KEELSON.md`, `~/.keelson/` (`keelson/paths.py`) | Project rules and checks; per user: `config.env`, profiles, and per project sessions, traces, checkpoints, ledgers and usage |
 
 ## One turn
 
@@ -34,17 +37,22 @@ The same path as text:
 ```text
 user input
   -> Agent.chat()
+       snapshot the project (checkpoints) · note the user's rules in the ledger
        retrieve relevant skills (BM25) · start a memory prefetch · connect MCP on first use
   -> loop:
-       compress context if needed
+       fold context if needed (the ledger is put back verbatim)
        call the model (Anthropic or OpenAI protocol)
-       no tool call?  -> done
+       no tool call?  -> end-of-turn check:
+                           code changed and no passing check since the last change?
+                           run the checks; on failure hand the real output back (limited retries)
+                           -> verify badge: verified | checks fail | not verified
        for each tool call:
-           permission gate  -> allow | confirm (ask the user) | deny
+           permission gate  -> allow | confirm (ask the user, with the reason) | deny
+           scope guard      -> a change outside the declared scope asks
            loop guard       -> stop a tool that keeps repeating without new results
            execute          -> built-in tool | skill | MCP tool | sub-agent
            write the result back to the model
-  -> save the session
+  -> save the session and the ledger; record usage
   -> in the background: skill-usage tracking, and skill extraction from the
      user's next message if it reads as durable feedback
 ```
@@ -61,19 +69,79 @@ went. Both are described in [`web-console.md`](web-console.md).
 ## The permission gate
 
 `tools.py::check_permission` returns `allow`, `confirm` or `deny` for every
-call, before anything executes.
+call, before anything executes. Since 0.4 the question it asks is **can this be
+undone?** (`keelson/safety.py`):
 
-- Five modes: `default`, `acceptEdits`, `plan` (read-only), `dontAsk`
-  (auto-deny anything that would need confirmation) and `bypassPermissions`.
-- `settings.json` allow/deny rules are checked first, at user and project level.
-- Shell commands are matched against a list of destructive patterns
-  (`rm`, `git push`, `del`, …) and need confirmation.
-- Anything the gate does not recognise — MCP tools, future tools — is not
-  trusted by default.
+- Changes inside the project are covered by the turn's snapshot, so they go
+  ahead; `delete_files` moves things to the Recycle Bin, so it goes ahead too.
+- What `/undo` cannot reverse asks, with the reason: installing packages,
+  network access, `git push`, rewriting history, writing outside the project,
+  MCP and unknown tools.
+- Force-pushes, `sudo`, `curl … | sh` and paths containing unset variables ask
+  and can only be allowed once.
+- Deleting from the shell is refused (the model is pointed at `delete_files`),
+  and so is touching the home folder, a drive root, the project or its parents,
+  or a system folder, in every mode.
+
+Before judging a path the gate expands `~`, `$HOME`, `$env:USERPROFILE` and
+`%VAR%`, and it splits compound commands into segments. Reasons are written in
+the interface language.
+
+- Five modes: `default`, `acceptEdits` (same as default, kept for
+  compatibility), `plan` (read-only), `dontAsk` (deny anything that would ask)
+  and `bypassPermissions` (asks nothing; the refusals still apply).
+- `settings.json` allow/deny rules are checked first, at user and project
+  level; a cloned project's allow rules and MCP servers wait until the folder
+  is trusted (`keelson/trust.py`).
 - A sub-agent never runs with more permission than its parent.
 
 A denial is returned to the model as a tool result, so the model sees *why* and
-can change course instead of stalling.
+can change course instead of stalling. The full table is in
+[Safety and undo](safety.md).
+
+## Undo, verification, ledger and scope
+
+These four are enforced by the runtime, not asked of the model in the prompt.
+
+- **Checkpoints** (`keelson/checkpoints.py`). At the start of each turn the
+  project is written into a separate git store under
+  `~/.keelson/projects/<hash>/checkpoints/`, with its own `GIT_DIR`, index and
+  config (no hooks, no filters, no line-ending conversion), so the project's
+  `.git` is never touched. `/undo`, `/redo`, `/rewind N` and `/revert <file>`
+  compare trees, so changes made by shell commands are restored too. A file
+  changed again after the turn is listed, not overwritten. Without git the
+  store falls back to byte snapshots of Keelson's own edits, and says so.
+- **Verified completion** (`keelson/verify.py`). The checks come from
+  `KEELSON.md`'s `## Verify` section or are detected (pytest, npm, cargo, go,
+  ruff, eslint, tsc, …). The evidence is the event stream: which commands ran,
+  with which exit codes, after the last change. When a turn that changed code
+  ends without a passing check, the runtime runs the checks, hands failures back
+  to the model a limited number of times, and emits a `verify` event with the
+  verdict. A claim of passing tests with no matching run is flagged as
+  unproven; edits that weaken tests are flagged too.
+- **Task ledger** (`keelson/ledger.py`). The goal, the user's rules word for
+  word, the plan, decisions, files changed and the last verification live
+  outside the conversation. They are saved with the session, appended verbatim
+  to the folded summary, and restored on resume.
+- **Scope guard** (`keelson/scope.py`). Before changing code the model declares
+  the files it means to touch (`declare_scope`); files the user mentions count
+  automatically. A change outside the scope asks, and the review lists it.
+
+## Platforms and the desktop app
+
+Platform-specific code lives in `keelson/platforms/`: the shell (on Windows,
+PowerShell 7 or else Windows PowerShell 5.1, run with UTF-8 output; bash
+elsewhere), the Recycle Bin (`send2trash`) and process handling (no console
+windows, killing whole process trees). `keelson/textio.py` keeps a file's
+encoding (UTF-8, BOM, GBK), line endings and untouched bytes intact on edit,
+and refuses to edit a file it cannot round-trip.
+
+`keelson/desktop.py` is a pywebview window (WebView2 on Windows) around the
+same console. The window's bridge (`DesktopApi`) runs the setup wizard; the
+console server runs as a child process in the chosen project folder, restarts
+when the project changes, and exits with the window. PyInstaller
+(`scripts/build_desktop.py`) builds `Keelson.exe` and `keelson-cli.exe`.
+A step-by-step user guide is in [the desktop app guide](desktop.md).
 
 ## Context management
 
@@ -87,7 +155,9 @@ Long tasks outgrow the context window. Three tiers, cheapest first:
    are trimmed, keeping the most recent ones.
 3. **Folding** — at 70%, the history is rewritten by a side model call into
    three structured slices: *episodic* (what happened), *working* (current
-   goal and next actions) and *tool* memory (what worked, what failed).
+   goal and next actions) and *tool* memory (what worked, what failed). The
+   task ledger is appended verbatim, so the user's rules never pass through
+   the summariser.
 
 ## The loop guard
 

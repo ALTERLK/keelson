@@ -19,6 +19,19 @@ def action(command: str) -> str:
     return safety.assess_shell(command).action
 
 
+@pytest.mark.parametrize(("command", "zh", "en"), [
+    ("pip install numpy", "/undo 撤不回来", "/undo does not reverse that"),
+    ("git push", "发布到远程仓库", "publishes commits to the remote"),
+    ("git rebase main", "改写 git 历史", "rewrites git history"),
+])
+def test_the_reason_shown_in_the_confirm_dialog_follows_the_interface_language(ws, monkeypatch, command, zh, en):
+    from keelson import i18n
+    for lang, expected in (("zh", zh), ("en", en)):
+        monkeypatch.setenv("KEELSON_LANG", lang)
+        monkeypatch.setattr(i18n, "_cached", None)
+        assert expected in safety.assess_shell(command).reasons[0]
+
+
 # ─── deleting ───────────────────────────────────────────────
 
 @pytest.mark.parametrize("command", [

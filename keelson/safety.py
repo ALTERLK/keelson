@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths
+from .i18n import pick
 from .platforms import IS_WINDOWS
 
 WORKSPACE, SCRATCH, OUTSIDE, PROTECTED = "workspace", "scratch", "outside", "protected"
@@ -250,10 +251,13 @@ _CODE_DELETES = re.compile(
     r"File\]::Delete|Directory\]::Delete|Remove-Item|FileUtils\.rm|\bunlink\b",
     re.IGNORECASE,
 )
-_GIT_HISTORY = {
-    "rebase": "rewrites git history", "filter-branch": "rewrites git history",
-    "filter-repo": "rewrites git history", "reflog": "can drop git history",
-    "update-ref": "moves git refs directly", "gc": "can drop unreachable commits for good",
+_GIT_HISTORY = {      # (zh, en)
+    "rebase": ("会改写 git 历史", "rewrites git history"),
+    "filter-branch": ("会改写 git 历史", "rewrites git history"),
+    "filter-repo": ("会改写 git 历史", "rewrites git history"),
+    "reflog": ("可能丢掉 git 历史", "can drop git history"),
+    "update-ref": ("直接移动 git 引用", "moves git refs directly"),
+    "gc": ("可能永久丢掉不可达的提交", "can drop unreachable commits for good"),
 }
 _READ_ONLY = {"ls", "dir", "gci", "get-childitem", "cat", "type", "gc", "get-content", "echo", "write-output",
               "write-host", "pwd", "get-location", "select-string", "sls", "findstr", "where", "which",
@@ -353,13 +357,16 @@ class _Assessor:
             return
         text, unresolved = expand(raw, self.local, cwd=self.cwd)
         if unresolved:
-            self.verdict.need(f"`{segment}` uses {', '.join(unresolved)}, which is not set here, so it could act "
-                              "on a different folder than intended", dangerous=True)
+            names = ", ".join(unresolved)
+            self.verdict.need(pick(f"`{segment}` 用到了 {names}，这里没有设置，可能作用到别的文件夹",
+                                   f"`{segment}` uses {names}, which is not set here, so it could act "
+                                   "on a different folder than intended"), dangerous=True)
             return
         path = Path(text)
         if not path.is_absolute():
             if self.cwd is None:
-                self.verdict.need(f"`{segment}` runs after a `cd` to a folder that could not be worked out",
+                self.verdict.need(pick(f"`{segment}` 在 `cd` 之后运行，而那个文件夹推算不出来",
+                                       f"`{segment}` runs after a `cd` to a folder that could not be worked out"),
                                   dangerous=True)
                 return
             path = self.cwd / path
@@ -370,7 +377,8 @@ class _Assessor:
                                 "or deletes there.")
             return
         if zone(path, self.workspace, destructive=destructive) == OUTSIDE:
-            self.verdict.need(f"writes outside the project ({path}); /undo cannot take that back")
+            self.verdict.need(pick(f"写到项目外（{path}），/undo 撤不回来",
+                                   f"writes outside the project ({path}); /undo cannot take that back"))
 
     def segment(self, seg: str) -> None:
         m = _ASSIGN_PS.match(seg) or _ASSIGN_SH.match(seg)
@@ -422,26 +430,30 @@ class _Assessor:
 
         for v, _ in verbs:
             if v in _ELEVATE or (v == "start-process" and any(w.lower() == "runas" for w in words)):
-                self.verdict.need(f"`{seg}` runs with administrator rights", dangerous=True)
-            if v in _SYSTEM and not (v == "reg" and _subcommand(words, at) in ("query", "export")):
-                self.verdict.need(f"`{seg}` changes the system (disks, boot, power, registry); nothing can undo it",
+                self.verdict.need(pick(f"`{seg}` 以管理员权限运行", f"`{seg}` runs with administrator rights"),
                                   dangerous=True)
+            if v in _SYSTEM and not (v == "reg" and _subcommand(words, at) in ("query", "export")):
+                self.verdict.need(pick(f"`{seg}` 会改动系统（磁盘、启动、电源、注册表），无法撤销",
+                                       f"`{seg}` changes the system (disks, boot, power, registry); "
+                                       "nothing can undo it"), dangerous=True)
             if v in _KILL:
-                self.verdict.need(f"`{seg}` stops running programs", key=v)
+                self.verdict.need(pick(f"`{seg}` 会结束正在运行的程序", f"`{seg}` stops running programs"), key=v)
 
         if head == "git":
             self._git(seg, words, at)
         elif head == "gh" and _subcommand(words, at) not in ("auth", "status", "help", ""):
-            self.verdict.need(f"`{seg}` acts on GitHub", key=f"gh {_subcommand(words, at)}")
+            self.verdict.need(pick(f"`{seg}` 会操作 GitHub 上的内容", f"`{seg}` acts on GitHub"),
+                              key=f"gh {_subcommand(words, at)}")
         elif head in _INSTALLERS or head in _ALWAYS_INSTALL or (head in ("python", "python3", "py")
                                                                 and words[1:3] == ["-m", "pip"]):
             self._installer(seg, words, head, at)
         elif head in _NETWORK:
-            self.verdict.need(f"`{seg}` uses the network", key=head)
+            self.verdict.need(pick(f"`{seg}` 会联网，/undo 管不到", f"`{seg}` uses the network"), key=head)
         elif head in ("invoke-expression", "iex"):
-            self.verdict.need(f"`{seg}` runs code built at run time, which Keelson cannot check", dangerous=True)
+            self.verdict.need(pick(f"`{seg}` 运行临时拼出来的代码，Keelson 没法事先检查",
+                                   f"`{seg}` runs code built at run time, which Keelson cannot check"), dangerous=True)
         if any(v in _NETWORK for v, _ in verbs[1:]):
-            self.verdict.need(f"`{seg}` uses the network")
+            self.verdict.need(pick(f"`{seg}` 会联网，/undo 管不到", f"`{seg}` uses the network"))
 
         if head in _SUBSHELLS:
             for i, w in enumerate(words[1:], 1):
@@ -457,8 +469,10 @@ class _Assessor:
         if head in _INLINE:
             for i, w in enumerate(words[1:], 1):
                 if w in _INLINE[head] and i + 1 < len(words) and _CODE_DELETES.search(words[i + 1]):
-                    self.verdict.need(f"`{seg}` runs inline code that deletes files, which Keelson cannot check "
-                                      "(delete_files deletes into the Recycle Bin)", dangerous=True)
+                    self.verdict.need(pick(f"`{seg}` 运行的内联代码会删文件，Keelson 没法检查"
+                                           "（delete_files 才是删到回收站的做法）",
+                                           f"`{seg}` runs inline code that deletes files, which Keelson cannot check "
+                                           "(delete_files deletes into the Recycle Bin)"), dangerous=True)
                     break
 
         write = next(((v, i) for v, i in verbs if v in _WRITE_VERBS), None)
@@ -477,33 +491,42 @@ class _Assessor:
             force = any(w in ("-f", "--force", "--mirror", "--delete", "-d") or w.startswith(("+", "--force"))
                         for w in low)
             if force:
-                self.verdict.need(f"`{seg}` overwrites or deletes commits on the remote", dangerous=True)
+                self.verdict.need(pick(f"`{seg}` 会覆盖或删除远程仓库上的提交",
+                                       f"`{seg}` overwrites or deletes commits on the remote"), dangerous=True)
             else:
-                self.verdict.need(f"`{seg}` publishes commits to the remote; /undo cannot take that back",
+                self.verdict.need(pick(f"`{seg}` 会把提交发布到远程仓库，/undo 撤不回来",
+                                       f"`{seg}` publishes commits to the remote; /undo cannot take that back"),
                                   key="git push")
         elif sub in ("clone", "pull", "submodule"):
-            self.verdict.need(f"`{seg}` downloads from the network", key=f"git {sub}")
+            self.verdict.need(pick(f"`{seg}` 会从网上下载", f"`{seg}` downloads from the network"),
+                              key=f"git {sub}")
         elif sub == "clean":
             ignored_too = any(w.startswith("-") and not w.startswith("--") and "x" in w.lower() for w in rest)
             if ignored_too:
-                self.verdict.need(f"`{seg}` deletes ignored files for good; no checkpoint covers them",
+                self.verdict.need(pick(f"`{seg}` 会永久删除被忽略的文件，检查点不保存它们",
+                                       f"`{seg}` deletes ignored files for good; no checkpoint covers them"),
                                   dangerous=True)
             else:
-                self.verdict.need(f"`{seg}` deletes untracked files (a checkpoint keeps a copy)", key="git clean")
+                self.verdict.need(pick(f"`{seg}` 会删除未跟踪的文件（检查点留有副本）",
+                                       f"`{seg}` deletes untracked files (a checkpoint keeps a copy)"), key="git clean")
         elif sub == "reset" and "--hard" in low:
-            self.verdict.need(f"`{seg}` discards uncommitted changes and moves the branch", key="git reset --hard")
+            self.verdict.need(pick(f"`{seg}` 会丢掉未提交的改动并移动分支",
+                                   f"`{seg}` discards uncommitted changes and moves the branch"), key="git reset --hard")
         elif sub in ("checkout", "restore") and ("." in rest or "--" in rest) and "--staged" not in low:
-            self.verdict.need(f"`{seg}` discards uncommitted changes", key=f"git {sub}")
+            self.verdict.need(pick(f"`{seg}` 会丢掉未提交的改动", f"`{seg}` discards uncommitted changes"),
+                              key=f"git {sub}")
         elif sub == "stash" and any(w in ("drop", "clear") for w in low):
-            self.verdict.need(f"`{seg}` throws away stashed work", dangerous=True)
+            self.verdict.need(pick(f"`{seg}` 会丢掉暂存（stash）的工作", f"`{seg}` throws away stashed work"),
+                              dangerous=True)
         elif sub == "branch" and any(w in ("-d", "-D", "--delete") for w in rest):
-            self.verdict.need(f"`{seg}` deletes a branch", key="git branch -d")
+            self.verdict.need(pick(f"`{seg}` 会删除一个分支", f"`{seg}` deletes a branch"), key="git branch -d")
         elif sub == "tag" and any(w in ("-d", "--delete") for w in low):
-            self.verdict.need(f"`{seg}` deletes a tag", key="git tag -d")
+            self.verdict.need(pick(f"`{seg}` 会删除一个标签", f"`{seg}` deletes a tag"), key="git tag -d")
         elif sub == "commit" and "--amend" in low:
-            self.verdict.need(f"`{seg}` rewrites the last commit", key="git commit --amend")
+            self.verdict.need(pick(f"`{seg}` 会改写上一个提交", f"`{seg}` rewrites the last commit"),
+                              key="git commit --amend")
         elif sub in _GIT_HISTORY:
-            self.verdict.need(f"`{seg}` {_GIT_HISTORY[sub]}", key=f"git {sub}")
+            self.verdict.need(f"`{seg}` " + pick(*_GIT_HISTORY[sub]), key=f"git {sub}")
 
     def _installer(self, seg: str, words: list[str], head: str, at: int) -> None:
         if head in ("python", "python3", "py"):
@@ -511,15 +534,19 @@ class _Assessor:
         else:
             sub = _subcommand(words, at)
         if head in _ALWAYS_INSTALL:
-            self.verdict.need(f"`{seg}` downloads and runs packages from the network", key=head)
+            self.verdict.need(pick(f"`{seg}` 会从网上下载并运行包", f"`{seg}` downloads and runs packages from the network"),
+                              key=head)
             return
         actions = _INSTALLERS[head]
         if sub in actions or ("" in actions and not sub):
             if sub in _PUBLISH or (head in ("docker", "gem") and sub in ("push",)):
-                self.verdict.need(f"`{seg}` publishes to a public registry; it cannot be taken back", dangerous=True)
+                self.verdict.need(pick(f"`{seg}` 会发布到公共仓库，发出去就收不回",
+                                       f"`{seg}` publishes to a public registry; it cannot be taken back"),
+                                  dangerous=True)
             else:
-                self.verdict.need(f"`{seg}` installs, removes or downloads packages over the network; /undo does "
-                                  "not reverse that", key=f"{head} {sub}".strip())
+                self.verdict.need(pick(f"`{seg}` 会联网安装、卸载或下载包，/undo 撤不回来",
+                                       f"`{seg}` installs, removes or downloads packages over the network; /undo does "
+                                       "not reverse that"), key=f"{head} {sub}".strip())
 
 
 def assess_shell(command: str, *, workspace: Path | None = None, cwd: Path | None = None) -> Verdict:
@@ -534,8 +561,11 @@ def assess_shell(command: str, *, workspace: Path | None = None, cwd: Path | Non
     verdict = assessor.verdict
     if verdict.action != "block" and any(_verb(w) in _NETWORK for w in tokens(command)) and re.search(
             r"\|\s*(sh|bash|zsh|iex|invoke-expression|python3?|node)\b", command, re.IGNORECASE):
-        verdict.need("downloads a script and runs it straight away", dangerous=True)
+        verdict.need(pick("下载一段脚本并直接运行", "downloads a script and runs it straight away"), dangerous=True)
     return verdict
+
+
+_VERB_ZH = {"write": "写", "delete": "删除"}
 
 
 def assess_path(path: Path, *, verb: str = "write", workspace: Path | None = None) -> Verdict:
@@ -547,5 +577,6 @@ def assess_path(path: Path, *, verb: str = "write", workspace: Path | None = Non
         verdict.refuse(f"Refused: {path} is {why}. Keelson never {verb}s there.")
         return verdict
     if zone(path, workspace, destructive=destructive) == OUTSIDE:
-        verdict.need(f"{verb}s outside the project ({path})")
+        verdict.need(pick(f"{_VERB_ZH.get(verb, verb)}项目外的文件（{path}），/undo 撤不回来",
+                          f"{verb}s outside the project ({path})"))
     return verdict

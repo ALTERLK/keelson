@@ -69,8 +69,7 @@ def _uses_pytest(ws: Path) -> bool:
             text = f.read_text(encoding="utf-8", errors="replace")
             if "pytest" in text:
                 return True
-    for folder in ("tests", "test"):
-        d = ws / folder
+    for d in (ws / "tests", ws / "test", ws):     # the root too: small projects keep test_x.py beside x.py
         if d.is_dir() and (any(d.glob("test_*.py")) or any(d.glob("*_test.py"))):
             return True
     return False

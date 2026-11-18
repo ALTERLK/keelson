@@ -30,6 +30,13 @@ def test_detect_finds_test_runners_from_project_files(tmp_path):
     assert v.detect(tmp_path) == ["python -m pytest -q", "pnpm test", "cargo test", "go test ./..."]
 
 
+def test_detect_finds_test_files_beside_the_code(tmp_path):
+    (tmp_path / "pager.py").write_text("def page(): pass\n", encoding="utf-8")
+    assert v.detect(tmp_path) == []
+    (tmp_path / "test_pager.py").write_text("def test_page(): pass\n", encoding="utf-8")
+    assert v.detect(tmp_path) == ["python -m pytest -q"]
+
+
 def test_detect_ignores_the_npm_placeholder_test_script(tmp_path):
     (tmp_path / "package.json").write_text(
         json.dumps({"scripts": {"test": 'echo "Error: no test specified" && exit 1'}}), encoding="utf-8")

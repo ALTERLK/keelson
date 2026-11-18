@@ -788,8 +788,9 @@ class _OutputRelay:
     INTERVAL_S = 0.08
     MAX_CHARS = 40_000
 
-    def __init__(self, sink: Callable[[str], None]) -> None:
+    def __init__(self, sink: Callable[[str], None], transform: Callable[[str], str] | None = None) -> None:
         self._sink = sink
+        self._transform = transform
         self._pending: list[str] = []
         self._last_flush = 0.0
         self._sent = 0
@@ -808,6 +809,8 @@ class _OutputRelay:
         text = "".join(self._pending)
         self._pending = []
         self._last_flush = time.monotonic()
+        if self._transform:
+            text = self._transform(text)
         room = self.MAX_CHARS - self._sent
         if len(text) >= room:
             text = text[:room] + "\n… (live view capped; the full output is in the result)\n"
@@ -854,7 +857,11 @@ async def _run_prepared_async(target: str | list[str], inp: dict, on_output: Cal
         return f"Error: {e}"
 
     encoding = _output_encoding(shell)
-    relay = _OutputRelay(on_output) if on_output else None
+    # The live view gets the same tidying as the result: PowerShell errors name the
+    # temporary script by its full path, which is under the user's home folder.
+    tidy = ((lambda text: platform_shell.tidy_powershell_errors(text, script))
+            if shell.is_powershell and script is not None else None)
+    relay = _OutputRelay(on_output, tidy) if on_output else None
     captured: dict[str, list[str]] = {"stdout": [], "stderr": []}
 
     async def pump(stream: asyncio.StreamReader, name: str) -> None:

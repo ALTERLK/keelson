@@ -207,6 +207,7 @@ export function mount(root) {
     else if (caption.anchor === "marker") target = [...feed.querySelectorAll(".marker")].pop();
     else if (caption.anchor === "inspector") target = inspector;
     else if (caption.anchor === "conversation") target = [...feed.querySelectorAll(".msg.user")].pop();
+    else if (caption.anchor === "last") target = feed.lastElementChild;   // a badge or notice just added
     target?.classList.add("spotlight");
     if (target && target !== inspector) target.scrollIntoView({ block: "nearest" });
 

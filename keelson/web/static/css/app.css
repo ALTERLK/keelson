@@ -234,6 +234,10 @@ a { color: var(--brand); }
 .prose pre code, pre.code code { background: none; padding: 0; }
 .prose blockquote { margin: .7em 0 0; padding: 2px 12px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
 .prose hr { border: 0; border-top: 1px solid var(--border); }
+.prose .table-wrap { overflow-x: auto; }
+.prose table { border-collapse: collapse; font-size: .95em; }
+.prose th, .prose td { padding: 6px 12px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
+.prose th { background: var(--surface-2); font-weight: 600; }
 .prose.small { font-size: 13px; }
 
 .tool {
