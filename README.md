@@ -13,7 +13,7 @@
   <a href="https://alterlk.github.io/keelson/?lang=zh"><img src="https://img.shields.io/badge/demo-%E6%B5%8F%E8%A7%88%E5%99%A8%E9%87%8C%E7%9B%B4%E6%8E%A5%E7%9C%8B-f6c177" alt="在线演示"></a>
 </p>
 
-**一个不会骗你、不会闯大祸、能完整撤销、不会失忆的编码 Agent。** Windows 原生，DeepSeek 优先，中文界面，终端和桌面窗口都能用。
+**一个不会骗你、不会闯大祸、能完整撤销、不会失忆的编码 Agent。** Windows 原生，DeepSeek 优先，中文界面，终端和桌面窗口都能用：Windows 上[下载](#下载与安装)解压就能双击运行，不用装 Python。
 
 编码 Agent 最让人头疼的，往往不是“不够聪明”，而是这几件事：说做完了其实没做完；一条命令删光了主目录；出事以后撤不回来；聊久了忘了你定的规矩；让它改一行，它顺手改了十个文件。Keelson 把对这五件事的保障做进**运行时**：不靠提示词，也不用你自己写钩子，默认就开着。
 
@@ -35,7 +35,26 @@
 
 另外两条底线：**花了多少钱看得见**（每轮花费、缓存命中率、`/usage` 汇总、每日预算上限），**用的是哪个模型写在记录里**，不会悄悄换成便宜的。
 
-## 上手
+## 下载与安装
+
+Keelson 有两种用法，功能相同，共用同一份配置（`~/.keelson/`）：
+
+| | 桌面窗口版 `Keelson.exe` | 命令行版 `keelson` |
+|---|---|---|
+| 样子 | 独立窗口：对话、每个文件的 diff、一键撤销、任务面板 | 终端里的交互界面；也能用 `-p` 一次性调用，接进脚本 |
+| 适合 | 不想碰终端，想点按钮审阅和撤销 | 习惯终端，或者用在 SSH、自动化里 |
+| 平台 | Windows 10/11（64 位） | Windows、Linux、macOS（Python 3.11+） |
+
+### 方式一：下载 Windows 版（不用装 Python）
+
+从 **[Releases](https://github.com/ALTERLK/keelson/releases/latest)** 下载 `Keelson-版本号-windows-x64.zip`，解压到任意位置。文件夹里有两个程序：
+
+- **`Keelson.exe`**：桌面窗口版。双击打开，首次运行的向导会带你填模型 Key、选项目文件夹、派出第一个任务。
+- **`keelson-cli.exe`**：命令行版。在项目文件夹里运行，用法和下面的 `keelson` 命令完全一样（`keelson-cli.exe init`、`keelson-cli.exe -p "…"`）。想在任何目录直接用，把解压出来的文件夹加进 PATH。
+
+安装包没有代码签名，第一次打开时 Windows 可能提示“已保护你的电脑”，点“更多信息 → 仍要运行”。窗口版需要 WebView2 运行时，Windows 11 自带。
+
+### 方式二：用 pip 安装（任何系统）
 
 需要 Python 3.11+ 和 git。
 
@@ -46,13 +65,15 @@ pip install -e ".[web,desktop]"
 
 keelson init        # 选服务商（有 DeepSeek 预设）、粘贴 Key，先试连一次再保存
 keelson             # 终端界面
-keelson desktop     # 桌面窗口：首次运行有向导，选项目、识别检查命令、推荐第一个任务
+keelson desktop     # 桌面窗口（目前只在 Windows 上测过）
 ```
+
+### 用起来
 
 - 终端里：Enter 发送、Alt+Enter 换行、Ctrl+C 打断、Shift+Tab 切换模式、`/help` 看全部命令、`@文件` 把文件加进对话。
 - 一次性调用：`keelson -p "修一下 calc.py 的 bug"`；`--output-format json` 带上验证结果和花费。
 - 没有 Key 也能先看：`keelson web --replay` 回放录制好的运行，或者直接打开[在线演示](https://alterlk.github.io/keelson/?lang=zh)。
-- Windows 打包版（双击 `Keelson.exe`，不用装 Python）：从 [Releases](https://github.com/ALTERLK/keelson/releases/latest) 下载 zip，解压后双击；也可以用 `python scripts/build_desktop.py` 自己打包。
+- 自己打 Windows 包：`python scripts/build_desktop.py`。
 
 第一次用请看 **[上手指南](docs/zh/getting-started.md)**。
 

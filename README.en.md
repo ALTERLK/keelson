@@ -15,7 +15,8 @@
 
 **A coding agent that does not claim work it did not check, does not run catastrophic commands, can take back
 everything a turn did, and does not forget your rules.** Windows-native, DeepSeek first, Chinese and English
-interface, in a terminal or its own window.
+interface, in a terminal or its own window. On Windows, [download](#download-and-install), unzip and
+double-click; no Python needed.
 
 What hurts most with coding agents is often not a lack of intelligence. It is these: "done, all tests pass"
 when they were never run; one command that wipes the home folder; no way back afterwards; rules forgotten after
@@ -44,7 +45,29 @@ wording, and the scope guard does not check shell commands.
 Two more basics: **spending you can see** (cost and cache hit rate per turn, `/usage`, a daily budget) and
 **the model recorded on every call**, never swapped for a cheaper one behind your back.
 
-## Getting started
+## Download and install
+
+Keelson comes in two forms with the same features and one shared configuration (`~/.keelson/`):
+
+| | Desktop app `Keelson.exe` | Command line `keelson` |
+|---|---|---|
+| What it is | Its own window: conversation, each file's diff, one-click undo, task panel | An interactive terminal interface; `-p` for one-off calls and scripts |
+| Good for | Reviewing and undoing with buttons, no terminal needed | Terminal users, SSH, automation |
+| Platforms | Windows 10/11 (64-bit) | Windows, Linux, macOS (Python 3.11+) |
+
+### Option 1: download the Windows build (no Python needed)
+
+Download `Keelson-<version>-windows-x64.zip` from **[Releases](https://github.com/ALTERLK/keelson/releases/latest)** and unzip it anywhere. The folder has two programs:
+
+- **`Keelson.exe`**: the desktop app. Double-click it; a first-run wizard sets up the model key, picks the project
+  folder and suggests a first task.
+- **`keelson-cli.exe`**: the command line. Run it in a project folder; it works exactly like the `keelson` command
+  below (`keelson-cli.exe init`, `keelson-cli.exe -p "..."`). Add the unzipped folder to PATH to use it anywhere.
+
+The build is not code-signed, so Windows may show "Windows protected your PC" the first time: choose
+"More info → Run anyway". The desktop app needs the WebView2 runtime, which comes with Windows 11.
+
+### Option 2: install with pip (any OS)
 
 You need Python 3.11+ and git.
 
@@ -55,15 +78,16 @@ pip install -e ".[web,desktop]"
 
 keelson init        # choose a provider (DeepSeek preset), paste the key; it is tested once before it is saved
 keelson             # the terminal interface
-keelson desktop     # its own window: a first-run wizard picks the project, finds its checks, suggests a first task
+keelson desktop     # the desktop window (tested on Windows only so far)
 ```
+
+### Using it
 
 - In the terminal: Enter sends, Alt+Enter adds a line, Ctrl+C interrupts, Shift+Tab changes mode, `/help` lists
   every command, `@file` adds a file to the conversation.
 - One-off: `keelson -p "fix the bug in calc.py"`; `--output-format json` includes the verdict and the cost.
 - Without a key: `keelson web --replay` replays recorded runs, or open the [live demo](https://alterlk.github.io/keelson/?lang=en).
-- A Windows build (double-click `Keelson.exe`, no Python needed): download the zip from
-  [Releases](https://github.com/ALTERLK/keelson/releases/latest), unzip, double-click; or build it with `python scripts/build_desktop.py`.
+- Build the Windows package yourself: `python scripts/build_desktop.py`.
 
 New to all this? Start with **[Getting started](docs/getting-started.md)**.
 
