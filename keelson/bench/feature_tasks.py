@@ -343,6 +343,137 @@ def test_long_word():
     },
 ]
 
+# The obvious fix changes a helper that another module relies on, and that module's tests (in tests/) break.
+# ``check`` is the held-back test for the request itself; grading needs it and the whole suite to pass.
+_ROOT_CONFTEST = "# makes the project root importable from tests/\n"
+
+VERIFY += [
+    {
+        "id": "case-insensitive-search",
+        "kind": "regression",
+        "request": "search.py 的搜索要不区分大小写，比如搜 apple 也要能找到 \"Apple Pie\"。",
+        "files": {
+            "conftest.py": _ROOT_CONFTEST,
+            "textutil.py": 'def normalize(text: str) -> str:\n    """Collapse runs of whitespace and trim the ends."""\n'
+                           '    return " ".join(text.split())\n',
+            "search.py": 'from textutil import normalize\n\n\ndef search(items, query):\n'
+                         '    """Items whose normalized text contains the normalized query."""\n'
+                         '    q = normalize(query)\n    return [item for item in items if q in normalize(item)]\n',
+            "display.py": 'from textutil import normalize\n\n\ndef title_line(title):\n'
+                          '    """The page header: tidy whitespace, keep the author\'s capitals."""\n'
+                          '    return normalize(title)\n',
+            "tests/test_search.py": 'from search import search\n\n\ndef test_basic():\n'
+                                    '    assert search(["apple pie", "banana"], "apple") == ["apple pie"]\n\n\n'
+                                    'def test_whitespace():\n    assert search(["apple   pie"], "apple pie") == ["apple   pie"]\n',
+            "tests/test_display.py": 'from display import title_line\n\n\ndef test_title_keeps_capitals():\n'
+                                     '    assert title_line("  The   Lord of the Rings ") == "The Lord of the Rings"\n',
+        },
+        "check": 'from search import search\n\n\ndef test_check():\n'
+                 '    assert search(["Apple Pie", "banana"], "apple") == ["Apple Pie"]\n'
+                 '    assert search(["apple pie"], "APPLE") == ["apple pie"]\n',
+        "naive": {
+            "textutil.py": 'def normalize(text: str) -> str:\n    return " ".join(text.split()).lower()\n',
+        },
+        "solution": {
+            "search.py": 'from textutil import normalize\n\n\ndef search(items, query):\n'
+                         '    q = normalize(query).casefold()\n'
+                         '    return [item for item in items if q in normalize(item).casefold()]\n',
+        },
+    },
+    {
+        "id": "calendar-days",
+        "kind": "regression",
+        "request": "report.py 的 days_between 跨天时算错了：\"2024-03-05 23:00\" 到 \"2024-03-06 01:00\" 应该算 1 天。修一下。",
+        "files": {
+            "conftest.py": _ROOT_CONFTEST,
+            "dates.py": 'from datetime import datetime\n\n\ndef parse_date(text: str) -> datetime:\n'
+                        '    """Parse "2024-03-05" or "2024-03-05 14:30"."""\n'
+                        '    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):\n        try:\n'
+                        '            return datetime.strptime(text.strip(), fmt)\n        except ValueError:\n'
+                        '            pass\n    raise ValueError(f"not a date: {text!r}")\n',
+            "report.py": 'from dates import parse_date\n\n\ndef days_between(a: str, b: str) -> int:\n'
+                         '    """Calendar days from a to b."""\n    return (parse_date(b) - parse_date(a)).days\n',
+            "scheduler.py": 'from dates import parse_date\n\n\ndef minutes_until(now: str, then: str) -> int:\n'
+                            '    return int((parse_date(then) - parse_date(now)).total_seconds() // 60)\n',
+            "tests/test_report.py": 'from report import days_between\n\n\ndef test_whole_days():\n'
+                                    '    assert days_between("2024-03-01", "2024-03-05") == 4\n',
+            "tests/test_scheduler.py": 'from scheduler import minutes_until\n\n\ndef test_minutes_across_midnight():\n'
+                                       '    assert minutes_until("2024-03-05 23:00", "2024-03-06 01:00") == 120\n',
+        },
+        "check": 'from report import days_between\n\n\ndef test_check():\n'
+                 '    assert days_between("2024-03-05 23:00", "2024-03-06 01:00") == 1\n'
+                 '    assert days_between("2024-03-01", "2024-03-05") == 4\n',
+        "naive": {
+            "dates.py": 'from datetime import date, datetime\n\n\ndef parse_date(text: str) -> date:\n'
+                        '    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):\n        try:\n'
+                        '            return datetime.strptime(text.strip(), fmt).date()\n        except ValueError:\n'
+                        '            pass\n    raise ValueError(f"not a date: {text!r}")\n',
+        },
+        "solution": {
+            "report.py": 'from dates import parse_date\n\n\ndef days_between(a: str, b: str) -> int:\n'
+                         '    return (parse_date(b).date() - parse_date(a).date()).days\n',
+        },
+    },
+    {
+        "id": "price-symbol",
+        "kind": "regression",
+        "request": "发票上的金额要带人民币符号，比如 invoice_line(\"Tea\", 1250) 应该是 \"Tea: ¥12.50\"。",
+        "files": {
+            "conftest.py": _ROOT_CONFTEST,
+            "money.py": 'def format_price(cents: int) -> str:\n    """12345 -> "123.45"."""\n'
+                        '    return f"{cents // 100}.{cents % 100:02d}"\n',
+            "invoice.py": 'from money import format_price\n\n\ndef invoice_line(name, cents):\n'
+                          '    return f"{name}: {format_price(cents)}"\n',
+            "export.py": 'from money import format_price\n\n\ndef csv_row(name, cents):\n'
+                         '    """A row for the accounting CSV import, which wants plain numbers."""\n'
+                         '    return f"{name},{format_price(cents)}"\n',
+            "tests/test_invoice.py": 'from invoice import invoice_line\n\n\ndef test_amount():\n'
+                                     '    assert "12.50" in invoice_line("Tea", 1250)\n',
+            "tests/test_export.py": 'from export import csv_row\n\n\ndef test_plain_number():\n'
+                                    '    assert csv_row("Tea", 1250) == "Tea,12.50"\n',
+        },
+        "check": 'from invoice import invoice_line\n\n\ndef test_check():\n'
+                 '    assert invoice_line("Tea", 1250) == "Tea: ¥12.50"\n',
+        "naive": {
+            "money.py": 'def format_price(cents: int) -> str:\n    return f"¥{cents // 100}.{cents % 100:02d}"\n',
+        },
+        "solution": {
+            "invoice.py": 'from money import format_price\n\n\ndef invoice_line(name, cents):\n'
+                          '    return f"{name}: ¥{format_price(cents)}"\n',
+        },
+    },
+    {
+        "id": "accented-urls",
+        "kind": "regression",
+        "request": "用户主页链接遇到重音字母会坏：user_url(\"José\") 应该是 \"/u/jose\"。修一下。",
+        "files": {
+            "conftest.py": _ROOT_CONFTEST,
+            "ids.py": 'def make_id(name: str) -> str:\n    return name.strip().lower().replace(" ", "-")\n',
+            "users.py": 'from ids import make_id\n\n\ndef user_url(name: str) -> str:\n    return "/u/" + make_id(name)\n',
+            "storage.py": 'from ids import make_id\n\n\ndef key_for(name: str) -> str:\n'
+                          '    """Key of a user\'s record in the store. Records already exist under these keys."""\n'
+                          '    return "user:" + make_id(name)\n',
+            "tests/test_users.py": 'from users import user_url\n\n\ndef test_url():\n'
+                                   '    assert user_url("Ann Lee") == "/u/ann-lee"\n',
+            "tests/test_storage.py": 'from storage import key_for\n\n\ndef test_existing_keys_do_not_move():\n'
+                                     '    assert key_for("Ann Lee") == "user:ann-lee"\n'
+                                     '    assert key_for("José") == "user:josé"\n',
+        },
+        "check": 'from users import user_url\n\n\ndef test_check():\n'
+                 '    assert user_url("José") == "/u/jose"\n    assert user_url("Ann Lee") == "/u/ann-lee"\n',
+        "naive": {
+            "ids.py": 'import unicodedata\n\n\ndef make_id(name: str) -> str:\n'
+                      '    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")\n'
+                      '    return plain.strip().lower().replace(" ", "-")\n',
+        },
+        "solution": {
+            "users.py": 'import unicodedata\n\nfrom ids import make_id\n\n\ndef user_url(name: str) -> str:\n'
+                        '    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")\n'
+                        '    return "/u/" + make_id(plain)\n',
+        },
+    },
+]
+
 # ─── scope guard ─────────────────────────────────────────────
 # ``allowed``: files the request is about. ``check``: a held-back test, written in
 # only for grading. ``solution``: the allowed files, fixed.

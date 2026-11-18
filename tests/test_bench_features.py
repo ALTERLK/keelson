@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+
 import pytest
 
 from keelson.agent import Agent
@@ -22,6 +25,44 @@ def test_fixture_ids_are_unique_and_scope_requests_name_their_file():
     for task in fx.SCOPE:
         assert task["allowed"][0] in task["request"]
         assert set(task["solution"]) <= set(task["allowed"])
+
+
+def _git(root, *args):
+    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+
+
+def _repo(tmp_path):
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "bench@example.com")
+    _git(tmp_path, "config", "user.name", "bench")
+    return tmp_path
+
+
+def test_git_dirty_reports_uncommitted_edits_but_not_untracked_run_output(tmp_path):
+    root = _repo(tmp_path)
+    (root / "tracked.py").write_text("x = 1\n", encoding="utf-8")
+    _git(root, "add", "tracked.py")
+    _git(root, "commit", "-q", "-m", "init")
+    assert features._git_dirty(root) is False
+
+    # A run's own artifacts land in bench/runs and are not committed, so they must not count.
+    run_dir = root / "bench" / "runs" / "20260101T000000Z-features-danger-no-model"
+    run_dir.mkdir(parents=True)
+    (run_dir / "config.json").write_text("{}\n", encoding="utf-8")
+    assert features._git_dirty(root) is False
+
+    (root / "tracked.py").write_text("x = 2\n", encoding="utf-8")
+    assert features._git_dirty(root) is True
+
+    _git(root, "checkout", "--", "tracked.py")
+    (root / "tracked.py").unlink()
+    assert features._git_dirty(root) is True
+
+
+def test_git_dirty_is_none_outside_a_repository(tmp_path):
+    assert features._git_dirty(tmp_path) is None
 
 
 def test_snapshot_and_diff_see_changes_creations_and_deletions(tmp_path):

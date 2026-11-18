@@ -184,6 +184,42 @@ def test_js_skips_and_changed_expectations():
     assert "skip" in found and "expected value changed" in found
 
 
+_NEEDS_GIT = '\ndef _needs_git():\n    """Local helper."""\n    if shutil.which("git") is None:\n        pytest.skip("git 没装")\n    return True\n'
+_NEW_GIT_TEST = '\ndef test_clone():\n    if shutil.which("git") is None:\n        pytest.skip("git 没装")\n    assert clone()\n'
+
+
+def test_a_skip_in_a_new_helper_or_a_new_test_is_not_weakening():
+    """Only existing tests being skipped counts: new code skipping itself weakens nothing."""
+    assert v.weakening("t.py", _OLD, _OLD.replace("import pytest\n", "import shutil\nimport pytest\n") + _NEEDS_GIT) == []
+    assert v.weakening("t.py", _OLD, _OLD.replace("import pytest\n", "import shutil\nimport pytest\n") + _NEW_GIT_TEST) == []
+    assert "skip" not in " | ".join(v.weakening("t.py", _OLD, _OLD + _NEEDS_GIT + _NEW_GIT_TEST))
+
+
+@pytest.mark.parametrize("new", [
+    _OLD + '\npytest.skip("git 没装", allow_module_level=True)\n',          # module-level: skips the whole file
+    _OLD + '\npytestmark = pytest.mark.skip(reason="git 没装")\n',          # the same, written as a marker
+    _OLD.replace("def test_sub", "@pytest.mark.skip(reason='git 没装')\ndef test_sub"),
+    _OLD.replace("def test_sub", "@pytest.mark.skipif(not shutil.which('git'), reason='git 没装')\ndef test_sub"),
+    _OLD.replace("    assert sub(3, 1) == 2\n",
+                 "    if shutil.which('git') is None:\n        pytest.skip('git 没装')\n    assert sub(3, 1) == 2\n"),
+], ids=["module-skip", "pytestmark", "decorator", "skipif", "inside-existing-test"])
+def test_skipping_an_existing_test_is_weakening(new):
+    assert any("skip/xfail/only marker(s) added" in item for item in v.weakening("t.py", _OLD, new))
+
+
+def test_a_skip_in_a_new_test_method_is_not_weakening_but_on_an_existing_class_it_is():
+    old = "import pytest\n\nclass TestMath:\n    def test_add(self):\n        assert 1 + 1 == 2\n"
+    new_method = old + "\n    def test_clone(self):\n        pytest.skip('no git')\n"
+    assert v.weakening("t.py", old, new_method) == []
+    on_class = old.replace("class TestMath", "@pytest.mark.skip(reason='slow')\nclass TestMath")
+    assert any("skip" in item for item in v.weakening("t.py", old, on_class))
+
+
+def test_js_still_counts_every_added_skip():
+    old = "it('adds', () => {\n  expect(add(1, 1)).toBe(2);\n});\n"
+    assert any("skip" in item for item in v.weakening("a.test.js", old, old.replace("it('adds'", "it.skip('adds'")))
+
+
 # ─── claims ─────────────────────────────────────────────────
 
 

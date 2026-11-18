@@ -30,11 +30,13 @@ What Keelson does about it, all outside the model:
 
 from __future__ import annotations
 
+import ast
 import difflib
 import json
 import os
 import re
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -329,6 +331,53 @@ def _expectations(lines: list[str]) -> dict[str, str]:
     return found
 
 
+_PY_SKIP = re.compile(r"\b(skip|skipif|xfail|skipTest|skipUnless|skipIf)\b")
+
+
+def _py_skips(text: str) -> Counter | None:
+    """Skip markers in a Python test file, by what they skip: ``<module>`` or a test's qualified name.
+
+    A module-level ``pytest.skip``/``pytestmark``, skip decorators on a test function or class, and
+    ``pytest.skip``/``self.skipTest`` calls inside a test. Markers in helpers are left out: a helper only
+    skips the tests that call it, and those are counted where they call it. None: not parseable Python.
+    """
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+    found: Counter = Counter()
+
+    def marks(nodes) -> int:
+        return sum(1 for n in nodes for sub in ast.walk(n) if isinstance(sub, ast.Attribute | ast.Name)
+                   and _PY_SKIP.fullmatch(getattr(sub, "attr", getattr(sub, "id", ""))))
+
+    def visit(body, prefix: str) -> None:
+        for node in body:
+            if isinstance(node, ast.ClassDef):
+                name = prefix + node.name
+                found[name] += marks(node.decorator_list)
+                visit(node.body, name + ".")
+            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith("test"):
+                found[prefix + node.name] += marks(node.decorator_list) + marks(node.body)
+            elif not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                found[prefix.rstrip(".") or "<module>"] += marks([node])   # pytestmark, module-level skip
+    visit(tree.body, "")
+    return found
+
+
+def _skips_added(path: str, old: str, new: str) -> int:
+    """Skip markers added where they stop tests that already existed from running.
+
+    For Python, a skip inside a new test or a helper skips nothing that ran before, so it does not count.
+    Other languages: every added marker counts.
+    """
+    before, after = (_py_skips(old), _py_skips(new)) if path.endswith(".py") else (None, None)
+    if before is None or after is None:
+        return max(0, len(_SKIP.findall(new)) - len(_SKIP.findall(old)))
+    existing = set(before)
+    return sum(max(0, n - before.get(key, 0)) for key, n in after.items() if key in existing or key == "<module>")
+
+
 def weakening(path: str, old: str | None, new: str | None) -> list[str]:
     """How a change to a test file makes the tests weaker. Empty: it does not (as far as can be told)."""
     if old is None:
@@ -340,9 +389,9 @@ def weakening(path: str, old: str | None, new: str | None) -> list[str]:
     tests_before, tests_after = len(_TEST_DEF.findall(old)), len(_TEST_DEF.findall(new))
     if tests_after < tests_before:
         found.append(f"{path}: {tests_before - tests_after} test(s) removed")
-    skips_before, skips_after = len(_SKIP.findall(old)), len(_SKIP.findall(new))
-    if skips_after > skips_before:
-        found.append(f"{path}: {skips_after - skips_before} skip/xfail/only marker(s) added")
+    skips_added = _skips_added(path, old, new)
+    if skips_added:
+        found.append(f"{path}: {skips_added} skip/xfail/only marker(s) added")
     asserts_before, asserts_after = len(_ASSERT.findall(old)), len(_ASSERT.findall(new))
     if asserts_after < asserts_before and tests_after >= tests_before:
         found.append(f"{path}: {asserts_before - asserts_after} assertion(s) removed")
