@@ -103,7 +103,12 @@ window in which an event is lost.
 | `POST /api/sessions/{id}/chat` | Start a turn (409 if one is running) |
 | `POST /api/sessions/{id}/confirm` | Answer a permission prompt |
 | `POST /api/sessions/{id}/abort` | Stop the current turn |
-| `POST /api/sessions/{id}/mode` | Switch between `default`, `acceptEdits`, `dontAsk` |
+| `POST /api/sessions/{id}/mode` | Switch between `default`, `acceptEdits`, `plan`, `dontAsk` (409 while a turn runs) |
+| `POST /api/sessions/{id}/plan` | Answer a plan approval: `execute`, `clear-and-execute`, `manual-execute` or `keep-planning`, with feedback |
+| `GET /api/sessions/{id}/review?steps=N` | Last verification, the undoable turns, the diff and files of the last N turns |
+| `POST /api/sessions/{id}/undo` · `/redo` · `/revert` | Undo N turns (`force` to overwrite later edits), redo, put one file back (409 while a turn runs) |
+| `GET` · `POST /api/sessions/{id}/ledger` | Read the task ledger · `add`, `drop`, `goal` or `clear` a rule |
+| `GET /api/usage` | Today, this project today, this week, and the daily budget |
 | `GET /api/bench`, `/api/evolution`, `/api/skills`, `/api/casestudy`, `/api/perf`, `/api/doctor`, `/api/traces` | Read-only views |
 
 **Permission prompts.** The runtime already had a hook for this: the loop

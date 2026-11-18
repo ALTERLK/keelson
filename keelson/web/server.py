@@ -56,6 +56,28 @@ class CreateBody(BaseModel):
     resume: str | None = None
 
 
+class PlanBody(BaseModel):
+    request_id: str
+    choice: str                   # execute | clear-and-execute | manual-execute | keep-planning
+    feedback: str | None = None
+
+
+class UndoBody(BaseModel):
+    steps: int = 1
+    force: bool = False
+
+
+class RevertBody(BaseModel):
+    file: str
+    steps: int = 1
+
+
+class TaskBody(BaseModel):
+    action: str                   # add | drop | goal | clear
+    text: str = ""
+    index: int = -1
+
+
 def _trace_dirs() -> list[Path]:
     return [data.DEMO_TRACES_DIR, paths.project_traces_dir(), paths.legacy_traces_dir()]
 
@@ -108,6 +130,7 @@ def create_app(manager: SessionManager | None = None) -> FastAPI:
             "version": __version__,
             "modes": list(SWITCHABLE_MODES),
             "workspace": Path(os.getcwd()).name,
+            "workspace_path": os.getcwd(),
             "sessions": [s.describe() for s in manager.sessions()],
         }
 
@@ -210,11 +233,71 @@ def create_app(manager: SessionManager | None = None) -> FastAPI:
     @app.post("/api/sessions/{session_id}/mode")
     async def set_mode(session_id: str, body: ModeBody) -> dict[str, Any]:
         session = session_or_404(session_id)
+        if session.busy:
+            raise HTTPException(409, "a turn is running; stop it or wait")
         try:
             session.set_mode(body.mode)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
         return {"ok": True, "permission_mode": body.mode}
+
+    @app.post("/api/sessions/{session_id}/plan")
+    async def plan(session_id: str, body: PlanBody) -> dict[str, Any]:
+        if not session_or_404(session_id).resolve_plan(body.request_id, body.choice, body.feedback):
+            raise HTTPException(404, "no pending plan with that id, or an unknown choice")
+        return {"ok": True}
+
+    # -- one session: review, undo, task ledger ---------------------------------
+
+    def idle_session(session_id: str) -> Session:
+        session = session_or_404(session_id)
+        if session.busy:
+            raise HTTPException(409, "a turn is running; undo once it has ended")
+        return session
+
+    @app.get("/api/sessions/{session_id}/review")
+    async def review(session_id: str, steps: int = 1) -> dict[str, Any]:
+        session = session_or_404(session_id)
+        return await asyncio.to_thread(session.review, max(1, min(steps, 50)))
+
+    @app.post("/api/sessions/{session_id}/undo")
+    async def undo(session_id: str, body: UndoBody) -> dict[str, Any]:
+        session = idle_session(session_id)
+        return await asyncio.to_thread(session.undo, max(1, min(body.steps, 50)), body.force)
+
+    @app.post("/api/sessions/{session_id}/redo")
+    async def redo(session_id: str) -> dict[str, Any]:
+        return await asyncio.to_thread(idle_session(session_id).redo)
+
+    @app.post("/api/sessions/{session_id}/revert")
+    async def revert(session_id: str, body: RevertBody) -> dict[str, Any]:
+        session = idle_session(session_id)
+        if not body.file.strip():
+            raise HTTPException(422, "which file?")
+        return await asyncio.to_thread(session.revert, body.file.strip(), max(1, min(body.steps, 50)))
+
+    @app.get("/api/sessions/{session_id}/ledger")
+    async def ledger(session_id: str) -> dict[str, Any]:
+        return session_or_404(session_id).ledger()
+
+    @app.post("/api/sessions/{session_id}/ledger")
+    async def edit_ledger(session_id: str, body: TaskBody) -> dict[str, Any]:
+        try:
+            return session_or_404(session_id).edit_ledger(body.action, body.text, body.index)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @app.get("/api/usage")
+    async def usage_summary() -> dict[str, Any]:
+        from .. import usage
+
+        def row(t: Any) -> dict[str, Any]:
+            return {"turns": t.turns, "input_tokens": t.input_tokens, "output_tokens": t.output_tokens,
+                    "cache_hit_tokens": t.cache_hit_tokens, "cost_usd": round(t.cost_usd, 6),
+                    "hit_rate": None if t.hit_rate is None else round(t.hit_rate, 4)}
+
+        return {"today": row(usage.totals(days=1)), "project_today": row(usage.totals(days=1, project=os.getcwd())),
+                "week": row(usage.totals(days=7)), "budget": usage.daily_budget()}
 
     # -- read-only views ----------------------------------------------------------
 

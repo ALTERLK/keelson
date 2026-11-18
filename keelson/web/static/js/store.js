@@ -12,7 +12,7 @@ export function initialState() {
   return {
     items: [],          // conversation, in order: user | assistant | tool | notice | marker
     calls: new Map(),   // tool-call id -> its item
-    usage: { input_tokens: 0, output_tokens: 0, context_tokens: 0, context_window: 0, turns: 0 },
+    usage: { input_tokens: 0, output_tokens: 0, context_tokens: 0, context_window: 0, turns: 0, cache_hit_tokens: 0, cost_usd: null },
     counts: { toolCalls: 0, allowed: 0, asked: 0, denied: 0, loopGuard: 0, folds: 0, turns: 0, errors: 0 },
     stage: "idle",      // idle | model | gate | tool | result | fold
     busy: false,
@@ -24,6 +24,9 @@ export function initialState() {
     turnStarts: [],     // time each turn began, by index
     info: null,         // the session's own description (model, permission mode, ...)
     plan: [],           // the task ledger's plan: [{step, status}]
+    planRequest: null,  // {request_id, plan} while plan mode waits for approval
+    lastVerify: null,   // the last end-of-turn verification
+    reviewRev: 0,       // bumps when files may have changed (turn end, undo): the review tab refetches
     nextId: 1,
   };
 }
@@ -218,16 +221,28 @@ const handlers = {
     const { data } = event;
     if (data.phase !== "done") return;
     closeAssistant(state);
-    const level = data.status === "passed" ? "info" : data.status === "failed" ? "error" : "warning";
-    const head = { passed: "✓ Verified", failed: "✗ Checks fail", unverified: "! Not verified" }[data.status] || data.status;
-    const extra = [
-      ...(data.weakened || []).map((w) => `tests weakened — ${w}`),
-      ...(data.unproven || []).map((c) => `unproven claim — “${c}”`),
-      ...((data.out_of_scope || []).length ? [`changed outside the request's scope — ${data.out_of_scope.join(", ")}`] : []),
-      ...(data.warnings || []),
-    ];
-    push(state, { kind: "notice", level, text: [`${head}: ${data.detail || ""}`, ...extra].join("\n") });
+    // A badge of its own (console.js draws it): the verdict comes from what ran, not from the model's words.
+    state.lastVerify = {
+      status: data.status, detail: data.detail || "", weakened: data.weakened || [], unproven: data.unproven || [],
+      out_of_scope: data.out_of_scope || [], warnings: data.warnings || [], changed: data.changed || [],
+    };
+    push(state, { kind: "verify", ...state.lastVerify });
+    const head = { passed: "verified", failed: "checks fail", unverified: "not verified" }[data.status] || data.status;
     note(state, event, head, data.status === "passed" ? "" : data.status === "failed" ? "bad" : "warn");
+  },
+
+  plan_request(state, { data }) {
+    state.planRequest = { request_id: data.request_id, plan: data.plan || "" };
+  },
+  plan_resolved(state) { state.planRequest = null; },
+
+  undo(state, event) {
+    const { data } = event;
+    closeAssistant(state);
+    const files = [...(data.restored || []), ...(data.removed || [])];
+    push(state, { kind: "undo", ok: !!data.ok, verb: data.verb, message: data.message || "", files, conflicts: data.conflicts || [] });
+    state.reviewRev++;
+    note(state, event, `${data.verb}: ${data.ok ? "done" : "refused"}`, data.ok ? "info" : "warn");
   },
 
   notice(state, event) {
@@ -243,6 +258,8 @@ const handlers = {
     state.thinking = false;
     state.stage = "idle";
     state.confirm = null;
+    state.planRequest = null;
+    state.reviewRev++;
     state.counts.turns++;
     state.turn++;
     for (const item of state.items) {
@@ -258,9 +275,15 @@ export function apply(state, event) {
   return state;
 }
 
-// Same rough list price the terminal uses for its on-screen estimate.
+// The runtime's own estimate (per-model prices, cache hits counted) when it sent one;
+// recordings made before it did fall back to a rough list price.
 export function estimateCost(usage) {
+  if (usage.cost_usd !== null && usage.cost_usd !== undefined) return usage.cost_usd;
   return (usage.input_tokens / 1e6) * 3 + (usage.output_tokens / 1e6) * 15;
+}
+
+export function cacheHitRate(usage) {
+  return usage.input_tokens ? Math.min(usage.cache_hit_tokens || 0, usage.input_tokens) / usage.input_tokens : null;
 }
 
 /** Where one turn's time went, by kind of step. Waiting on a person is kept apart. */

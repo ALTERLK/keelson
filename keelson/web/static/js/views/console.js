@@ -1,5 +1,6 @@
 // Console view: the conversation, the composer / replay bar, and the inspector.
 
+import { ask } from "../ask.js";
 import { captions, help, pick } from "../content.js";
 import { clear, fmtCount, fmtDuration, h } from "../dom.js";
 import { highlight } from "../highlight.js";
@@ -7,10 +8,10 @@ import { t } from "../i18n.js";
 import { renderMarkdown } from "../markdown.js";
 import {
   actions, continueTour, ensureSomethingToShow, exitReplay, loadReplay, newSession, restartReplay,
-  session, setGuided, subscribe,
+  session, setGuided, subscribe, takeDraft,
 } from "../session.js";
-import { estimateCost, turnBreakdown } from "../store.js";
-import { attempt } from "../toast.js";
+import { cacheHitRate, estimateCost, turnBreakdown } from "../store.js";
+import { attempt, toast } from "../toast.js";
 import { renderToolBody, toolIcon } from "../toolview.js";
 
 const STAGES = ["model", "gate", "tool", "result", "fold"];
@@ -60,7 +61,7 @@ export function mount(root) {
     }
 
     if (!state.items.length) {
-      const key = `${session.mode}|${session.id}|${t("console.send")}`;
+      const key = `${session.mode}|${session.booting}|${session.id}|${t("console.send")}`;
       if (feed.dataset.emptyKey !== key) { clear(feed).append(emptyState()); feed.dataset.emptyKey = key; }
     } else {
       delete feed.dataset.emptyKey;
@@ -106,10 +107,37 @@ export function mount(root) {
         return renderTool(item, previous);
       case "notice":
         return h("div", { class: `notice ${item.level}` }, item.text);
+      case "verify":
+        return verifyBadge(item);
+      case "undo":
+        return h("div", { class: `notice ${item.ok ? "info" : "warning"}` },
+          h("strong", {}, t(`undo.${item.verb}`) + " · "), item.message,
+          item.files.length ? h("div", { class: "muted small" }, item.files.slice(0, 12).join(", ")) : null,
+          item.conflicts.length ? h("div", { class: "small" }, t("review.conflicts") + item.conflicts.join(", ")) : null);
       default:
         return h("div", { class: `marker ${item.tone || ""}`, "data-key": item.key || "" },
           h("span", { class: "marker-line" }), h("span", { class: "marker-text" }, item.text), h("span", { class: "marker-line" }));
     }
+  }
+
+  // The end-of-turn verdict, from the checks that actually ran.
+  function verifyBadge(v, { compact = false } = {}) {
+    const tone = v.status === "passed" ? "ok" : v.status === "failed" ? "bad" : "warn";
+    const glyph = v.status === "passed" ? "✓" : v.status === "failed" ? "✗" : "!";
+    const flags = [
+      ...v.weakened.map((w) => [t("verify.weakened"), w]),
+      ...v.unproven.map((c) => [t("verify.unproven"), `“${c}”`]),
+      ...(v.out_of_scope.length ? [[t("verify.outOfScope"), v.out_of_scope.join(", ")]] : []),
+      ...v.warnings.map((w) => [t("verify.warning"), w]),
+    ];
+    return h("div", { class: `verify-badge ${tone}${compact ? " compact" : ""}` },
+      h("div", { class: "verify-head" },
+        h("span", { class: "verify-glyph" }, glyph),
+        h("strong", {}, t(`verify.${v.status}`)),
+        h("span", { class: "verify-detail" }, v.detail)),
+      flags.length ? h("ul", { class: "verify-flags" }, flags.map(([label, text]) =>
+        h("li", {}, h("span", { class: "chip warn" }, label), " ", text))) : null,
+    );
   }
 
   function gateChip(item) {
@@ -149,7 +177,8 @@ export function mount(root) {
 
   function emptyState() {
     if (session.mode !== "live") {
-      return h("div", { class: "empty" }, h("p", {}, t(session.traces.length ? "common.loading" : "console.noTrace")));
+      const waiting = session.booting || session.traces.length;
+      return h("div", { class: "empty" }, h("p", {}, t(waiting ? "common.loading" : "console.noTrace")));
     }
     return h("div", { class: "empty" },
       h("h2", {}, t("console.empty.title")),
@@ -203,7 +232,7 @@ export function mount(root) {
     const info = state.info || {};
     // The dock holds form controls, so rebuild it only when its inputs change —
     // otherwise typing would be interrupted on every streamed token.
-    const key = [mode, session.id, state.busy, info.permission_mode, info.model, session.traceId, player?.playing, player?.speed,
+    const key = [mode, session.booting, session.id, state.busy, info.permission_mode, info.model, session.traceId, player?.playing, player?.speed,
       player?.finished, session.guided, !!session.caption, t("console.send")].join("|");
     if (key === dockKey) {
       if (player) dock.querySelector(".progress-fill")?.style.setProperty("width", `${player.progress * 100}%`);
@@ -245,7 +274,8 @@ export function mount(root) {
     }
 
     if (mode !== "live") {
-      dock.append(h("div", { class: "replay-bar" }, h("span", { class: "muted" }, t("console.replayMode"))));
+      const text = session.booting ? t("status.connecting") : t("console.replayMode");
+      dock.append(h("div", { class: "replay-bar" }, h("span", { class: "muted" }, text)));
       return;
     }
 
@@ -262,12 +292,15 @@ export function mount(root) {
       oninput: () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 180) + "px"; },
     });
 
+    const draft = takeDraft();
+    if (draft) input.value = draft;
+
     dock.append(h("div", { class: "composer" },
       input,
       h("div", { class: "composer-row" },
         h("label", { class: "mode" }, t("console.mode"),
           h("select", { class: "select", disabled: state.busy, onchange: (e) => attempt(() => actions.setMode(e.target.value)) },
-            (server.modes || []).map((name) => h("option", { value: name, selected: name === info.permission_mode }, name)))),
+            (server.modes || []).map((name) => h("option", { value: name, selected: name === info.permission_mode }, t(`mode.${name}`, name))))),
         info.model ? h("span", { class: "muted small" }, info.model) : null,
         h("span", { class: "spacer" }),
         state.busy
@@ -311,6 +344,9 @@ export function mount(root) {
           h("span", {}, t("inspect.context")),
           h("span", { class: "muted" }, windowSize ? `${fmtCount(usage.context_tokens)} / ${fmtCount(windowSize)}` : "—")),
         h("div", { class: "meter" + (fraction > 0.8 ? " hot" : "") }, h("div", { class: "meter-fill", style: `width:${(fraction * 100).toFixed(1)}%` })),
+        cacheHitRate(usage) !== null ? h("div", { class: "meter-row" },
+          h("span", { "data-tip": t("inspect.cache.tip") }, t("inspect.cache")),
+          h("span", { class: "muted" }, `${(cacheHitRate(usage) * 100).toFixed(0)}% · ${fmtCount(usage.cache_hit_tokens)}`)) : null,
       ),
       h("section", { class: "panel" },
         panelTitle(t("inspect.gate"), "gate"),
@@ -381,10 +417,180 @@ export function mount(root) {
         : h("p", { class: "muted" }, t("inspect.timeline.empty")))];
   }
 
+  // -- review: what the last turns changed, file by file, and undo ---------------------
+
+  const review = { key: "", steps: 1, data: null, loading: false, error: "" };
+
+  function loadReview() {
+    const key = `${session.id}|${session.state.reviewRev}|${review.steps}`;
+    if (review.key === key || review.loading) return;
+    review.key = key;
+    review.loading = true;
+    actions.review(review.steps)
+      .then((data) => { review.data = data; review.error = ""; })
+      .catch((error) => { review.error = error.message || String(error); })
+      .finally(() => { review.loading = false; schedule(); });
+  }
+
+  /** A unified diff split per file: git sections and the plain ones Keelson writes for files outside git. */
+  function splitDiff(text) {
+    const files = [];
+    let current = null;
+    for (const line of (text || "").split("\n")) {
+      const git = line.startsWith("diff --git ");
+      const plain = line.startsWith("--- ") && (!current || !current.git || current.hunk);
+      if (git || plain) { current = { file: "", git, hunk: false, lines: [] }; files.push(current); }
+      if (!current) continue;
+      if (git) { const match = line.match(/ b\/(.+)$/); if (match) current.file = match[1]; }
+      if (line.startsWith("+++ ") && !current.file) current.file = line.slice(4).replace(/^b\//, "");
+      if (line.startsWith("@@")) current.hunk = true;
+      current.lines.push(line);
+    }
+    return files;
+  }
+
+  function diffView(lines) {
+    return h("pre", { class: "diff" }, lines.map((line) => {
+      const cls = line.startsWith("@@") ? "diff-hunk"
+        : line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff --git") || line.startsWith("index ") ? "diff-meta"
+          : line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-del" : "";
+      return h("span", { class: cls }, line + "\n");
+    }));
+  }
+
+  async function undoTurns(steps) {
+    const question = t(steps === 1 ? "review.undoTurn.q" : "review.undoN.q").replace("{n}", steps);
+    const okLabel = t(steps === 1 ? "review.undoTurn" : "review.undoN").replace("{n}", steps);
+    if (!await ask(question, { okLabel })) return;
+    let result = await attempt(() => actions.undo(steps));
+    if (result && !result.ok && result.conflicts?.length
+        && await ask(t("review.force.q"), { details: result.conflicts, okLabel: t("ask.overwrite"), danger: true })) {
+      result = await attempt(() => actions.undo(steps, true));
+    }
+    if (result) toast(result.message, result.ok ? "" : "bad");
+  }
+
+  async function revertFile(file) {
+    const question = t("review.revert.q").replace("{file}", file).replace("{n}", review.steps);
+    if (!await ask(question, { okLabel: t("review.revert") })) return;
+    const result = await attempt(() => actions.revert(file, review.steps));
+    if (result) toast(result.message, result.ok ? "" : "bad");
+  }
+
+  function reviewPanels(state) {
+    if (session.mode !== "live") {
+      return [h("section", { class: "panel" }, panelTitle(t("inspect.tab.review")), h("p", { class: "muted" }, t("review.liveOnly")))];
+    }
+    loadReview();
+    const out = [];
+    if (state.lastVerify) {
+      out.push(h("section", { class: "panel" }, panelTitle(t("review.verify"), "verify"), verifyBadge(state.lastVerify, { compact: true })));
+    }
+    const data = review.data;
+    if (!data) {
+      out.push(h("section", { class: "panel" }, h("p", { class: "muted" }, review.error || t("common.loading"))));
+      return out;
+    }
+    if (!data.available) {
+      out.push(h("section", { class: "panel" }, h("p", { class: "muted" }, t("review.off"))));
+      return out;
+    }
+    const redoButton = h("button", { type: "button", class: "btn quiet", disabled: state.busy,
+      onclick: async () => { const r = await attempt(actions.redo); if (r) toast(r.message, r.ok ? "" : "bad"); } }, t("review.redo"));
+    if (!data.turns.length) {
+      out.push(h("section", { class: "panel" }, panelTitle(t("review.changes"), "undo"), h("p", { class: "muted" }, t("review.none")),
+        h("div", { class: "review-actions" }, redoButton)));
+      return out;
+    }
+    const outOfScope = new Set(state.lastVerify?.out_of_scope || []);
+    const weakened = state.lastVerify?.weakened || [];
+    const parts = splitDiff(data.diff);
+    out.push(h("section", { class: "panel" },
+      panelTitle(t("review.changes"), "undo"),
+      h("select", { class: "select wide", "aria-label": t("review.changes"),
+        onchange: (e) => { review.steps = Number(e.target.value); review.data = null; schedule(); } },
+        data.turns.map((row) => h("option", { value: row.steps, selected: row.steps === review.steps },
+          `${row.steps === 1 ? t("review.lastTurn") : t("review.lastN").replace("{n}", row.steps)} · ${row.time} · ${row.label}`))),
+      h("p", { class: "muted small" },
+        t("review.fileCount").replace("{n}", data.files.length), " · ",
+        data.covers_shell ? t("review.coversShell") : t("review.editsOnly") + (data.reason ? ` (${data.reason})` : "")),
+      h("div", { class: "review-actions" },
+        h("button", { type: "button", class: "btn danger", disabled: state.busy, onclick: () => undoTurns(review.steps) },
+          review.steps === 1 ? t("review.undoTurn") : t("review.undoN").replace("{n}", review.steps)),
+        redoButton),
+    ));
+    out.push(h("section", { class: "panel grow review-files" }, data.files.map((file) => {
+      const part = parts.find((p) => p.file === file);
+      const flags = [
+        outOfScope.has(file) ? h("span", { class: "chip warn" }, t("review.outOfScope")) : null,
+        weakened.some((w) => w.includes(file)) ? h("span", { class: "chip bad" }, t("review.weakened")) : null,
+      ];
+      return h("details", { class: "review-file", open: data.files.length <= 3 },
+        h("summary", {},
+          h("code", { class: "review-name" }, file), ...flags,
+          h("span", { class: "spacer" }),
+          h("button", { type: "button", class: "btn quiet small", disabled: state.busy,
+            onclick: (e) => { e.preventDefault(); revertFile(file); } }, t("review.revert"))),
+        part ? diffView(part.lines) : h("p", { class: "muted small" }, t("review.noDiff")));
+    })));
+    return out;
+  }
+
+  // -- task ledger ------------------------------------------------------------------------
+
+  const ledger = { key: "", data: null, loading: false };
+
+  function loadLedger(force = false) {
+    const key = `${session.id}|${session.state.counts.turns}|${session.state.plan.length}`;
+    if ((!force && ledger.key === key) || ledger.loading) return;
+    ledger.key = key;
+    ledger.loading = true;
+    actions.ledger().then((data) => { ledger.data = data; }).catch(() => {}).finally(() => { ledger.loading = false; schedule(); });
+  }
+
+  async function editLedger(action, text = "", index = -1) {
+    const data = await attempt(() => actions.editLedger(action, text, index));
+    if (data) { ledger.data = data; schedule(); }
+  }
+
+  function taskPanels() {
+    if (session.mode !== "live") {
+      return [h("section", { class: "panel" }, panelTitle(t("inspect.tab.task")), h("p", { class: "muted" }, t("review.liveOnly")))];
+    }
+    loadLedger();
+    const data = ledger.data;
+    if (!data) return [h("section", { class: "panel" }, h("p", { class: "muted" }, t("common.loading")))];
+    const marks = { done: "✓", in_progress: "▸", blocked: "!", pending: "○" };
+    const ruleInput = h("input", { class: "field", placeholder: t("task.addRule.placeholder"),
+      onkeydown: (e) => { if (e.key === "Enter" && e.target.value.trim()) { editLedger("add", e.target.value); e.target.value = ""; } } });
+    return [
+      h("section", { class: "panel" },
+        panelTitle(t("task.goal"), "ledger"),
+        h("p", {}, data.goal ? data.goal.split("\n")[0].slice(0, 300) : h("span", { class: "muted" }, t("task.empty")))),
+      h("section", { class: "panel" },
+        panelTitle(t("task.rules")),
+        data.constraints.length ? h("ol", { class: "ledger-rules" }, data.constraints.map((c, i) =>
+          h("li", {}, h("span", {}, `“${c.text}”`), c.count > 1 ? h("span", { class: "chip" }, `×${c.count}`) : null,
+            h("button", { type: "button", class: "ghost small", title: t("task.drop"), "aria-label": t("task.drop"),
+              onclick: () => editLedger("drop", "", i) }, "×"))))
+          : h("p", { class: "muted small" }, t("task.noRules")),
+        ruleInput),
+      data.plan.length ? h("section", { class: "panel" },
+        panelTitle(t("task.plan")),
+        h("ul", { class: "ledger-plan" }, data.plan.map((s) => h("li", { class: s.status }, h("span", {}, marks[s.status] || "○"), s.step))))
+        : null,
+      data.files.length ? h("section", { class: "panel" },
+        panelTitle(t("task.files")), h("p", { class: "small" }, data.files.slice(-20).join(", "))) : null,
+      data.last_verify ? h("section", { class: "panel" },
+        panelTitle(t("task.lastVerify")), h("p", { class: "small" }, `${data.last_verify.at} · ${t(`verify.${data.last_verify.status}`)} — ${data.last_verify.detail}`)) : null,
+    ].filter(Boolean);
+  }
+
   function renderInspector() {
     const { state } = session;
-    const tabs = ["overview", "perf", "timeline"];
-    const body = inspectorTab === "perf" ? perfPanels(state) : inspectorTab === "timeline" ? timelinePanel(state) : overviewPanels(state);
+    const tabs = ["overview", "review", "task", "perf", "timeline"];
+    const body = inspectorTab === "perf" ? perfPanels(state) : inspectorTab === "timeline" ? timelinePanel(state)
+      : inspectorTab === "review" ? reviewPanels(state) : inspectorTab === "task" ? taskPanels(state) : overviewPanels(state);
     const scroll = inspector.querySelector(".inspector-body")?.scrollTop ?? 0;
     clear(inspector).append(
       h("div", { class: "tabs", role: "tablist" }, tabs.map((tab) =>
@@ -404,12 +610,34 @@ export function mount(root) {
 
   let shownConfirm = null;
 
+  function renderPlanRequest(request) {
+    const interactive = session.mode === "live";
+    const feedback = h("textarea", { class: "confirm-reason", rows: 2, placeholder: t("plan.feedback"), disabled: !interactive });
+    const answer = (choice) => attempt(() => actions.plan(request.request_id, choice, choice === "keep-planning" ? feedback.value : ""));
+    const button = (label, choice, cls = "btn") => h("button", { type: "button", class: cls, disabled: !interactive, onclick: () => answer(choice) }, label);
+    const go = button(t("plan.execute"), "execute", "btn primary");
+    modalRoot.append(h("div", { class: "modal-backdrop" + (interactive ? "" : " passive") },
+      h("div", { class: "modal wide", role: "dialog", "aria-modal": "true", "aria-labelledby": "plan-title" },
+        h("h2", { id: "plan-title" }, t("plan.title")),
+        h("p", {}, t("plan.body")),
+        h("div", { class: "plan-body prose", html: renderMarkdown(request.plan) }),
+        feedback,
+        h("div", { class: "modal-actions" },
+          button(t("plan.keep"), "keep-planning"),
+          button(t("plan.manual"), "manual-execute"),
+          go),
+      )));
+    if (interactive) go.focus();
+  }
+
   function renderConfirm() {
+    const plan = session.state.planRequest;
     const pending = session.state.confirm;
-    const id = pending?.request_id ?? null;
+    const id = pending?.request_id ?? (plan ? "plan:" + plan.request_id : null);
     if (id === shownConfirm) return;
     shownConfirm = id;
     clear(modalRoot);
+    if (!pending && plan) { renderPlanRequest(plan); return; }
     if (!pending) return;
 
     const interactive = session.mode === "live";

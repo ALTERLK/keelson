@@ -59,6 +59,9 @@ SCOPE = "scope"                        # {paths, reason, added}
 TASK = "task"                          # {plan: [{step, status}], decision}
 VERIFY = "verify"                    # {phase: running|done, commands | status, detail, runs, weakened, unproven}
 TURN_END = "turn_end"                  # {}
+PLAN_REQUEST = "plan_request"          # {request_id, plan}   plan mode is done: approve it? (web prompt)
+PLAN_RESOLVED = "plan_resolved"        # {request_id, choice}
+UNDO = "undo"                          # {verb, ok, message, restored, removed, conflicts}  /undo from the console
 SESSION = "session"                    # {model, permission_mode, cwd, ...}
 
 Subscriber = Callable[["Event"], None]

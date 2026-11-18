@@ -69,6 +69,10 @@ new ones. That is the right place to begin — understand it first.
 
 > Prefer not to install anything? The hosted demo at
 > <https://alterlk.github.io/keelson/> is the same console in replay mode.
+>
+> On Windows you can also skip Python entirely: the desktop app (`Keelson.exe`)
+> walks you through the model, the project folder and a first task. See
+> [The desktop app](features.md#the-desktop-app).
 
 ## Step 2: watch a guided replay
 

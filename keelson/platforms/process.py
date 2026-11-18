@@ -21,6 +21,51 @@ def no_window_flags() -> dict[str, int]:
     return {}
 
 
+def pid_alive(pid: int) -> bool:
+    """Whether a process with this id is still running."""
+    if pid <= 0:
+        return False
+    if _WINDOWS:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        handle = kernel32.OpenProcess(0x1000, False, pid)      # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = wintypes.DWORD()
+            ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return bool(ok) and code.value == 259                # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def exit_when_parent_dies(pid: int, interval: float = 2.0) -> None:
+    """Watch ``pid`` from a daemon thread; end this process when it is gone.
+
+    The desktop app's console server runs as a child process. If the window
+    crashes or is killed, nothing would stop the server; this does.
+    """
+    import threading
+    import time
+
+    def watch() -> None:
+        while pid_alive(pid):
+            time.sleep(interval)
+        os._exit(0)
+
+    threading.Thread(target=watch, name="parent-watch", daemon=True).start()
+
+
 def kill_process_tree(pid: int) -> None:
     """Stop a process *and everything it started*.
 

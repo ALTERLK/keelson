@@ -96,6 +96,7 @@ def describe_trace(path: Path) -> dict[str, Any]:
         "model": meta.get("model", ""),
         "recorded_at": meta.get("recorded_at", ""),
         "events": len(evs),
+        "messages": sum(1 for e in evs if e["type"] == events.USER_MESSAGE),
         "duration_s": round(evs[-1]["t"], 1) if evs else 0.0,
         "tool_calls": sum(1 for e in evs if e["type"] == events.TOOL_CALL),
     }

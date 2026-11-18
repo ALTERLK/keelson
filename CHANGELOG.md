@@ -6,6 +6,27 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
 ## Unreleased — 0.4.0 (in progress)
 
 ### Added
+- **The desktop app** (phase 6). `keelson desktop [FOLDER]` (extra `desktop`)
+  shows the console in its own window (pywebview + WebView2) and runs the
+  console server as a child process in the chosen project folder; switching
+  projects restarts it there, and closing the window stops it and everything it
+  started (`--parent-pid` makes an orphaned server exit by itself).
+  `scripts/build_desktop.py` builds `Keelson.exe` (windowed, no console windows:
+  every subprocess runs with `CREATE_NO_WINDOW`) and `keelson-cli.exe` into one
+  PyInstaller folder, with the console's data included.
+- **First-run wizard**: model (DeepSeek preset, key tested with one request
+  before it is saved), project folder, the checks found there (one click to put
+  them in `KEELSON.md`) and three suggested first tasks; a recent-projects list
+  after that. The key is read from the config files when needed and never kept
+  in the window process's environment.
+- **Console: review, undo, task, plan.** A Review tab with the last turn's
+  verification badge, each changed file's diff with out-of-scope and
+  weakened-test marks, per-file **Put back** and whole-turn **Undo / Redo**
+  (shell changes included); a Task tab that shows and edits the task ledger; a
+  plan-approval dialog in plan mode; verification badges in the conversation;
+  the cache hit rate in the overview. New endpoints: `GET …/review`,
+  `POST …/undo|redo|revert` (409 while a turn runs), `GET|POST …/ledger`,
+  `POST …/plan`, `GET /api/usage`; `/mode` accepts `plan`.
 - **A terminal you can work in** (phase 5). The input line (prompt_toolkit)
   sends on Enter, adds a line on Alt+Enter, keeps pasted blocks whole, keeps
   history across sessions and completes `/commands`, `@files` and paths; a
@@ -83,6 +104,16 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
   folded memory too and keeps the session's id.
 - Entering plan mode on an OpenAI-compatible provider did not update the system
   message the model saw.
+- Resuming a session in the console restored only the messages; it now brings
+  back the task ledger and folded memory too, as `--resume` does.
+- Opening the console straight at `#/console` could start a demo replay before
+  the live server answered; the page now waits for it, and says "connecting"
+  instead of "no model configured" meanwhile.
+- The console's history listed sessions nobody had typed into.
+- Undo / redo / revert messages and the verification badge's reasons were
+  English in a Chinese interface; they now follow `KEELSON_LANG`. The console
+  asks before undoing in its own dialog instead of the browser's.
+- Git and MCP subprocesses opened a console window when the parent had none.
 
 ### Changed
 - **Permissions are decided by reversibility.** What `/undo` covers (edits and

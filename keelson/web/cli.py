@@ -24,6 +24,8 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--model", "-m", default=None)
     parser.add_argument("--api-base", default=None)
     parser.add_argument("--max-turns", type=int, default=None)
+    # Used by `keelson desktop`, which runs this server as a child process.
+    parser.add_argument("--parent-pid", type=int, default=None, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -67,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     from .. import paths, ui
+
+    if args.parent_pid:
+        from ..platforms.process import exit_when_parent_dies
+
+        exit_when_parent_dies(args.parent_pid)
 
     if args.host not in _LOOPBACK and not args.in_container:
         print(

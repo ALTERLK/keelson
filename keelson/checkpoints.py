@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import paths
+from .i18n import pick
 from .platforms import no_window_flags
 
 GIT, FILES, OFF = "git", "files", "off"
@@ -415,11 +416,11 @@ class Checkpoints:
         """Put back the files the last ``steps`` turns changed (shell changes included)."""
         with self._lock:
             if self._open is not None:
-                return Report(False, "A turn is still running; stop it first.")
+                return Report(False, pick("这一轮还在进行，先停下它。", "A turn is still running; stop it first."))
             turns = self._load()["turns"]
             if steps < 1 or steps > len(turns):
-                return Report(False, "Nothing to undo." if not turns else
-                              f"Only {len(turns)} turn(s) can be undone.")
+                return Report(False, pick("没有可以撤销的。", "Nothing to undo.") if not turns else
+                              pick(f"只能撤销 {len(turns)} 轮。", f"Only {len(turns)} turn(s) can be undone."))
             undone = turns[-steps:]
             first, last = undone[0], undone[-1]
             report = Report(True, "")
@@ -430,7 +431,8 @@ class Checkpoints:
             if self.mode == GIT and first["start"]:
                 current = self._safe_snapshot()
                 if current is None:
-                    return Report(False, f"Could not take a snapshot before undoing: {self.reason}")
+                    return Report(False, pick(f"撤销前没能拍下快照：{self.reason}",
+                                              f"Could not take a snapshot before undoing: {self.reason}"))
                 end = last["end"] or current
                 touched = self._changed(first["start"], end)
                 conflicts = sorted(set(self._changed(end, current)) & set(touched))
@@ -441,8 +443,10 @@ class Checkpoints:
             conflicts += [self._display(Path(p)) for p in extras
                           if self._store_file(Path(p)) != self._latest_after(undone, p)]
             if conflicts and not force:
-                return Report(False, "These files were changed after that turn ended; undoing would overwrite "
-                              "those changes. Run `/undo --force` to undo anyway.", conflicts=conflicts)
+                return Report(False, pick("这些文件在那一轮结束后又被改过，撤销会覆盖这些改动。"
+                                          "确定要撤销就用 `/undo --force`。",
+                                          "These files were changed after that turn ended; undoing would overwrite "
+                                          "those changes. Run `/undo --force` to undo anyway."), conflicts=conflicts)
 
             if current is not None:
                 self._restore_paths(first["start"], touched, report)
@@ -455,8 +459,9 @@ class Checkpoints:
             self._load()["redo"].append(redo)
             self._save()
             n = len(report.restored) + len(report.removed)
-            report.message = (f"Undid {steps} turn(s): {n} file(s) put back as they were before "
-                              f"\"{first['label']}\". /redo reverses this.")
+            report.message = pick(f"已撤销 {steps} 轮：{n} 个文件恢复到“{first['label']}”之前的样子。/redo 可以反悔。",
+                                  f"Undid {steps} turn(s): {n} file(s) put back as they were before "
+                                  f"\"{first['label']}\". /redo reverses this.")
             return report
 
     @staticmethod
@@ -469,10 +474,10 @@ class Checkpoints:
     def redo(self) -> Report:
         with self._lock:
             if self._open is not None:
-                return Report(False, "A turn is still running; stop it first.")
+                return Report(False, pick("这一轮还在进行，先停下它。", "A turn is still running; stop it first."))
             stack = self._load()["redo"]
             if not stack:
-                return Report(False, "Nothing to redo.")
+                return Report(False, pick("没有可以重做的。", "Nothing to redo."))
             entry = stack.pop()
             report = Report(True, "")
             if entry["tree"] and entry["paths"]:
@@ -481,7 +486,7 @@ class Checkpoints:
                 self._restore_extra(path, digest, report)
             self._load()["turns"].extend(entry["turns"])
             self._save()
-            report.message = f"Redid {len(entry['turns'])} turn(s)."
+            report.message = pick(f"已重做 {len(entry['turns'])} 轮。", f"Redid {len(entry['turns'])} turn(s).")
             return report
 
     def revert(self, file: str, steps: int = 1) -> Report:
@@ -489,7 +494,7 @@ class Checkpoints:
         with self._lock:
             turns = self._load()["turns"]
             if steps < 1 or steps > len(turns):
-                return Report(False, "No checkpoint that far back.")
+                return Report(False, pick("没有那么早的检查点。", "No checkpoint that far back."))
             first = turns[-steps]
             target = Path(file)
             if not target.is_absolute():
@@ -502,13 +507,16 @@ class Checkpoints:
                     break
             else:
                 if self.mode != GIT or not first["start"]:
-                    return Report(False, f"No saved copy of {file} in that checkpoint.")
+                    return Report(False, pick(f"那个检查点里没有 {file} 的副本。",
+                                              f"No saved copy of {file} in that checkpoint."))
                 try:
                     rel = Path(key).relative_to(self.workspace).as_posix()
                 except ValueError:
-                    return Report(False, f"{file} is outside the project and Keelson did not change it.")
+                    return Report(False, pick(f"{file} 在项目之外，Keelson 也没有改过它。",
+                                              f"{file} is outside the project and Keelson did not change it."))
                 self._restore_paths(first["start"], [rel], report)
-            report.message = f"Put {file} back as it was before \"{first['label']}\"."
+            report.message = pick(f"{file} 已恢复到“{first['label']}”之前的样子。",
+                                  f"Put {file} back as it was before \"{first['label']}\".")
             return report
 
     def diff(self, steps: int = 1, *, max_chars: int = 200_000) -> tuple[str, list[str]]:

@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from keelson import paths
+from keelson.platforms import no_window_flags
 
 from .ui import print_error, print_info
 
@@ -78,6 +79,7 @@ class McpConnection:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=merged_env,
+            **no_window_flags(),        # the desktop app has no console for it to borrow
         )
         # 后台持续读取 stdout。这里不阻塞 connect()，否则后续无法继续初始化。
         self._reader_task = asyncio.create_task(self._read_loop())

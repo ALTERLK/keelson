@@ -50,7 +50,10 @@ function renderStatus() {
   const pill = document.getElementById("status");
   const text = document.getElementById("status-text");
   let kind = "offline", label = t("status.offline");
-  if (session.mode === "live") {
+  if (session.booting && !isStatic) {
+    kind = "wait";
+    label = t("status.connecting");
+  } else if (session.mode === "live") {
     kind = session.connection === "open" ? "live" : "wait";
     label = session.connection === "open" ? `${t("status.live")} · ${session.state.info?.model || ""}` : t("status.reconnecting");
   } else if (session.mode === "replay") {
@@ -108,6 +111,22 @@ function firstPrompt() {
   return session.state.items.find((item) => item.kind === "user")?.text.slice(0, 80) || "";
 }
 
+// -- desktop app: which project this window has open -------------------------------
+
+function renderProjectBar() {
+  document.querySelector(".project-bar")?.remove();
+  if (!window.pywebview?.api || !session.server.live) return;
+  sessionsEl.before(h("div", { class: "project-bar", title: session.server.workspace_path || "" },
+    h("strong", {}, session.server.workspace || ""),
+    h("button", {
+      type: "button", class: "btn quiet small",
+      onclick: async () => { const url = await window.pywebview.api.show_projects(); if (url) location.assign(url); },
+    },
+      t("desktop.switch"))));
+}
+
+window.addEventListener("pywebviewready", renderProjectBar);
+
 // -- theme & language ----------------------------------------------------------
 
 function currentTheme() {
@@ -129,7 +148,7 @@ document.getElementById("theme-toggle").addEventListener("click", toggleTheme);
 langToggle.addEventListener("click", toggleLang);
 document.getElementById("palette-trigger").addEventListener("click", openPalette);
 
-onLangChange(() => { renderLangToggle(); renderStatus(); sessionsKey = ""; renderSessions(); show(true); });
+onLangChange(() => { renderLangToggle(); renderStatus(); sessionsKey = ""; renderSessions(); renderProjectBar(); show(true); });
 
 // -- command palette -----------------------------------------------------------
 
@@ -175,6 +194,7 @@ show();
 boot().then(() => {
   renderStatus();
   renderSessions();
+  renderProjectBar();
   if (currentRoute === "console") ensureSomethingToShow();
   else if (currentRoute !== "skills" && currentRoute !== "bench") show(true); // pages that list traces or status
   // Other tabs and finished turns change the listing; keep the side bar honest.

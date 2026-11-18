@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 from keelson import paths
+from keelson.platforms import no_window_flags
 
 from .memory import build_memory_prompt_section
 from .skills import build_skill_descriptions
@@ -216,7 +217,7 @@ def load_claude_md() -> str:
 def get_git_context() -> str:
     """Branch, recent commits and status; empty outside a git repository."""
     try:
-        opts = {"encoding": "utf-8", "errors": "replace", "timeout": 3, "capture_output": True}
+        opts = {"encoding": "utf-8", "errors": "replace", "timeout": 3, "capture_output": True, **no_window_flags()}
         branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], **opts).stdout.strip()
         if not branch:
             return ""

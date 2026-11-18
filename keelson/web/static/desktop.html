@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keelson</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    try {
+      var saved = localStorage.getItem("keelson-theme");
+      if (saved) document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  </script>
+</head>
+<body class="desktop">
+  <!-- The desktop app's own page: first-run wizard and project picker.
+       It talks to Python through window.pywebview.api (keelson/desktop.py). -->
+  <main class="wizard" id="wizard" aria-live="polite"></main>
+  <div class="toasts" id="toast-root" aria-live="polite"></div>
+  <script type="module" src="js/desktop.js"></script>
+</body>
+</html>

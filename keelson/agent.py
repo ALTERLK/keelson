@@ -19,6 +19,7 @@ from keelson import checkpoints, events, models, paths, safety, trace, usage
 from keelson import ledger as ledger_mod
 from keelson import scope as scope_mod
 from keelson import verify as verify_mod
+from keelson.i18n import pick
 from keelson.mcp_client import McpManager
 from keelson.memory import MemoryPrefetch, format_memories_for_injection, start_memory_prefetch
 from keelson.prompt import build_system_prompt, get_git_context
@@ -954,10 +955,11 @@ class Agent:
         code_changed = [p for p in changed if not verify_mod.is_doc(p)]
         commands, source = verify_mod.commands_for()
         if not code_changed:
-            outcome = Outcome(verify_mod.UNVERIFIED, "only documentation changed")
+            outcome = Outcome(verify_mod.UNVERIFIED, pick("只改了文档", "only documentation changed"))
         elif not commands:
-            outcome = Outcome(verify_mod.UNVERIFIED, "no check command for this project: add a ## Verify "
-                                                     "section to KEELSON.md (/verify init)")
+            outcome = Outcome(verify_mod.UNVERIFIED, pick(
+                "这个项目没有验证命令：在 KEELSON.md 里加一节 ## Verify（/verify init）",
+                "no check command for this project: add a ## Verify section to KEELSON.md (/verify init)"))
         else:
             unchanged = self._last_failed is not None and self._last_failed[0] == self._evidence.last_change
             if unchanged:
@@ -984,9 +986,11 @@ class Agent:
             elif not_run:
                 outcome = Outcome(verify_mod.UNVERIFIED, detail, runs)
             else:
-                who = ("run by the agent" if not missing else "run by Keelson" if not earlier
-                       else "run by the agent and Keelson")
-                outcome = Outcome(verify_mod.PASSED, f"{detail} ({who} at {runs[-1].at})", runs)
+                who = (pick("Agent 自己跑的", "run by the agent") if not missing
+                       else pick("Keelson 跑的", "run by Keelson") if not earlier
+                       else pick("Agent 和 Keelson 跑的", "run by the agent and Keelson"))
+                at = pick("于", "at")
+                outcome = Outcome(verify_mod.PASSED, f"{detail} ({who} {at} {runs[-1].at})", runs)
         outcome.weakened, outcome.changed = weakened, changed
         outcome.out_of_scope = list(dict.fromkeys(self._out_of_scope))
         big = scope_mod.size_warning(self._turn_request, changed)

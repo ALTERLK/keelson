@@ -942,6 +942,10 @@ def main() -> None:
         from .web.cli import main as web_main
 
         sys.exit(web_main(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "desktop":
+        from .desktop import main as desktop_main
+
+        sys.exit(desktop_main(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] in ("doctor", "init"):
         from . import doctor
 
@@ -957,6 +961,7 @@ def main() -> None:
         print("""
 Usage: keelson [options] [prompt]
        keelson web [--port 8765] [--replay] [--no-open]    start the web console
+       keelson desktop [FOLDER]                            Keelson in its own window (needs the [desktop] extra)
        keelson init [--project | --profile NAME]           save model + key (all projects / this one / a profile)
        keelson use [NAME]                                  list profiles, or switch to one
        keelson doctor [--offline]                          check that this install works

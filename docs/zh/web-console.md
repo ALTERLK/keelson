@@ -68,7 +68,12 @@ data: {"seq": 42, "ts": 1731640000.1, "type": "tool_call", "data": {...}}
 | `POST /api/sessions/{id}/chat` | 开始一轮（已有一轮在跑时返回 409） |
 | `POST /api/sessions/{id}/confirm` | 回答权限询问 |
 | `POST /api/sessions/{id}/abort` | 停止当前这一轮 |
-| `POST /api/sessions/{id}/mode` | 在 `default`、`acceptEdits`、`dontAsk` 之间切换 |
+| `POST /api/sessions/{id}/mode` | 在 `default`、`acceptEdits`、`plan`、`dontAsk` 之间切换（一轮进行中时返回 409） |
+| `POST /api/sessions/{id}/plan` | 回答计划审批：`execute`、`clear-and-execute`、`manual-execute` 或 `keep-planning`，可附意见 |
+| `GET /api/sessions/{id}/review?steps=N` | 最近一次验证、可撤销的轮次、最近 N 轮的 diff 和文件 |
+| `POST /api/sessions/{id}/undo` · `/redo` · `/revert` | 撤销 N 轮（`force` 覆盖之后的编辑）、重做、放回单个文件（一轮进行中时返回 409） |
+| `GET` · `POST /api/sessions/{id}/ledger` | 读任务账本 · `add`、`drop`、`goal`、`clear` 一条约束 |
+| `GET /api/usage` | 今天、本项目今天、本周的用量，以及每日预算 |
 | `GET /api/bench`、`/api/evolution`、`/api/skills`、`/api/casestudy`、`/api/perf`、`/api/doctor`、`/api/traces` | 只读视图 |
 
 **权限询问。** 运行时本来就留了钩子：循环会 `await` 一个 `confirm_fn(message) -> bool`。CLI 版本从标准输入读。Web 版本发布一个 `confirm_request` 事件，然后 `await` 一个 `asyncio.Future`；`POST …/confirm` 负责 resolve 它。这期间循环就停在这个 Future 上——这正是想要的行为：用户做出决定之前，什么都不执行。

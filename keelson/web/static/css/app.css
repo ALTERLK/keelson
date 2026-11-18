@@ -592,6 +592,85 @@ tbody tr:last-child td, tbody tr:last-child th { border-bottom: 0; }
   .loop-card { grid-template-columns: minmax(0, 1fr); padding: 16px 20px; justify-items: center; }
 }
 
+/* ── verification badge, review, task ledger, plan approval ─── */
+
+.field { width: 100%; height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+.field:focus, .select:focus, .confirm-reason:focus { outline: 2px solid var(--brand-glow); border-color: var(--brand); }
+.select.wide { width: 100%; }
+
+.verify-badge { padding: 10px 13px; border-radius: var(--radius-sm); border: 1px solid; display: flex; flex-direction: column; gap: 6px; }
+.verify-badge.ok { background: var(--ok-soft); border-color: var(--ok); }
+.verify-badge.bad { background: var(--bad-soft); border-color: var(--bad); }
+.verify-badge.warn { background: var(--warn-soft); border-color: var(--warn); }
+.verify-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.verify-glyph { font-weight: 800; }
+.verify-badge.ok .verify-glyph, .verify-badge.ok strong { color: var(--ok); }
+.verify-badge.bad .verify-glyph, .verify-badge.bad strong { color: var(--bad); }
+.verify-badge.warn .verify-glyph, .verify-badge.warn strong { color: var(--warn); }
+.verify-detail { color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+.verify-flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; overflow-wrap: anywhere; }
+.verify-badge.compact { padding: 8px 10px; }
+
+.review-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.review-files { gap: 8px; }
+.review-file { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.review-file summary { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; list-style: none; }
+.review-file summary::-webkit-details-marker { display: none; }
+.review-name { font-size: 12.5px; overflow-wrap: anywhere; }
+.btn.small { height: 26px; padding: 0 9px; font-size: 12.5px; }
+pre.diff { margin: 0; padding: 8px 10px; border-top: 1px solid var(--border); font: 12px/1.5 var(--mono); max-height: 50vh; overflow: auto; white-space: pre; }
+pre.diff .diff-add { color: var(--ok); background: var(--ok-soft); display: block; }
+pre.diff .diff-del { color: var(--bad); background: var(--bad-soft); display: block; }
+pre.diff .diff-hunk { color: var(--info); display: block; }
+pre.diff .diff-meta { color: var(--muted); display: block; }
+pre.diff span { display: block; }
+
+.ledger-rules, .ledger-plan { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.ledger-rules li { display: flex; align-items: flex-start; gap: 6px; }
+.ledger-rules li > span:first-child { flex: 1; overflow-wrap: anywhere; }
+.ledger-plan { list-style: none; padding: 0; }
+.ledger-plan li { display: flex; gap: 8px; }
+.ledger-plan li.done { color: var(--muted); }
+.ledger-plan li.in_progress { color: var(--brand); font-weight: 600; }
+
+.ask-root .modal-backdrop { z-index: 60; }
+.modal.wide { width: min(760px, 100%); }
+.plan-body { max-height: 52vh; overflow: auto; padding: 12px 14px; background: var(--surface-2); border-radius: var(--radius-sm); }
+
+/* ── desktop: the project bar in the console, and the wizard page ─── */
+
+.project-bar { display: flex; align-items: center; gap: 6px; padding: 7px 9px; margin: 0 -4px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.project-bar strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+
+body.desktop { min-height: 100vh; background: var(--bg); }
+.wizard { max-width: 720px; margin: 0 auto; padding: 28px 24px 48px; display: flex; flex-direction: column; gap: 18px; }
+.wizard-brand { display: flex; align-items: center; gap: 10px; }
+.wizard-brand .brand-name { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+.wizard-steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 18px; color: var(--muted); font-size: 13px; }
+.wizard-steps li { display: flex; align-items: center; gap: 7px; }
+.wizard-steps li.active { color: var(--text); font-weight: 600; }
+.wizard-steps li.done { color: var(--ok); }
+.wizard-step-n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; border: 1px solid currentColor; font-size: 12px; }
+.wizard-steps li.active .wizard-step-n { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.wizard-card { padding: 26px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 14px; }
+.wizard-card.center { align-items: center; text-align: center; padding: 48px 26px; }
+.wizard-card h1 { font-size: 22px; letter-spacing: -.02em; }
+.wizard-field { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--text-2); }
+.wizard-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.wizard-actions.start { justify-content: flex-start; }
+.wizard-result { margin: 0; min-height: 1.4em; font-size: 13px; overflow-wrap: anywhere; }
+.wizard-result.ok { color: var(--ok); }
+.wizard-result.bad { color: var(--bad); }
+.wizard-result.warn { color: var(--warn); }
+.wizard-checks code { margin-right: 6px; }
+.wizard-recent ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wizard-recent li { display: flex; align-items: center; gap: 6px; }
+.wizard-recent li.missing { opacity: .55; }
+.recent-open { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; padding: 10px 12px; text-align: left; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.recent-open:hover:not(:disabled) { border-color: var(--brand); }
+.recent-open .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wizard-log { max-height: 30vh; overflow: auto; padding: 10px; background: var(--surface-2); border-radius: var(--radius-sm); font: 12px/1.5 var(--mono); white-space: pre-wrap; }
+
 @media (max-width: 760px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .rail { flex-direction: row; align-items: center; gap: 6px; padding: 8px 10px; border-right: 0; border-bottom: 1px solid var(--border); }

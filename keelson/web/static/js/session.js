@@ -13,6 +13,7 @@ const STORAGE_KEY = "keelson-session"; // per tab, so two tabs can hold two sess
 export const session = {
   server: { live: false, version: "", modes: [], workspace: "" },
   mode: "idle",          // "live" | "replay" | "idle"
+  booting: true,         // until boot() has asked the server what it is
   id: null,              // the live session this tab is attached to
   connection: "closed",  // SSE status, live mode only
   state: initialState(),
@@ -149,7 +150,20 @@ export async function exitReplay() {
 
 // -- start ---------------------------------------------------------------------
 
+let bootDone = () => {};
+const booted = new Promise((resolve) => { bootDone = resolve; });
+
 export async function boot() {
+  try {
+    await bootSteps();
+  } finally {
+    session.booting = false;
+    bootDone();
+    notify();
+  }
+}
+
+async function bootSteps() {
   try { session.traces = await getJSON("traces"); } catch { session.traces = []; }
   if (!isStatic) {
     try { session.server = await getJSON("state"); } catch { session.server = { live: false, modes: [] }; }
@@ -180,6 +194,8 @@ export async function boot() {
 
 /** The console needs something to show: in replay-only mode, load the first recording. */
 export async function ensureSomethingToShow() {
+  // Until boot has run, "idle" only means "not connected yet": a live server must not get a demo replay.
+  await booted;
   if (session.mode !== "idle" || !session.traces.length) return;
   await loadReplay(session.traces[0].id, { guided: true });
 }
@@ -193,4 +209,19 @@ export const actions = {
   stop: () => post(scoped("abort")),
   setMode: (mode) => post(scoped("mode"), { mode }),
   confirm: (request_id, allow, scope = "once", reason = "") => post(scoped("confirm"), { request_id, allow, scope, reason }),
+  plan: (request_id, choice, feedback = "") => post(scoped("plan"), { request_id, choice, feedback }),
+  review: (steps = 1) => getJSON(scoped(`review?steps=${steps}`)),
+  undo: (steps = 1, force = false) => post(scoped("undo"), { steps, force }),
+  redo: () => post(scoped("redo")),
+  revert: (file, steps = 1) => post(scoped("revert"), { file, steps }),
+  ledger: () => getJSON(scoped("ledger")),
+  editLedger: (action, text = "", index = -1) => post(scoped("ledger"), { action, text, index }),
 };
+
+/** Text the desktop wizard asked to start with (#/console?draft=...): handed to the composer once. */
+export function takeDraft() {
+  const query = location.hash.split("?")[1] || "";
+  const draft = new URLSearchParams(query).get("draft");
+  if (draft) history.replaceState(null, "", location.pathname + location.search + "#/console");
+  return draft || "";
+}

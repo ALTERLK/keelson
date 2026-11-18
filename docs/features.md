@@ -9,6 +9,7 @@ read [Getting started](getting-started.md) first.
 | I want to… | Section |
 |---|---|
 | control how much it may do without asking | [Permission gate and modes](#permission-gate-and-modes) |
+| use it in a window instead of a terminal | [The desktop app](#the-desktop-app) |
 | take back what it did, shell commands included | [Undo: checkpoints](#undo-checkpoints) |
 | see a plan before anything changes | [Plan mode](#plan-mode) |
 | stop it from looping and burning money | [Loop guard and budgets](#loop-guard-and-budgets) |
@@ -469,6 +470,50 @@ and commands for the pieces you want to see or change.
 **Worth knowing.** Without a real terminal (a pipe, CI) or with
 `KEELSON_SIMPLE_INPUT=1`, input falls back to a plain line read and the answer
 is printed as raw text. `KEELSON_MARKDOWN=0` turns off the Markdown rendering.
+
+## The desktop app
+
+**What it is.** Keelson in its own window on Windows (WebView2, which Windows 10
+and 11 already have). The window shows the same console as `keelson web`; behind
+it, a console server runs in the project folder you picked.
+
+**What problem it solves.** No terminal, no Python, no port to remember: unzip,
+double-click `Keelson.exe`, follow three steps, and give it a task.
+
+**How to use it.**
+
+- From the release zip: unzip anywhere and run `Keelson.exe`. From a checkout:
+  `pip install -e ".[desktop]"`, then `keelson desktop [FOLDER]`.
+- **First run** walks through three steps: the model (DeepSeek preset; paste the
+  key, **Test** sends one tiny request, **Test and save** writes the active
+  profile or `~/.keelson/config.env`), the project folder, and the checks it
+  found there (save them to `KEELSON.md` with one click), with three suggested
+  first tasks. A suggestion lands in the input box; nothing is sent until you
+  press Send.
+- **Projects**: the window opens the last project; **Switch** in the sidebar goes
+  back to the list of recent ones. Opening another project restarts the server
+  in that folder; going back to the one already open does not.
+- **Review** tab: the last turn's verification badge and, for the last N turns,
+  every changed file with its diff, out-of-scope and weakened-test marks, a
+  **Put back** button per file and **Undo / Redo** for whole turns. Shell changes
+  are included, as with `/undo`.
+- **Task** tab: the task ledger (goal, your rules word for word, plan, files,
+  last verification); add or remove rules there.
+- **Plan approval**: in plan mode, the plan opens in a dialog: carry it out,
+  carry it out asking as usual, or keep planning with your feedback.
+- The overview shows the cache hit rate next to cost.
+- `keelson-cli.exe`, next to `Keelson.exe`, is the `keelson` command for the
+  terminal.
+
+**Where you can see it.** Logs go to `~/.keelson/logs/` (`desktop.log`,
+`desktop-server.log`); recent projects are in `~/.keelson/desktop.json`.
+
+**Worth knowing.** Closing the window stops the server and everything it
+started; a server whose window disappeared without closing exits on its own
+within seconds. The key is read from the config files when needed and never
+kept in the window's environment. The release is Windows only for now; on
+Linux and macOS, `keelson desktop` runs from a checkout if pywebview has a
+backend there, but it is not tested.
 
 ## One-shot and scripted use: `keelson -p`
 

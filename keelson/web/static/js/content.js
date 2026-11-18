@@ -210,6 +210,18 @@ export const help = {
     en: "Where this turn's time went. Model time is waiting for the model to respond; tool time is the runtime executing. Time spent waiting for your decision is shown separately and not counted against either.",
     zh: "这一轮的时间花在了哪里。模型耗时是等模型回复；工具耗时是运行时在执行。等你做决定的时间单独列出，不算在两者头上。",
   },
+  verify: {
+    en: "After a turn that changed code, Keelson runs the project's checks itself (KEELSON.md's Verify section, or the detected tests). The badge comes from those runs, not from what the model says.",
+    zh: "改过代码的一轮结束时，Keelson 自己运行项目的检查命令（KEELSON.md 的 Verify 一节，或识别出的测试）。徽章来自这些真实运行，而不是模型怎么说。",
+  },
+  undo: {
+    en: "Every turn starts with a snapshot of the project, so undo puts back everything the turn changed — including what shell commands changed, created or deleted. Your project's own .git is never touched. A file changed again after the turn is listed instead of overwritten.",
+    zh: "每一轮开始前都会给项目拍快照，所以撤销能还原这一轮的全部改动——包括 shell 命令修改、新建、删除的文件。项目自己的 .git 不会被碰。如果某个文件在这一轮之后又被改过，会先列出来，不会直接覆盖。",
+  },
+  ledger: {
+    en: "Kept outside the conversation and saved every turn: the goal, your rules word for word, the plan, the files changed. When the context is folded it goes back in unchanged, so a long task does not forget what you said.",
+    zh: "保存在对话之外、每轮落盘：目标、你的规则（原话）、计划、改过的文件。上下文折叠后原样放回，所以长任务不会忘记你说过的话。",
+  },
 };
 
 // ─── Guided-tour captions (keys come from guide.js) ─────────
