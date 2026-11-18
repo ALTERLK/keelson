@@ -807,7 +807,13 @@ class Agent:
         return summary
 
     def _fold_kept_note(self) -> str:
-        """What a fold must not lose, appended to the folded summary verbatim."""
+        """What a fold must not lose, appended to the folded summary verbatim.
+
+        ``KEELSON_LEDGER=0`` leaves it out, so a fold keeps only the model's own summary,
+        as summary-only compaction does; bench/features.py uses it as the comparison arm.
+        """
+        if not paths.env_flag("KEELSON_LEDGER", default=True):
+            return ""
         return self._ledger.render()
 
 

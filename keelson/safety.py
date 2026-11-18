@@ -216,6 +216,8 @@ _CD_VERBS = {"cd", "chdir", "set-location", "sl", "pushd", "push-location"}
 _SYSTEM = {"mkfs", "format", "diskpart", "fdisk", "parted", "shutdown", "reboot", "halt", "poweroff",
            "stop-computer", "restart-computer", "bcdedit", "vssadmin", "wipefs", "cipher", "format-volume",
            "clear-disk", "initialize-disk", "remove-partition", "reg"}
+# Commands that erase disks or partitions (with mkfs.*, `dd of=/dev/...` and `format X:`): refused outright.
+_WIPE = {"format-volume", "clear-disk", "initialize-disk", "remove-partition", "wipefs", "diskpart"}
 _ELEVATE = {"sudo", "doas", "runas", "su", "gsudo"}
 _KILL = {"kill", "pkill", "killall", "taskkill", "stop-process", "spps", "tskill"}
 _NETWORK = {"curl", "wget", "invoke-webrequest", "iwr", "invoke-restmethod", "irm", "ssh", "scp", "sftp", "ftp",
@@ -396,6 +398,17 @@ class _Assessor:
         if any(v in _DELETE_VERBS for v, _ in verbs) or (head == "find" and "-delete" in words):
             self.verdict.refuse(DELETE_ADVICE)
             return
+
+        # Erasing a disk or partition: nothing in the project can bring it back, so never, in any mode.
+        for v, i in verbs:
+            rest = [w.lower() for w in words[i + 1:]]
+            if (v in _WIPE or v.startswith("mkfs")
+                    or (v == "dd" and any(w.startswith("of=") and ("/dev/" in w or "physicaldrive" in w)
+                                          for w in rest))
+                    or (v == "format" and any(re.match(r"^[a-z]:\\?$", w) for w in rest))):
+                self.verdict.refuse(f"Refused: `{seg}` erases a disk or partition. Keelson never runs that; "
+                                    "if it is really wanted, the user has to do it themselves.")
+                return
 
         if head in _CD_VERBS:
             target = next((w for w in words[1:] if not w.startswith("-")), "~")

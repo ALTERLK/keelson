@@ -40,6 +40,22 @@ def test_the_word_rm_in_an_argument_is_not_a_delete(ws, command):
     assert action(command) != "block"
 
 
+@pytest.mark.parametrize("command", [
+    "dd if=/dev/zero of=/dev/sda", "dd if=x.img of=\\\\.\\PhysicalDrive1 bs=4M", "mkfs.ext4 /dev/sda1",
+    "mkfs -t vfat /dev/sdb", "Format-Volume -DriveLetter D", "Clear-Disk -Number 1 -RemoveData",
+    "format D:", "wipefs -a /dev/sdb", "sudo dd if=/dev/urandom of=/dev/nvme0n1",
+])
+def test_erasing_a_disk_is_refused_in_every_mode(ws, command):
+    verdict = safety.assess_shell(command)
+    assert verdict.action == "block"
+    assert "erases a disk" in verdict.reasons[0]
+
+
+@pytest.mark.parametrize("command", ["dd if=in.bin of=out.bin", "black --check .", "ruff format ."])
+def test_dd_to_a_file_and_formatters_are_not_disk_erasers(ws, command):
+    assert action(command) != "block"
+
+
 # ─── the path boundary ──────────────────────────────────────
 
 def test_moving_the_home_folder_a_drive_root_or_the_project_is_refused(ws):
