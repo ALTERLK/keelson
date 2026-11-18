@@ -16,6 +16,7 @@ Two promises, and exactly how far they go.
 | `rm -rf ~`, `Remove-Item $env:USERPROFILE -Recurse`, `del /s` … | Every way of deleting from the shell is refused (also inside `bash -c`, `cmd /c`, `ForEach-Object { … }`, `xargs`, `find -delete`). The model is told to use `delete_files`. | `keelson/safety.py` |
 | A variable that was never set: `rm -rf $DIR/` → `rm -rf /` | Variables are expanded the way the shell would expand them before a path is judged. One that cannot be expanded makes the command dangerous: it is asked about and can only be allowed once. | `safety.expand` |
 | Moving or deleting the home folder, a drive root, the project itself or a folder above it | Refused in every mode, `--yolo` included. | `safety.describe_protected` |
+| Erasing a disk or partition: `dd of=/dev/…`, `mkfs.*`, `Format-Volume`, `Clear-Disk`, `format D:`, `wipefs`, `diskpart` | Refused in every mode. | `safety.assess_shell` |
 | Writing into system folders (`C:\Windows`, `Program Files`, `/usr`, `/etc`, …) or Keelson's checkpoint store | Refused in every mode. | same |
 | Writing outside the project | Asked about, with the path. Can only be allowed once. | `safety.assess_path` |
 | Things `/undo` cannot reverse: package installs, network access, `git push`, history rewrites | Asked about, with the reason. Can be allowed for the session or always for the project. | `safety.assess_shell` |
@@ -55,6 +56,11 @@ Said plainly, so nobody relies on more than there is:
   says so, and ordinary shell commands then ask before running.
 - If the project folder is your home folder or a drive root, it is too big to
   snapshot; open a project folder instead.
+- **Measured gaps.** In the destructive-command corpus of
+  [bench/FEATURES.md](../bench/FEATURES.md), two of 26 commands are asked about
+  rather than refused, so `--yolo` would run them: inline code that deletes
+  (`python -c "shutil.rmtree(...)"`) and moving a folder out of the home
+  folder (`Move-Item $env:USERPROFILE\Documents D:\backup`).
 - Command parsing is heuristic. Unusual quoting or generated command strings
   (`Invoke-Expression`, `eval`) can hide what a command does; those are asked
   about as "cannot check".

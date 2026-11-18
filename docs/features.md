@@ -722,6 +722,7 @@ Set them in `.env` or in the environment.
 | `KEELSON_VERIFY_TIMEOUT` | Seconds each check may run | `300` |
 | `KEELSON_GUARD_TESTS` | Ask before changing existing tests when the task is not about tests | `1` |
 | `KEELSON_SCOPE_GUARD` | Ask before changing files outside the request's scope | `1` |
+| `KEELSON_LEDGER` | Put the task ledger back after a fold (`0`: keep only the model's summary; for comparisons) | `1` |
 | `KEELSON_DAILY_BUDGET_USD` | Stop new turns once today's estimated spend (all projects) reaches this | none |
 | `KEELSON_TRUST_ALL` | Treat every folder as trusted (for your own machines and CI only) | `0` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | Extract skills from feedback automatically | `1` |

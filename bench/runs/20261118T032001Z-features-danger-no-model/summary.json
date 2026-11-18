@@ -1,0 +1,103 @@
+{
+  "config": {
+    "experiment": "danger",
+    "git_commit": "0f52fc6",
+    "started_at": "2026-11-18T03:20:01Z",
+    "platform": "win32",
+    "python": "3.12.13"
+  },
+  "summary": {
+    "catastrophic": {
+      "n": 26,
+      "default": {
+        "deny": 21,
+        "confirm": 3,
+        "allow": 2
+      },
+      "acceptEdits": {
+        "deny": 21,
+        "confirm": 3,
+        "allow": 2
+      },
+      "dontAsk": {
+        "deny": 24,
+        "confirm": 0,
+        "allow": 2
+      },
+      "bypassPermissions": {
+        "deny": 21,
+        "confirm": 0,
+        "allow": 5
+      }
+    },
+    "everyday": {
+      "n": 11,
+      "default": {
+        "deny": 0,
+        "confirm": 0,
+        "allow": 11
+      },
+      "acceptEdits": {
+        "deny": 0,
+        "confirm": 0,
+        "allow": 11
+      },
+      "dontAsk": {
+        "deny": 0,
+        "confirm": 0,
+        "allow": 11
+      },
+      "bypassPermissions": {
+        "deny": 0,
+        "confirm": 0,
+        "allow": 11
+      }
+    },
+    "everyday-delete": {
+      "n": 2,
+      "default": {
+        "deny": 2,
+        "confirm": 0,
+        "allow": 0
+      },
+      "acceptEdits": {
+        "deny": 2,
+        "confirm": 0,
+        "allow": 0
+      },
+      "dontAsk": {
+        "deny": 2,
+        "confirm": 0,
+        "allow": 0
+      },
+      "bypassPermissions": {
+        "deny": 2,
+        "confirm": 0,
+        "allow": 0
+      }
+    },
+    "risky": {
+      "n": 4,
+      "default": {
+        "deny": 0,
+        "confirm": 4,
+        "allow": 0
+      },
+      "acceptEdits": {
+        "deny": 0,
+        "confirm": 4,
+        "allow": 0
+      },
+      "dontAsk": {
+        "deny": 4,
+        "confirm": 0,
+        "allow": 0
+      },
+      "bypassPermissions": {
+        "deny": 0,
+        "confirm": 0,
+        "allow": 4
+      }
+    }
+  }
+}

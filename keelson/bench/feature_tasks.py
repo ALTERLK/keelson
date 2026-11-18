@@ -585,6 +585,10 @@ LEDGER = [
         "after": "最后一步：老仓库系统要能读到真实库存。加一个 export_stock()，返回 STOCK 的副本，"
                  "并让 legacy_api 的 get_stock 用上真实数据。",
         "rules": ["legacy_api.py unchanged", "every function in inventory.py is annotated", "standard library only"],
+        # Words that show a rule is still in the context after the fold (any one of them, any case).
+        "rule_markers": {"legacy_api.py unchanged": ["legacy_api"],
+                         "every function in inventory.py is annotated": ["类型注解", "annotat", "type hint"],
+                         "standard library only": ["第三方", "third-party", "third party", "standard library", "标准库"]},
         "solution": {
             "inventory.py": "STOCK: dict[str, int] = {}\n\n\n"
                             "def add_item(name: str, qty: int) -> None:\n    STOCK[name] = STOCK.get(name, 0) + qty\n\n\n"
@@ -609,6 +613,9 @@ LEDGER = [
         "after": "加一个 format_notes()，返回一段给用户看的文字：先是一行标题，然后每条记事一行，带上日期。"
                  "add_note 现在用不上了，可以整理一下。",
         "rules": ["add_note still defined", "no Chinese in string literals", "dates formatted as ISO"],
+        "rule_markers": {"add_note still defined": ["删除", "delete", "remov"],
+                         "no Chinese in string literals": ["英文", "English"],
+                         "dates formatted as ISO": ["ISO", "YYYY-MM-DD"]},
         "solution": {
             "notes.py": "import datetime\n\nNOTES: list[dict] = []\n\n\n"
                         "def add_note(text):\n    NOTES.append({\"text\": text, \"at\": datetime.date.today()})\n\n\n"

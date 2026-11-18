@@ -6,6 +6,24 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
 ## Unreleased — 0.4.0 (in progress)
 
 ### Added
+- **Feature experiments** (phase 7). `python -m keelson.bench.features` runs
+  each signature feature on and off against a real model (verification,
+  scope guard, task ledger across a fold, `/undo` after shell changes) and a
+  no-model corpus of destructive commands through every permission mode.
+  Every fixture has a reference solution, and `--validate` proves each
+  starter fails and each solution passes (and, for the regression tasks,
+  that the obvious fix breaks another module's tests).
+  `scripts/features_report.py` writes the tables in
+  [`bench/FEATURES.md`](bench/FEATURES.md) from the raw results.
+- **Dogfooding log**: [`docs/dogfooding.md`](docs/dogfooding.md) records real
+  tasks on this repository done with `keelson -p`: outcome, verdict, cost,
+  cache hits, refusals and asks, and what was kept. `scripts/dogfood_report.py`
+  builds its table from `bench/dogfood/`, with local paths replaced.
+- The README (both languages) leads with the five pain points, the evidence
+  for each (official documentation, or user reports labelled as such) and
+  the measured results, null results included.
+- `KEELSON_LEDGER=0` leaves the task ledger out of a fold, so a fold keeps
+  only the model's summary; the ledger experiment's comparison arm.
 - **The desktop app** (phase 6). `keelson desktop [FOLDER]` (extra `desktop`)
   shows the console in its own window (pywebview + WebView2) and runs the
   console server as a child process in the chosen project folder; switching
@@ -100,6 +118,14 @@ Notable changes, newest first. Benchmark figures quoted here are reproduced in
   atomic.
 
 ### Fixed
+- The weakened-tests check flagged a `pytest.skip` in a new helper or a new
+  test, and `pytest.skip` inside string literals. For Python files it now
+  counts only skip markers that stop tests that already existed (found while
+  dogfooding).
+- Commands that erase a disk or partition (`dd of=/dev/…`, `mkfs.*`,
+  `Format-Volume`, `Clear-Disk`, `format D:`, `wipefs`, `diskpart`) are
+  refused in every mode. The destructive-command corpus found `dd` and
+  `mkfs.ext4` allowed even in default mode and `Format-Volume` only asked about.
 - `--resume` restored only the messages; it now brings back the task ledger and
   folded memory too and keeps the session's id.
 - Entering plan mode on an OpenAI-compatible provider did not update the system

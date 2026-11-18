@@ -13,199 +13,139 @@
   <a href="https://alterlk.github.io/keelson/?lang=en"><img src="https://img.shields.io/badge/demo-watch%20a%20replay-f6c177" alt="Live demo"></a>
 </p>
 
-Keelson is an **agent runtime** (a *harness*) written in Python. A language
-model only produces text; for it to read files, run commands and change code,
-a program has to act on its behalf — and decide what it may do. Keelson is that
-program.
+**A coding agent that does not claim work it did not check, does not run catastrophic commands, can take back
+everything a turn did, and does not forget your rules.** Windows-native, DeepSeek first, Chinese and English
+interface, in a terminal or its own window.
 
-There is no agent framework underneath (no LangGraph, no AutoGen). The loop,
-the permission gate, context management and skill evolution are implemented
-here, because they are what the project is about.
+What hurts most with coding agents is often not a lack of intelligence. It is these: "done, all tests pass"
+when they were never run; one command that wipes the home folder; no way back afterwards; rules forgotten after
+a long session; a one-line request that edits ten files. Keelson builds safeguards against these five into the
+**runtime**. They do not depend on the prompt or on hooks you write yourself, and they are on by default.
 
 <p align="center">
-  <a href="https://alterlk.github.io/keelson/?lang=en"><img src="docs/assets/screenshots/replay-en.gif" alt="The console replaying a real run: read the code, run the tests, find the bug, fix it, verify" width="92%"></a>
+  <a href="https://alterlk.github.io/keelson/?lang=en"><img src="docs/assets/screenshots/replay-en.gif" alt="The console replaying a recorded run: read code, run tests, find the bug, fix it, verify" width="92%"></a>
 </p>
-<p align="center"><sub>The console replaying a real recorded run. Every tool call passes the permission gate; the inspector counts as it goes. <a href="https://alterlk.github.io/keelson/?lang=en">Open it in your browser →</a></sub></p>
 
-## What it does for you
+## Five pain points, five safeguards
 
-| What a model cannot do alone | What Keelson does | Code |
-|---|---|---|
-| Judge whether an action is dangerous | **Permission gate**: every tool call gets a verdict before it runs — allow, ask you, or deny. The reason for a denial goes back to the model, which changes course instead of pushing through | `keelson/tools.py` |
-| Notice it is going in circles | **Loop guard**: stops a tool that keeps being called with no new result | `keelson/agent.py` |
-| Stay coherent in a very long task | **Context folding**: three tiers; the last rewrites history into structured memory | `keelson/session_memory.py` |
-| Remember what you told it | **Skill self-evolution**: rules are extracted from your feedback; an update must pass a "no worse than before" gate or it is quarantined | `keelson/skill_gate.py` |
-| Account for what it did | **Event stream and replay**: every step is an event that can be recorded and replayed exactly | `keelson/events.py` |
+| Pain point | Source | What Keelson does | Measured ([full report](bench/FEATURES.md)) |
+|---|---|---|---|
+| **"Done, all tests pass," when they were not run or did not pass** | User reports: [claims work is done without verifying](https://claudeissues.com/issue/25305-sessions-repeatedly-claim-work-is-done-without-verifying-causing-75-rework-rate), [reports test results that never ran](https://claudeissues.com/issue/1501-bug-claude-code-reports-false-test-results-and-actions) | **Verified completion.** When code changed, the runtime itself runs the project's checks at the end of the turn and hands real failures back to the model. Every answer carries a badge: ✅ verified / ⚠️ unverified / ❌ failed. "Tests pass" without a matching passing run is marked unproven | In 60 runs DeepSeek ran the tests itself every time; on vs off made no difference (2–3% more cost). With it on, the badge matched the real grading 30/30 |
+| **One command destroys everything** (`rm -rf ~`) | User reports: [an unset variable deleted the home folder](https://claudeissues.com/issue/75859-claude-code-ran-rm-rf-against-home-due-to-env-var-not-persisting-between-bash-to); [incidents collected by Docker](https://www.docker.com/blog/coding-agent-horror-stories-the-rm-rf-incident/) | **No real deletes.** Every way of deleting from the shell is refused; `delete_files` moves to the Recycle Bin. Variables are expanded before a path is judged: the home folder, drive roots, system folders and disk wipes are refused in every mode; a variable that cannot be expanded is treated as dangerous | 26 destructive commands from incidents: 24 refused in every mode, 2 asked about (listed as limits). The corpus also found a disk-wipe gap, now fixed |
+| **Undo does not cover shell changes** | Official docs: Claude Code checkpoints: "A file that only Bash commands changed isn't tracked" ([Checkpointing · Limitations](https://code.claude.com/docs/en/checkpointing)) | **Shadow-git checkpoints.** A snapshot at the start of every turn, in a separate git repository (the project's own `.git` is never touched). `/undo` restores everything the last turn changed, **shell changes included**: edits, new files, deletions | 9/9 byte-identical after one `/undo` (36 files); under the documented checkpoint rule, 3/36 |
+| **Rules forgotten after compaction** | User report: [compaction destroys the workflow](https://claudeissues.com/issue/21925-design-flaw-context-compaction-destroys-workflow-no-claude-md-reload-no-pause-au) | **Task ledger.** Your rules are kept word for word outside the context and put back after a fold, with the goal, the plan and the files changed | 18/18 rules kept with it, 17/18 without; but the rule broken was still in the context, so it is not the ledger's doing |
+| **Unrelated code gets changed** | User report: [request for a strict-scope mode](https://claudeissues.com/issue/61888-feature-add-a-strict-scope-guardrails-mode-to-prevent-unrelated-changes) | **Scope guard.** The scope is the files you `@`-mention plus what the model declares with `declare_scope` (with a reason). Changing anything outside it asks you first and is listed separately in the review | 30 one-line requests: no bait file touched in either arm, so the guard had nothing to stop |
 
-## Three steps
+"User report" means what users wrote in public issues, not an official finding; comparisons with Claude Code cite
+only its official documentation. What each safeguard **does not** do is in [Safety and undo](docs/safety.md) and
+the [feature guide](docs/features.md): this is not an operating-system sandbox, rules are recognised by their
+wording, and the scope guard does not check shell commands.
 
-**1. Watch first; install nothing.** Open the [hosted demo](https://alterlk.github.io/keelson/?lang=en)
-and click "Watch a guided replay". It plays a real recorded run and pauses at
-each important step to explain it.
+Two more basics: **spending you can see** (cost and cache hit rate per turn, `/usage`, a daily budget) and
+**the model recorded on every call**, never swapped for a cheaper one behind your back.
 
-**2. Start it locally with one command.** You need Python 3.11+ and git:
+## Getting started
+
+You need Python 3.11+ and git.
 
 ```bash
 git clone https://github.com/ALTERLK/keelson.git
 cd keelson
-start.bat          # Windows (double-clicking works)
-./start.sh         # macOS / Linux
+pip install -e ".[web,desktop]"
+
+keelson init        # choose a provider (DeepSeek preset), paste the key; it is tested once before it is saved
+keelson             # the terminal interface
+keelson desktop     # its own window: a first-run wizard picks the project, finds its checks, suggests a first task
 ```
 
-The script creates a virtual environment, installs the dependencies and opens
-the console. With no API key it starts in replay mode, so a demo never depends
-on the network.
+- In the terminal: Enter sends, Alt+Enter adds a line, Ctrl+C interrupts, Shift+Tab changes mode, `/help` lists
+  every command, `@file` adds a file to the conversation.
+- One-off: `keelson -p "fix the bug in calc.py"`; `--output-format json` includes the verdict and the cost.
+- Without a key: `keelson web --replay` replays recorded runs, or open the [live demo](https://alterlk.github.io/keelson/?lang=en).
+- A Windows build (double-click `Keelson.exe`, no Python needed) can be made with `python scripts/build_desktop.py`;
+  no release package has been published yet.
 
-**3. Connect a model and give it work.**
+New to all this? Start with **[Getting started](docs/getting-started.md)**.
 
-```bash
-keelson init       # writes .env step by step: provider, base URL, model, key
-keelson doctor     # checks each requirement and says how to fix what is wrong
-keelson web        # the browser console; or just `keelson` for the terminal
-```
+## Measured
 
-Any OpenAI-compatible or Anthropic-compatible provider works. New to this? Read
-**[Getting started](docs/getting-started.md)** — it begins with what an agent
-runtime is and takes about twenty minutes.
+The experiments are in [`bench/FEATURES.md`](bench/FEATURES.md): each safeguard **on and off**, everything else
+equal, with DeepSeek, three repeats. The tables are generated from the raw result files, with no number typed by hand,
+and experiments where the feature made no difference are reported too.
 
-## The console
+In short: **undo and destructive commands** are decided by the mechanism, and the difference is clear: one `/undo` restored shell changes byte for byte every time, and 24 of 26 destructive commands are refused outright. **Verification, the scope guard and the ledger** made **no measurable difference**: DeepSeek handled these small tasks well on its own, and the report says so. The experiments also found a gap in Keelson itself: `dd of=/dev/sda` and `mkfs` were allowed in default mode; fixed. All the experiments cost $0.27.
+
+Day-to-day use is in [`docs/dogfooding.md`](docs/dogfooding.md) (Chinese): real tasks on this repository done with
+Keelson, with outcome, cost, cache hits, refusals and undos.
+
+<details>
+<summary><b>Earlier evaluations</b></summary>
+
+| | What | Result |
+|---|---|---|
+| **[ToolHop](bench/REPORT.md)** | Multi-hop tool calling; n=60, three arms, paired bootstrap 95% CIs | Found a defect in the runtime itself: a prompt that sent small models into tool-call loops. After the [root-cause fix](bench/spiral-diagnosis.md): accuracy 72.8% → 79.4%, turn-cap hits 15/180 → 0/180 |
+| **[Real issues](docs/case-study.md)** | 5 already-fixed issues from open-source projects, given only the issue text, graded by the project's own tests, three rounds | Fixed 3/5 → 3/5 → 4/5 (too few to be a success rate); found and fixed 5 defects in the runtime |
+| **[Sandbox coding](bench/REPORT.md#sandbox-coding-benchmark--round-3)** | 14 coding tasks (two baiting test edits), two model tiers | 0 test tampering and 0 out-of-scope edits in 56 runs |
+| **[Self-evolution, live](docs/self-evolution-demo.md)** | Two skill lineages through the full pipeline with a real model | One adopted, one quarantined, each with an audit card |
+</details>
+
+## Console and desktop app
 
 | | |
 |---|---|
-| [![Overview page](docs/assets/screenshots/home-en.png)](docs/assets/screenshots/home-en.png) | [![Permission prompt](docs/assets/screenshots/gate-en.png)](docs/assets/screenshots/gate-en.png) |
-| **Overview**: what it is, how one turn works, the state of this install | **Permission gate**: the model wants to delete a file; the runtime waits for you |
-| [![A session in progress](docs/assets/screenshots/console-en.png)](docs/assets/screenshots/console-en.png) | [![Benchmarks page](docs/assets/screenshots/bench-en.png)](docs/assets/screenshots/bench-en.png) |
-| **Session**: tool cards, live command output, the inspector and timing waterfall | **Benchmarks**: recomputed from the raw result rows committed in the repo |
-| [![Cases page](docs/assets/screenshots/cases-en.png)](docs/assets/screenshots/cases-en.png) | [![Skills page](docs/assets/screenshots/skills-en.png)](docs/assets/screenshots/skills-en.png) |
-| **Cases**: three rounds on real issues; every run replays, every change sits next to the upstream fix | **Skills**: an audit card for each admit or quarantine |
+| [![A session](docs/assets/screenshots/console-en.png)](docs/assets/screenshots/console-en.png) | [![Permission prompt](docs/assets/screenshots/gate-en.png)](docs/assets/screenshots/gate-en.png) |
+| **A session**: tool cards, live command output, verification badges; the Review tab shows each file's diff, with whole-turn undo and per-file put-back | **The permission gate** asks only about what cannot be undone, and says why |
 
-Several sessions run side by side, and a finished one can be reopened and
-continued. A long command streams its output, and Stop kills the whole process
-tree. Plain HTML/CSS/JS, no build step, no CDN. How it is built:
-[Web console](docs/web-console.md).
+The desktop app is the same console in its own window (pywebview + WebView2), one background server per project,
+stopped when the window closes, with no console windows popping up. See [Web console](docs/web-console.md).
 
 ## Architecture
 
 ![System overview](docs/assets/diagrams/overview.en.svg)
 
-The runtime prints nothing. It publishes events, and the terminal, the browser
-and the trace recorder subscribe to the same stream. That is why a recorded run
-replays through exactly the code a live run uses — and why the hosted demo has
-no server behind it.
-
-<details>
-<summary><b>One turn, start to finish</b></summary>
-
-![One turn, start to finish](docs/assets/diagrams/turn.en.svg)
-</details>
-
-<details>
-<summary><b>How a skill changes</b></summary>
-
-![How a skill changes](docs/assets/diagrams/evolution.en.svg)
-</details>
-
-<details>
-<summary><b>One event stream, three consumers</b></summary>
-
-![One event stream, three consumers](docs/assets/diagrams/events.en.svg)
-</details>
-
-<details>
-<summary><b>Context management in three tiers</b></summary>
-
-![Context management in three tiers](docs/assets/diagrams/context.en.svg)
-</details>
-
-The figures are generated by [`scripts/build_diagrams.py`](scripts/build_diagrams.py),
-and CI checks that they match the script. More in [Architecture](docs/architecture.md).
-
-## Evidence, not intent
-
-"How do you know it works?" For each row, the numbers and the raw artifacts are
-committed and can be recomputed.
-
-| | What was done | Result |
-|---|---|---|
-| **[ToolHop benchmark](bench/REPORT.md)** | Multi-hop tool calling; n=60, three arms, paired-bootstrap 95% CIs | The benchmark caught a real defect in the harness itself: a prompt that sent a small model into a tool-call loop. [Root-caused](bench/spiral-diagnosis.md), fixed, re-measured: accuracy 72.8% → 79.4%, turn-cap hits 15/180 → 0/180, CI of the difference excludes zero |
-| **[Case study on real issues](docs/case-study.md)** | Five issues from open-source projects, each already fixed upstream: the agent gets the issue text only and is graded by the project's own tests, over three rounds | 3/5, 3/5, 4/5 resolved — too small a sample to read as a success rate. What it produced is five defects found in the runtime itself, each then fixed: on Windows a multi-line shell command ran only its first line (none of 40 ran completely in the first two rounds), and the model could reset the loop guard. Four problems that are not fixed are written up with the reasons. All 15 runs can be replayed |
-| **[Sandbox coding benchmark](bench/REPORT.md#sandbox-coding-benchmark--round-3)** | 14 coding tasks (two are traps that invite editing the tests), two model tiers | 0 test tampering and 0 out-of-scope edits in 56 runs; one "shipped without verifying" failure caught, and re-run to check it was not a fluke |
-| **[Self-evolution, live-fired](docs/self-evolution-demo.md)** | Two skill lineages through the full pipeline with a real model | One **admit**, one **quarantine** (stopped by the gate, live file rolled back), each with an audit card |
-| **Runtime overhead** | Every step of the loop is timed (`python scripts/perf_report.py`) | Over 18 recorded runs, permission checks + skill retrieval add up to 56 ms, 0.003% of wall time; 77% is waiting for the model and 20% is tool execution. An order of magnitude, not a benchmark only |
-| **End-to-end check** | [`scripts/smoke_live.py`](scripts/smoke_live.py) verifies three things against a real model | A 60-second command is stopped about 3 seconds in and its child process is gone; two parallel sessions never see each other's events; after a server restart a session resumes and the model still remembers it |
-
-289 tests, none of which needs an API key. Known problems and trade-offs —
-including ones found and not yet fixed — are in
-[Design trade-offs](docs/design-tradeoffs.md).
+The runtime prints nothing; it publishes events. The terminal, the browser and the trace recorder all subscribe
+to the same stream, which is why a recorded run replays with the same interface code. There is no agent framework
+underneath: the loop, permissions, checkpoints, verification and context folding are implemented here. See
+[Architecture](docs/architecture.md).
 
 ## Documentation
 
 | I want to… | English | 中文 |
 |---|---|---|
-| start from zero | [Getting started](docs/getting-started.md) | [上手指南](docs/zh/getting-started.md) |
-| look up a feature or a command | [Feature guide](docs/features.md) | [功能手册](docs/zh/features.md) |
-| see how the code is organised | [Architecture](docs/architecture.md) | [架构](docs/zh/architecture.md) |
-| see how events, sessions and replay are built | [Web console](docs/web-console.md) | [Web 控制台](docs/zh/web-console.md) |
-| read about skill self-evolution | [Self-evolution demo](docs/self-evolution-demo.md) | [技能进化详解](docs/zh/skill-evolution.md) · [在线评测](docs/zh/online-skill-eval.md) |
-| see how it does on real projects, and what that exposed | [Case study](docs/case-study.md) | [实战案例](docs/zh/case-study.md) |
-| know the compromises and known issues | [Design trade-offs](docs/design-tradeoffs.md) | |
-| see the full benchmark numbers | [bench/REPORT.md](bench/REPORT.md) | |
-| see what changed in each version | [CHANGELOG.md](CHANGELOG.md) | |
+| get started from zero | [Getting started](docs/getting-started.md) | [上手指南](docs/zh/getting-started.md) |
+| look up a feature, every command and setting | [Feature guide](docs/features.md) | [功能手册](docs/zh/features.md) |
+| know what is and is not protected | [Safety and undo](docs/safety.md) | [安全与撤销](docs/zh/safety.md) |
+| see the five safeguards measured | [bench/FEATURES.md](bench/FEATURES.md) | |
+| see day-to-day use | | [docs/dogfooding.md](docs/dogfooding.md) |
+| understand the code layout | [Architecture](docs/architecture.md) | [架构](docs/zh/architecture.md) |
+| see the trade-offs | [Design trade-offs](docs/design-tradeoffs.md) | |
+| see what changed | [CHANGELOG.md](CHANGELOG.md) | |
 
 ## Development
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate             # Windows: .venv\Scripts\activate
-pip install -e ".[dev,bench,web]"
+.venv\Scripts\activate                # macOS / Linux: source .venv/bin/activate
+pip install -e ".[dev,bench,web,desktop]"
 
-pytest -q                             # 255 passed, no API key needed
-ruff check .
-python scripts/build_diagrams.py      # regenerate the figures
-python scripts/record_demo.py --all   # re-record the demo traces (needs an API key)
-python scripts/build_pages.py         # export the static demo to ./site
-docker compose up                     # or Docker: console on http://localhost:8765
+pytest -q                             # 626 tests, no API key needed
+ruff check keelson tests scripts
+python -m keelson.bench.features --validate   # check the experiment fixtures, no API key needed
+python scripts/build_desktop.py       # build the Windows desktop app
 ```
 
-<details>
-<summary><b>Repository layout</b></summary>
-
-```text
-keelson/
-├── keelson/                 the Python package
-│   ├── agent.py            the loop: model calls, tool dispatch, context compression, loop guard
-│   ├── tools.py            built-in tools, the permission gate, the async shell
-│   ├── events.py           event bus, timing spans, per-session binding
-│   ├── ui.py               terminal renderer
-│   ├── doctor.py           keelson doctor / keelson init
-│   ├── web/                web console: server, sessions, trace recorder and scrubber, static front end
-│   ├── skills.py · online_skill_evolution.py · skill_gate.py · skill_history.py · evolution_card.py
-│   ├── memory.py · session.py · session_memory.py · mcp_client.py · subagent.py · prompt.py · paths.py
-│   └── bench/              ToolHop and sandbox runners, metrics
-├── bench/                  tasks, splits, REPORT.md, committed run artifacts
-├── demo/traces/            recorded traces the console replays
-├── docs/                   documentation (English and Chinese) and the generated figures
-├── scripts/                start scripts, demo recorder, figure generator, static-site build, live smoke test
-├── tests/                  255 tests
-├── start.bat · start.sh    one-command start
-└── Dockerfile · docker-compose.yml
-```
-</details>
-
-To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); for security issues,
-[SECURITY.md](SECURITY.md).
+Windows first: what depends on the platform (the shell, the Recycle Bin, windowless subprocesses, packaging) lives
+in `keelson/platforms/`, so Linux and macOS need only new backends; CI runs on Windows and Ubuntu. See
+[CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## Acknowledgements
 
-The tool set, the permission modes and the `SKILL.md` and `.mcp.json`
-conventions follow Claude Code's design; this project studies that harness by
-reimplementing it in Python. The multi-hop benchmark uses the
-[ToolHop](https://huggingface.co/datasets/bytedance-research/ToolHop) dataset.
-The interface is set in [Inter](https://rsms.me/inter/) and
-[JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL OFL).
+The tool set, the permission modes and the `SKILL.md` and `.mcp.json` conventions follow Claude Code's design. The
+multi-hop benchmark uses [ToolHop](https://huggingface.co/datasets/bytedance-research/ToolHop). Interface fonts:
+[Inter](https://rsms.me/inter/) and [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL OFL).
 
-> A keelson is the beam that locks a ship's keel to its frames. The model is
-> the sail; Keelson carries its force into the hull.
+> A keelson is the beam that locks a ship's keel to its frames. The model is the sail; Keelson carries its force
+> into the hull.
 
 ## License
 

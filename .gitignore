@@ -260,6 +260,14 @@ bench/runs/*
 !bench/runs/20260911T024447Z-sandbox-harness-gpt-6-astra
 !bench/runs/20260911T025527Z-sandbox-harness-gpt-6-astra
 !bench/runs/20260911T025734Z-sandbox-raw-gpt-6-astra
+# The feature experiments behind bench/FEATURES.md (bench/features_runs.json), and the danger run before the fix.
+!bench/runs/20261118T032001Z-features-danger-no-model
+!bench/runs/20261118T032519Z-features-verify-deepseek-v4.1-flash
+!bench/runs/20261118T033936Z-features-scope-deepseek-v4.1-flash
+!bench/runs/20261118T034643Z-features-ledger-deepseek-v4.1-flash
+!bench/runs/20261118T035638Z-features-undo-deepseek-v4.1-flash
+!bench/runs/20261118T035835Z-features-verify-deepseek-v4.1-flash
+!bench/runs/20261118T040008Z-features-danger-no-model
 
 # OS junk
 .DS_Store

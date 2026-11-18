@@ -525,6 +525,7 @@ keelson -p --output-format json "修好失败的测试" > result.json
 | `KEELSON_VERIFY_TIMEOUT` | 每条检查命令最多运行多少秒 | `300` |
 | `KEELSON_GUARD_TESTS` | 任务不涉及测试时，改已有测试要先问 | `1` |
 | `KEELSON_SCOPE_GUARD` | 改本次请求范围外的文件要先问 | `1` |
+| `KEELSON_LEDGER` | 折叠后放回任务账本（`0`：只留模型自己的总结，做对比实验用） | `1` |
 | `KEELSON_DAILY_BUDGET_USD` | 当天估算花费（所有项目）达到此值后不再开始新的一轮 | 无 |
 | `KEELSON_TRUST_ALL` | 把所有目录都当作已信任（只用于自己的机器和 CI） | `0` |
 | `KEELSON_AUTO_SKILL_EVOLUTION` | 自动从反馈中提取技能 | `1` |

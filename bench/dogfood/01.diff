@@ -1,0 +1,94 @@
+diff --git a/keelson/bench/features.py b/keelson/bench/features.py
+index 74db5bf..6a7caac 100644
+--- a/keelson/bench/features.py
++++ b/keelson/bench/features.py
+@@ -632,6 +632,21 @@ def _git_commit() -> str:
+         return ""
+ 
+ 
++def _git_dirty(root: Path = _REPO_ROOT) -> bool | None:
++    """Uncommitted changes in tracked files under ``root``; None outside a git tree.
++
++    Untracked files are ignored, so the run's own bench/runs/<utc>-... output does not make a clean tree dirty.
++    """
++    try:
++        proc = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], capture_output=True,
++                              text=True, timeout=10, cwd=root)
++    except Exception:
++        return None
++    if proc.returncode != 0:
++        return None
++    return bool(proc.stdout.strip())
++
++
+ def _run_dir(out: Path, experiment: str, model: str) -> Path:
+     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+     path = (out / "runs" / f"{stamp}-features-{experiment}-{model.replace('/', '_')}").resolve()
+@@ -680,7 +695,7 @@ def main(argv: list[str] | None = None) -> int:
+         ap.error("name an experiment, or pass --validate")
+ 
+     out = Path(args.out)
+-    config: dict[str, Any] = {"experiment": args.experiment, "git_commit": _git_commit(),
++    config: dict[str, Any] = {"experiment": args.experiment, "git_commit": _git_commit(), "git_dirty": _git_dirty(),
+                               "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                               "platform": sys.platform, "python": sys.version.split()[0]}
+     if args.experiment == "danger":
+diff --git a/tests/test_bench_features.py b/tests/test_bench_features.py
+index e1d128a..20dce6c 100644
+--- a/tests/test_bench_features.py
++++ b/tests/test_bench_features.py
+@@ -2,6 +2,9 @@
+ 
+ from __future__ import annotations
+ 
++import shutil
++import subprocess
++
+ import pytest
+ 
+ from keelson.agent import Agent
+@@ -24,6 +27,44 @@ def test_fixture_ids_are_unique_and_scope_requests_name_their_file():
+         assert set(task["solution"]) <= set(task["allowed"])
+ 
+ 
++def _git(root, *args):
++    subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
++
++
++def _repo(tmp_path):
++    if shutil.which("git") is None:
++        pytest.skip("git is not installed")
++    _git(tmp_path, "init", "-q")
++    _git(tmp_path, "config", "user.email", "bench@example.com")
++    _git(tmp_path, "config", "user.name", "bench")
++    return tmp_path
++
++
++def test_git_dirty_reports_uncommitted_edits_but_not_untracked_run_output(tmp_path):
++    root = _repo(tmp_path)
++    (root / "tracked.py").write_text("x = 1\n", encoding="utf-8")
++    _git(root, "add", "tracked.py")
++    _git(root, "commit", "-q", "-m", "init")
++    assert features._git_dirty(root) is False
++
++    # A run's own artifacts land in bench/runs and are not committed, so they must not count.
++    run_dir = root / "bench" / "runs" / "20260101T000000Z-features-danger-no-model"
++    run_dir.mkdir(parents=True)
++    (run_dir / "config.json").write_text("{}\n", encoding="utf-8")
++    assert features._git_dirty(root) is False
++
++    (root / "tracked.py").write_text("x = 2\n", encoding="utf-8")
++    assert features._git_dirty(root) is True
++
++    _git(root, "checkout", "--", "tracked.py")
++    (root / "tracked.py").unlink()
++    assert features._git_dirty(root) is True
++
++
++def test_git_dirty_is_none_outside_a_repository(tmp_path):
++    assert features._git_dirty(tmp_path) is None
++
++
+ def test_snapshot_and_diff_see_changes_creations_and_deletions(tmp_path):
+     features.write_files(tmp_path, {"a.txt": "1", "d/b.txt": "2", "c.txt": "3"})
+     (tmp_path / "__pycache__").mkdir()

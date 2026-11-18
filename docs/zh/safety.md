@@ -12,6 +12,7 @@
 | 风险 | Keelson 的做法 | 代码 |
 |---|---|---|
 | `rm -rf ~`、`Remove-Item $env:USERPROFILE -Recurse`、`del /s` 等 | shell 里所有删除方式一律拒绝（`bash -c`、`cmd /c`、`ForEach-Object { … }`、`xargs`、`find -delete` 里的也算），并告诉模型改用 `delete_files`。 | `keelson/safety.py` |
+| 擦除磁盘或分区：`dd of=/dev/…`、`mkfs.*`、`Format-Volume`、`Clear-Disk`、`format D:`、`wipefs`、`diskpart` | 任何模式下都拒绝。 | `safety.assess_shell` |
 | 变量没设置：`rm -rf $DIR/` 变成 `rm -rf /` | 判断路径前，先按 shell 的方式展开变量。展开不了的，整条命令按危险处理：要询问，而且只能允许一次。 | `safety.expand` |
 | 移动或删除主目录、盘符根、项目目录本身或它的上级 | 任何模式都拒绝，`--yolo` 也一样。 | `safety.describe_protected` |
 | 写系统目录（`C:\Windows`、`Program Files`、`/usr`、`/etc` 等）或 Keelson 的检查点目录 | 任何模式都拒绝。 | 同上 |
@@ -36,6 +37,7 @@
 - **不进快照的：** `.gitignore` 忽略的文件（除非是 Keelson 自己的文件工具改的）、`node_modules`、`.venv` 之类的目录、超过 50 MB 的新文件。用 `delete_files` 删它们照样进回收站。
 - **没有 git 时**，只有 Keelson 自己的文件工具能撤销。终端会明确提示，普通 shell 命令也会改为先询问再执行。
 - 项目目录如果是主目录或盘符根，太大无法快照；请打开具体的项目目录。
+- **实测出的缺口。** 在 [bench/FEATURES.md](../../bench/FEATURES.md) 的危险命令集里，26 条毁灭性命令中有 2 条只是询问而不是拒绝，所以 `--yolo` 下会执行：用内联代码删除（`python -c "shutil.rmtree(...)"`），以及把主目录下的文件夹移走（`Move-Item $env:USERPROFILE\Documents D:\backup`）。
 - 命令解析是启发式的。特殊的引号写法或动态生成的命令（`Invoke-Expression`、`eval`）可能藏住真实意图；这类命令会以“无法检查”为由询问你。
 
 ## 关掉某些功能

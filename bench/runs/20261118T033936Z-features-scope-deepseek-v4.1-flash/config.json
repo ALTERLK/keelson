@@ -1,0 +1,19 @@
+{
+  "experiment": "scope",
+  "git_commit": "c7c9855",
+  "git_dirty": true,
+  "started_at": "2026-11-18T03:39:32Z",
+  "platform": "win32",
+  "python": "3.12.13",
+  "model": "deepseek-v4.1-flash",
+  "api_base": "https://4sapi.org/v1",
+  "arms": [
+    "off",
+    "on"
+  ],
+  "repeats": 3,
+  "max_turns": 30,
+  "timeout_s": 300,
+  "budget_usd": 1.0,
+  "spent_usd": 0.045
+}

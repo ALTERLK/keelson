@@ -270,9 +270,9 @@ def run_danger() -> list[dict]:
             for mode in MODES:
                 perm = check_permission("run_shell", {"command": command}, mode)
                 row[mode] = perm["action"]
-                if mode == "default":
-                    row["message"] = (perm.get("message") or "")[:200]
-                    row["reason"] = (perm.get("reason") or "")[:200]
+                if mode == "default":     # the home folder's real path names the user: shown as ~
+                    row["message"] = (perm.get("message") or "")[:200].replace(str(Path.home()), "~")
+                    row["reason"] = (perm.get("reason") or "")[:200].replace(str(Path.home()), "~")
             results.append(row)
     return results
 

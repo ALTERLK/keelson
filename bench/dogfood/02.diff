@@ -1,0 +1,177 @@
+diff --git a/keelson/verify.py b/keelson/verify.py
+index b8415f5..ae89007 100644
+--- a/keelson/verify.py
++++ b/keelson/verify.py
+@@ -304,7 +304,8 @@ def mentions_tests(text: str) -> bool:
+ 
+ _TEST_DEF = re.compile(r"^\s*(async\s+)?def\s+test\w*|\b(it|test)\s*\(\s*['\"`]|^\s*func\s+Test\w+|#\[test\]",
+                        re.MULTILINE)
+-_SKIP = re.compile(r"@pytest\.mark\.(skip|skipif|xfail)|pytest\.(skip|xfail)\(|@unittest\.skip|\.skip\(|"
++_SKIP = re.compile(r"@pytest\.mark\.(skip|skipif|xfail)|\bpytest\.mark\.(skip|skipif|xfail)\b|pytest\.(skip|xfail)\(|"
++                   r"@unittest\.skip|\.skip\(|"
+                    r"\b(xit|xdescribe|xtest)\s*\(|\.only\(|\bt\.Skip|#\[ignore\]|@Disabled|@Ignore")
+ _ASSERT = re.compile(r"\bassert\b|self\.assert\w*\(|\bexpect\s*\(|assert_eq!|assert_ne!|assert!\(|"
+                      r"\bt\.(Error|Errorf|Fatal|Fatalf)\(|\.should\b|Assert\.\w+\(")
+@@ -329,6 +330,107 @@ def _expectations(lines: list[str]) -> dict[str, str]:
+     return found
+ 
+ 
++def _indent(line: str) -> int:
++    return len(line.expandtabs(4)) - len(line.expandtabs(4).lstrip())
++
++
++_JS_TEST = re.compile(r"^\s*(it|test|describe)(?:\.\w+)?\s*\(\s*(['\"`])([^'\"`]*)\2")
++_JS_DEF = re.compile(r"^\s*(?:async\s+)?(?:function|class)\b|^\s*(?:const|let|var)\s+\w+\s*=")
++_PY_DEF = re.compile(r"^\s*(?:async\s+)?(?:def|class)\b")
++_MODULE = "<module>"                                  # not an f-string: f"{_MODULE}" would print the name
++
++
++def _sig(header: str, js: bool) -> str:
++    """A stable name for the block a header line opens: a test's name, or the def/class/describe."""
++    m = _JS_TEST.match(header) if js else None
++    return f"{m.group(1)}({m.group(2)}{m.group(3)}{m.group(2)}" if m else header.strip().rstrip(":{")
++
++
++def _block_above(lines: list[str], lineno: int, js: bool) -> list[str] | None:
++    """Signature chain (outermost first) of the block holding ``lines[lineno]``; empty at top level."""
++    level = _indent(lines[lineno])
++    chain: list[str] = []
++    for j in range(lineno - 1, -1, -1):
++        line = lines[j]
++        if not line.strip() or _indent(line) >= level:
++            continue                                # blank, or deeper: inside the same block
++        opener = (_JS_TEST.match(line) if js else _TEST_DEF.match(line)) or \
++                 (_JS_DEF.match(line) if js else _PY_DEF.match(line))
++        if opener:
++            chain.insert(0, _sig(line, js))
++        level = _indent(line)
++        if level == 0:
++            break
++    return chain
++
++
++def _marker_line(lines: list[str], lineno: int) -> int:
++    """The header a marker at ``lineno`` applies to: itself, or the definition under its decorators."""
++    if not lines[lineno].strip().startswith("@"):
++        return lineno
++    for i in range(lineno + 1, len(lines)):
++        stripped = lines[i].strip()
++        if stripped and not stripped.startswith(("@", "#")):
++            return i
++    return lineno
++
++
++def _skipped_tests(text: str, js: bool) -> list[tuple[str, str]]:
++    """(signature of the skipped test, "whole" | "part") for every marker that skips an existing test.
++
++    "whole": a decorator, ``it.skip(``, or a skip in a test's body (the test stops running when hit);
++    a skip in a helper or a new test only has itself to skip, so it is not listed.
++    """
++    lines = text.splitlines()
++    found = []
++    for lineno, line in enumerate(lines):
++        for m in _SKIP.finditer(line):
++            before = line[:m.start()]
++            assignment = re.fullmatch(r"\s*\w+\s*=\s*", before) is not None   # `pytestmark = pytest.mark.skip`
++            starts_marker = before.lstrip().startswith("@") or assignment or \
++                (js and (_JS_TEST.search(before + line[m.start():]) is not None or
++                         re.fullmatch(r"\s*(?:it|test|describe)", before) is not None))
++            if before.strip() and not starts_marker:
++                continue                            # after code on the line: `x = pytest.skip(...)`
++            header = _marker_line(lines, lineno)
++            chain = _block_above(lines, header, js)
++            if not chain:
++                found.append((_MODULE, "whole"))    # top level: pytestmark, a decorator on a class
++                continue
++            is_test = bool(_JS_TEST.match(lines[header]) if js else _TEST_DEF.match(lines[header]))
++            found.append((" / ".join(chain), "whole" if is_test or not js else "part"))
++            if not js and not is_test and _indent(lines[header]) == 0:
++                found[-1] = (_MODULE, "whole")      # a decorator on a top-level class
++    return found
++
++
++def _tests_in(text: str, js: bool) -> set[str]:
++    """Signatures of the tests a file defines (a test name, with its describe/class chain)."""
++    lines = text.splitlines()
++    return {_sig(line, js) for line in lines if _JS_TEST.match(line) if js} | \
++        {_sig(line, js) for line in lines if _TEST_DEF.match(line) and not js}
++
++
++def _skips_on_existing_tests(path: str, old: str, new: str) -> int:
++    """Skip markers the change adds where they make tests that already ran stop running.
++
++    A skip in a brand-new test or helper only skips new code, so it does not weaken the file. A
++    module-level skip, a decorator on a test that was already there, and a skip inside such a test
++    do.
++    """
++    js = bool(re.search(r"\.(test|spec)\.[cm]?[jt]sx?$", path.replace("\\", "/"), re.IGNORECASE))
++    before, after = _skipped_tests(old, js), _skipped_tests(new, js)
++    old_tests = _tests_in(old, js)
++    added = after.count((_MODULE, "whole")) - before.count((_MODULE, "whole"))
++    for key in {key for key, _kind in after} - {_MODULE}:
++        if not any(k == key or k.startswith(key) for k in old_tests):
++            continue                                # a new test (or describe/class): nothing was skipped
++        n_before = before.count((key, "whole")) + before.count((key, "part"))
++        n_after = after.count((key, "whole")) + after.count((key, "part"))
++        added += n_after - n_before
++    return max(0, added)
++
++
+ def weakening(path: str, old: str | None, new: str | None) -> list[str]:
+     """How a change to a test file makes the tests weaker. Empty: it does not (as far as can be told)."""
+     if old is None:
+@@ -340,9 +442,9 @@ def weakening(path: str, old: str | None, new: str | None) -> list[str]:
+     tests_before, tests_after = len(_TEST_DEF.findall(old)), len(_TEST_DEF.findall(new))
+     if tests_after < tests_before:
+         found.append(f"{path}: {tests_before - tests_after} test(s) removed")
+-    skips_before, skips_after = len(_SKIP.findall(old)), len(_SKIP.findall(new))
+-    if skips_after > skips_before:
+-        found.append(f"{path}: {skips_after - skips_before} skip/xfail/only marker(s) added")
++    skips_added = _skips_on_existing_tests(path, old, new)
++    if skips_added:
++        found.append(f"{path}: {skips_added} skip/xfail/only marker(s) added")
+     asserts_before, asserts_after = len(_ASSERT.findall(old)), len(_ASSERT.findall(new))
+     if asserts_after < asserts_before and tests_after >= tests_before:
+         found.append(f"{path}: {asserts_before - asserts_after} assertion(s) removed")
+diff --git a/tests/test_verify.py b/tests/test_verify.py
+index e076faa..436b726 100644
+--- a/tests/test_verify.py
++++ b/tests/test_verify.py
+@@ -184,6 +184,37 @@ def test_js_skips_and_changed_expectations():
+     assert "skip" in found and "expected value changed" in found
+ 
+ 
++_NEEDS_GIT = '\ndef _needs_git():\n    """Local helper."""\n    if shutil.which("git") is None:\n        pytest.skip("git 没装")\n    return True\n'
++_NEW_GIT_TEST = '\ndef test_clone():\n    if shutil.which("git") is None:\n        pytest.skip("git 没装")\n    assert clone()\n'
++
++
++def test_a_skip_in_a_new_helper_or_a_new_test_is_not_weakening():
++    """Only existing tests being skipped counts: new code skipping itself weakens nothing."""
++    assert v.weakening("t.py", _OLD, _OLD.replace("import pytest\n", "import shutil\nimport pytest\n") + _NEEDS_GIT) == []
++    assert v.weakening("t.py", _OLD, _OLD.replace("import pytest\n", "import shutil\nimport pytest\n") + _NEW_GIT_TEST) == []
++    assert "skip" not in " | ".join(v.weakening("t.py", _OLD, _OLD + _NEEDS_GIT + _NEW_GIT_TEST))
++
++
++@pytest.mark.parametrize("new", [
++    _OLD + '\npytest.skip("git 没装", allow_module_level=True)\n',          # module-level: skips the whole file
++    _OLD + '\npytestmark = pytest.mark.skip(reason="git 没装")\n',          # the same, written as a marker
++    _OLD.replace("def test_sub", "@pytest.mark.skip(reason='git 没装')\ndef test_sub"),
++    _OLD.replace("def test_sub", "@pytest.mark.skipif(not shutil.which('git'), reason='git 没装')\ndef test_sub"),
++    _OLD.replace("    assert sub(3, 1) == 2\n",
++                 "    if shutil.which('git') is None:\n        pytest.skip('git 没装')\n    assert sub(3, 1) == 2\n"),
++], ids=["module-skip", "pytestmark", "decorator", "skipif", "inside-existing-test"])
++def test_skipping_an_existing_test_is_weakening(new):
++    assert any("skip/xfail/only marker(s) added" in item for item in v.weakening("t.py", _OLD, new))
++
++
++def test_js_skips_only_count_on_tests_that_were_there():
++    old = "it('adds', () => {\n  expect(add(1, 1)).toBe(2);\n});\n"
++    new_test = old + "it('clones', () => {\n  if (!git) test.skip(true, 'no git');\n});\n"
++    assert v.weakening("a.test.js", old, new_test) == []
++    assert v.weakening("a.test.js", old, old + "function needsGit() {\n  test.skip(!git);\n}\n") == []
++    assert any("skip" in item for item in v.weakening("a.test.js", old, old.replace("it('adds'", "it.skip('adds'")))
++
++
+ # ─── claims ─────────────────────────────────────────────────
+ 
+ 

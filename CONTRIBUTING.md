@@ -58,6 +58,24 @@ local paths and refuses to save a trace that still contains a user name, an
 absolute Windows path or something shaped like an API key. Please do not commit
 a trace recorded any other way.
 
+## Feature experiments
+
+`bench/FEATURES.md` is generated from the feature experiments added in 0.4:
+one suite per signature feature (`verify`, `scope`, `ledger`, `undo`,
+`danger`), checking that the feature does what it claims with a real model.
+
+```bash
+python -m keelson.bench.features --validate           # fixtures only; no API key
+python -m keelson.bench.features verify --budget-usd 2   # a real run; needs a key
+python scripts/features_report.py --check            # tables match the raw results
+python scripts/dogfood_report.py                     # the table in docs/dogfooding.md
+```
+
+Change a task under `keelson/bench/feature_tasks.py` and run `--validate`
+before anything else: without calling a model, it checks that every starter
+fails its check and every reference solution passes, so a broken task fails
+there in about half a minute instead of after a paid run.
+
 ## Reporting a bug
 
 Include the output of `keelson doctor`, the command you ran, and what you

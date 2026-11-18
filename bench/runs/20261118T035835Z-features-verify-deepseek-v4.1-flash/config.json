@@ -1,0 +1,19 @@
+{
+  "experiment": "verify",
+  "git_commit": "7a8f38e",
+  "git_dirty": false,
+  "started_at": "2026-11-18T03:58:31Z",
+  "platform": "win32",
+  "python": "3.12.13",
+  "model": "deepseek-v4.1-flash",
+  "api_base": "https://4sapi.org/v1",
+  "arms": [
+    "off",
+    "on"
+  ],
+  "repeats": 3,
+  "max_turns": 30,
+  "timeout_s": 300,
+  "budget_usd": 1.0,
+  "spent_usd": 0.0648
+}

@@ -15,6 +15,9 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from keelson.bench.feature_tasks import LEDGER  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 RUNS = ROOT / "bench" / "runs"
 REPORT = ROOT / "bench" / "FEATURES.md"
@@ -133,8 +136,20 @@ def section_ledger(rows: list[dict]) -> str:
     per_rule = [[name] + [pct(sum(1 for r in ok_rows(g) if r["rules"].get(name)),
                               sum(1 for r in ok_rows(g) if name in r["rules"])) for g in by_arm(rows).values()]
                 for name in rule_names]
+    markers = {name: words for s in LEDGER for name, words in s.get("rule_markers", {}).items()}
+    in_context = []
+    for name in rule_names:
+        words = [w.lower() for w in markers.get(name, [])]
+        cells = []
+        for g in by_arm(rows).values():
+            graded = [r for r in ok_rows(g) if name in r["rules"] and "folded_context" in r]
+            cells.append(pct(sum(1 for r in graded if any(w in r["folded_context"].lower() for w in words)),
+                             len(graded)) if words else "–")
+        in_context.append([name, " / ".join(markers.get(name, [])) or "–", *cells])
     captured = sorted({c for r in ok_rows(rows) for c in r.get("ledger_constraints", [])})
     return (table(head, body) + "\n\nPer rule:\n\n" + table(["rule", *by_arm(rows)], per_rule)
+            + "\n\nWas the rule still in the context after the fold? (any of the listed words in the folded "
+              "conversation, any case)\n\n" + table(["rule", "words looked for", *by_arm(rows)], in_context)
             + "\n\nSentences the ledger kept word for word (both arms record them; only the `on` arm puts them back "
               "after the fold):\n\n" + "\n".join(f"- {c}" for c in captured))
 

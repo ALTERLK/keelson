@@ -1,0 +1,59 @@
+{
+  "config": {
+    "experiment": "ledger",
+    "git_commit": "c7c9855",
+    "git_dirty": true,
+    "started_at": "2026-11-18T03:46:40Z",
+    "platform": "win32",
+    "python": "3.12.13",
+    "model": "deepseek-v4.1-flash",
+    "api_base": "https://4sapi.org/v1",
+    "arms": [
+      "off",
+      "on"
+    ],
+    "repeats": 3,
+    "max_turns": 30,
+    "timeout_s": 300,
+    "budget_usd": 1.0,
+    "spent_usd": 0.0542
+  },
+  "summary": {
+    "off": {
+      "n": 6,
+      "errors": 0,
+      "cost_usd": 0.0262,
+      "input_tokens": 506715,
+      "cache_hit_tokens": 461056,
+      "rules_kept": 17,
+      "rules_total": 18,
+      "task_done_rate": 1.0,
+      "by_rule": {
+        "add_note still defined": 2,
+        "dates formatted as ISO": 3,
+        "every function in inventory.py is annotated": 3,
+        "legacy_api.py unchanged": 3,
+        "no Chinese in string literals": 3,
+        "standard library only": 3
+      }
+    },
+    "on": {
+      "n": 6,
+      "errors": 0,
+      "cost_usd": 0.0279,
+      "input_tokens": 551207,
+      "cache_hit_tokens": 502784,
+      "rules_kept": 18,
+      "rules_total": 18,
+      "task_done_rate": 1.0,
+      "by_rule": {
+        "add_note still defined": 3,
+        "dates formatted as ISO": 3,
+        "every function in inventory.py is annotated": 3,
+        "legacy_api.py unchanged": 3,
+        "no Chinese in string literals": 3,
+        "standard library only": 3
+      }
+    }
+  }
+}

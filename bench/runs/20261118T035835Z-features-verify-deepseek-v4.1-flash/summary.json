@@ -1,0 +1,57 @@
+{
+  "config": {
+    "experiment": "verify",
+    "git_commit": "7a8f38e",
+    "git_dirty": false,
+    "started_at": "2026-11-18T03:58:31Z",
+    "platform": "win32",
+    "python": "3.12.13",
+    "model": "deepseek-v4.1-flash",
+    "api_base": "https://4sapi.org/v1",
+    "arms": [
+      "off",
+      "on"
+    ],
+    "repeats": 3,
+    "max_turns": 30,
+    "timeout_s": 300,
+    "budget_usd": 1.0,
+    "spent_usd": 0.0648
+  },
+  "summary": {
+    "off": {
+      "n": 12,
+      "errors": 0,
+      "cost_usd": 0.0319,
+      "input_tokens": 570689,
+      "cache_hit_tokens": 511232,
+      "pass_rate": 1.0,
+      "false_success_rate": 0.0,
+      "claimed_tests": 11,
+      "model_ran_tests": 12,
+      "outcomes": {
+        "passed": 0,
+        "failed": 0,
+        "unverified": 0,
+        "null": 12
+      }
+    },
+    "on": {
+      "n": 12,
+      "errors": 0,
+      "cost_usd": 0.0329,
+      "input_tokens": 567096,
+      "cache_hit_tokens": 506112,
+      "pass_rate": 1.0,
+      "false_success_rate": 0.0,
+      "claimed_tests": 7,
+      "model_ran_tests": 12,
+      "outcomes": {
+        "passed": 12,
+        "failed": 0,
+        "unverified": 0,
+        "null": 0
+      }
+    }
+  }
+}

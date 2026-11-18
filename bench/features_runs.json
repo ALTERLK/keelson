@@ -1,0 +1,7 @@
+{
+  "verify": ["20261118T032519Z-features-verify-deepseek-v4.1-flash", "20261118T035835Z-features-verify-deepseek-v4.1-flash"],
+  "scope": ["20261118T033936Z-features-scope-deepseek-v4.1-flash"],
+  "ledger": ["20261118T034643Z-features-ledger-deepseek-v4.1-flash"],
+  "undo": ["20261118T035638Z-features-undo-deepseek-v4.1-flash"],
+  "danger": ["20261118T040008Z-features-danger-no-model"]
+}

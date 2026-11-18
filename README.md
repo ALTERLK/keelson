@@ -13,169 +13,114 @@
   <a href="https://alterlk.github.io/keelson/?lang=zh"><img src="https://img.shields.io/badge/demo-%E6%B5%8F%E8%A7%88%E5%99%A8%E9%87%8C%E7%9B%B4%E6%8E%A5%E7%9C%8B-f6c177" alt="在线演示"></a>
 </p>
 
-Keelson 是一个用 Python 写的 **Agent 运行时**（harness）。大模型只会输出文字；要让它真的读文件、跑命令、改代码，中间得有一个程序替它执行——并且决定哪些能执行。Keelson 就是这个程序。
+**一个不会骗你、不会闯大祸、能完整撤销、不会失忆的编码 Agent。** Windows 原生，DeepSeek 优先，中文界面，终端和桌面窗口都能用。
 
-底层没有用任何 Agent 框架（不用 LangGraph，也不用 AutoGen）：循环、权限、上下文、技能演化都是自己实现的，因为这些正是这个项目要研究的东西。
+编码 Agent 最让人头疼的，往往不是“不够聪明”，而是这几件事：说做完了其实没做完；一条命令删光了主目录；出事以后撤不回来；聊久了忘了你定的规矩；让它改一行，它顺手改了十个文件。Keelson 把对这五件事的保障做进**运行时**：不靠提示词，也不用你自己写钩子，默认就开着。
 
 <p align="center">
   <a href="https://alterlk.github.io/keelson/?lang=zh"><img src="docs/assets/screenshots/replay-zh.gif" alt="控制台回放一次真实运行：读代码、跑测试、定位 bug、修改、验证" width="92%"></a>
 </p>
-<p align="center"><sub>控制台回放一次真实录制的运行：每个工具调用都先过权限门，右侧实时统计。<a href="https://alterlk.github.io/keelson/?lang=zh">在浏览器里自己点开看 →</a></sub></p>
 
-## 它替你做了什么
+## 五个痛点，五个保障
 
-| 模型自己做不到的事 | Keelson 的做法 | 代码 |
-|---|---|---|
-| 判断一个操作危不危险 | **权限门**：每个工具调用执行前先裁决——放行、问你、或拒绝。拒绝的原因会返回给模型，它会换一种做法而不是硬闯 | `keelson/tools.py` |
-| 发现自己在原地打转 | **循环保护**：同一个工具反复调用且结果不再变化时叫停 | `keelson/agent.py` |
-| 在很长的任务里不“失忆” | **上下文折叠**：三层手段，最后一层把历史改写成结构化记忆 | `keelson/session_memory.py` |
-| 记住你说过的偏好 | **技能自进化**：从你的反馈里提取规则；更新必须通过“不比旧版本差”的门禁，否则隔离 | `keelson/skill_gate.py` |
-| 事后说清楚做了什么 | **事件流与回放**：每一步都是一个事件，可以录下来原样重放 | `keelson/events.py` |
+| 痛点 | 依据 | Keelson 的做法 | 实测（[完整报告](bench/FEATURES.md)） |
+|---|---|---|---|
+| **说“做完了、测试都过了”，其实没跑或没过** | 用户反馈：[声称完成却没验证](https://claudeissues.com/issue/25305-sessions-repeatedly-claim-work-is-done-without-verifying-causing-75-rework-rate)、[报告了从未执行的测试结果](https://claudeissues.com/issue/1501-bug-claude-code-reports-false-test-results-and-actions) | **完工验证**：改了代码，轮末由运行时自己跑项目的检查命令；失败就把真实输出交还模型继续修。结论前挂徽章：✅ 已验证 / ⚠️ 未验证 / ❌ 未通过。模型说“测试通过”却没有对应的成功记录，标成“未经证实” | 60 次运行里 DeepSeek 每次都自己跑了测试，开和关没有差别（多花 2–3%）；开启时徽章结论 30/30 与真实判分一致 |
+| **一条命令毁掉一切**（`rm -rf ~`） | 用户反馈：[环境变量没传下去，删了主目录](https://claudeissues.com/issue/75859-claude-code-ran-rm-rf-against-home-due-to-env-var-not-persisting-between-bash-to)；[Docker 博客整理的事故](https://www.docker.com/blog/coding-agent-horror-stories-the-rm-rf-incident/) | **没有真删除**：shell 里的各种删除方式一律拒绝，改用 `delete_files` 进回收站。展开变量后再判断路径：主目录、盘符根、系统目录、擦盘命令在任何模式下都拒绝；无法展开的变量按危险处理 | 26 条照事故写的毁灭性命令：24 条任何模式都拒绝，2 条会询问（写明在局限里）；实验还抓到了擦盘命令的漏洞，已修 |
+| **撤销管不到 shell 命令的改动** | 官方文档：Claude Code 的检查点“A file that only Bash commands changed isn't tracked”（[Checkpointing · Limitations](https://code.claude.com/docs/en/checkpointing)） | **影子 git 检查点**：每轮开始给项目拍快照（独立的 git 仓库，不碰项目自己的 `.git`）。`/undo` 还原上一轮全部改动，**包括 shell 造成的**修改、新建和删除 | 9/9 次逐字节还原（36 个文件）；按官方文档的规则，只有 3/36 能撤回 |
+| **压缩之后忘了约束** | 用户反馈：[压缩毁掉工作流](https://claudeissues.com/issue/21925-design-flaw-context-compaction-destroys-workflow-no-claude-md-reload-no-pause-au) | **任务账本**：你说过的规则按原话保存在上下文之外，折叠后原样放回，连同目标、计划和改过的文件 | 有账本 18/18 条规则守住，没有 17/18；但违反的那次规则仍在上下文里，不算账本的功劳 |
+| **自作主张改无关代码** | 用户反馈：[请求“严格范围模式”](https://claudeissues.com/issue/61888-feature-add-a-strict-scope-guardrails-mode-to-prevent-unrelated-changes) | **范围护栏**：范围是你 `@` 的文件加上模型用 `declare_scope` 声明的（附理由）；改范围外的文件要先问你，审阅时单独列出 | 30 次一行请求，两组都没碰无关文件，护栏没有出手的机会 |
 
-## 三步上手
+“用户反馈”指公开 issue 里用户的描述，不是官方结论；与 Claude Code 的对比只引用它的官方文档。每一项的**做不到什么**写在 [安全与撤销](docs/zh/safety.md) 和 [功能手册](docs/zh/features.md) 里，例如：这不是操作系统级沙箱；规则靠措辞识别；护栏不检查 shell 命令。
 
-**1. 先看，不用装任何东西。** 打开[在线演示](https://alterlk.github.io/keelson/?lang=zh)，点“看一次带讲解的回放”。它会播放一次真实录制的运行，并在每个关键步骤停下来解释。
+另外两条底线：**花了多少钱看得见**（每轮花费、缓存命中率、`/usage` 汇总、每日预算上限），**用的是哪个模型写在记录里**，不会悄悄换成便宜的。
 
-**2. 本地一条命令启动。** 需要 Python 3.11+ 和 git：
+## 上手
+
+需要 Python 3.11+ 和 git。
 
 ```bash
 git clone https://github.com/ALTERLK/keelson.git
 cd keelson
-start.bat          # Windows（双击也可以）
-./start.sh         # macOS / Linux
+pip install -e ".[web,desktop]"
+
+keelson init        # 选服务商（有 DeepSeek 预设）、粘贴 Key，先试连一次再保存
+keelson             # 终端界面
+keelson desktop     # 桌面窗口：首次运行有向导，选项目、识别检查命令、推荐第一个任务
 ```
 
-脚本会创建虚拟环境、安装依赖并打开控制台。没有 API Key 时进入回放模式，所以演示不依赖网络。
+- 终端里：Enter 发送、Alt+Enter 换行、Ctrl+C 打断、Shift+Tab 切换模式、`/help` 看全部命令、`@文件` 把文件加进对话。
+- 一次性调用：`keelson -p "修一下 calc.py 的 bug"`；`--output-format json` 带上验证结果和花费。
+- 没有 Key 也能先看：`keelson web --replay` 回放录制好的运行，或者直接打开[在线演示](https://alterlk.github.io/keelson/?lang=zh)。
+- Windows 打包版（双击 `Keelson.exe`，不用装 Python）可以用 `python scripts/build_desktop.py` 自己打包；发布包还没有上传。
 
-**3. 接上模型，给它任务。**
+第一次用请看 **[上手指南](docs/zh/getting-started.md)**。
 
-```bash
-keelson init       # 一步步生成 .env：服务商、接口地址、模型、Key
-keelson doctor     # 逐项检查，哪里不对会告诉你怎么修
-keelson web        # 浏览器控制台；或者直接用 keelson 进入终端界面
-```
+## 实测
 
-任何 OpenAI 兼容或 Anthropic 兼容的服务商都可以。第一次用请看 **[上手指南](docs/zh/getting-started.md)**——从“Agent 运行时是什么”讲起，二十分钟跟完。
+实验在 [`bench/FEATURES.md`](bench/FEATURES.md)：每个保障**开和关各跑一遍**，其余条件相同，用 DeepSeek，每组重复 3 次。表格由脚本从原始结果文件生成，没有手填的数字；没有效果的实验也照写。
 
-## 控制台
+一句话总结：**撤销和危险命令**这两项由机制本身决定，差别明确：shell 改动一次 `/undo` 全部逐字节还原；26 条毁灭性命令 24 条直接拒绝。**完工验证、范围护栏、任务账本**这三项，DeepSeek 在这些小任务上自己就做得很好，开和关**没有显出差别**，报告照实写了。实验还抓到了 Keelson 自己的漏洞：`dd of=/dev/sda`、`mkfs` 原来在默认模式下直接放行，现在已修。全部实验花费 $0.27。
+
+自用记录在 [`docs/dogfooding.md`](docs/dogfooding.md)：用 Keelson 做这个仓库自己的真实活儿，记下成败、花费、缓存命中、拦截和撤销。
+
+<details>
+<summary><b>更早的评测</b></summary>
+
+| | 做了什么 | 结果 |
+|---|---|---|
+| **[ToolHop 评测](bench/REPORT.md)** | 多跳工具调用；n=60，三组对照，配对 bootstrap 95% 置信区间 | 抓到运行时自己的一个缺陷：一段提示词让小模型陷入工具调用死循环。[定位根因](bench/spiral-diagnosis.md)并修复后：准确率 72.8% → 79.4%，撞轮次上限 15/180 → 0/180 |
+| **[真实 issue 实战](docs/zh/case-study.md)** | 5 个开源项目里已修复的真实 issue，只给 issue 原文，用项目自己的测试判分，三轮 | 修复 3/5 → 3/5 → 4/5（样本太小，不当成功率看）；查出并修掉运行时自己的 5 个缺陷 |
+| **[沙箱编码评测](bench/REPORT.md#sandbox-coding-benchmark--round-3)** | 14 个编码任务（含两道诱导“改测试”的陷阱题），两档模型 | 56 次运行中篡改测试 0 次、越界修改 0 次 |
+| **[自进化实弹演示](docs/self-evolution-demo.md)** | 用真实模型把两条技能血缘跑过完整流水线 | 一次采纳、一次隔离，各有一张审计卡片 |
+</details>
+
+## 控制台与桌面版
 
 | | |
 |---|---|
-| [![概览页](docs/assets/screenshots/home-zh.png)](docs/assets/screenshots/home-zh.png) | [![权限确认](docs/assets/screenshots/gate-zh.png)](docs/assets/screenshots/gate-zh.png) |
-| **概览**：这是什么、一轮对话怎么跑、当前安装状态 | **权限门**：模型想删文件，运行时停下来等你决定 |
-| [![运行中的会话](docs/assets/screenshots/console-zh.png)](docs/assets/screenshots/console-zh.png) | [![评测页](docs/assets/screenshots/bench-zh.png)](docs/assets/screenshots/bench-zh.png) |
-| **会话**：工具卡片、命令实时输出、右侧检查器与耗时瀑布图 | **评测**：数字由提交在仓库里的原始结果重新计算 |
-| [![实战案例页](docs/assets/screenshots/cases-zh.png)](docs/assets/screenshots/cases-zh.png) | [![技能进化页](docs/assets/screenshots/skills-zh.png)](docs/assets/screenshots/skills-zh.png) |
-| **实战案例**：真实 issue 的三轮结果，每次运行都能回放，改动可与上游修复对比 | **技能进化**：每次采纳或隔离的审计卡片 |
+| [![运行中的会话](docs/assets/screenshots/console-zh.png)](docs/assets/screenshots/console-zh.png) | [![权限确认](docs/assets/screenshots/gate-zh.png)](docs/assets/screenshots/gate-zh.png) |
+| **会话**：工具卡片、命令实时输出、验证徽章；审阅页看每个文件的 diff，可以整轮撤销或单个文件放回 | **权限门**：撤销不了的操作才问你，并写明为什么撤销不了 |
 
-多个会话可以并行，结束的会话能重新打开继续；长命令的输出实时滚动，点“停止”会杀掉整棵进程树。原生 HTML/CSS/JS，没有构建步骤，不依赖 CDN。实现细节见 [Web 控制台](docs/zh/web-console.md)。
+桌面版是同一个控制台装在自己的窗口里（pywebview + WebView2），每个项目一个后台服务，关窗时一并退出，全程不弹黑框。实现见 [Web 控制台](docs/zh/web-console.md)。
 
 ## 架构
 
 ![系统总览](docs/assets/diagrams/overview.zh.svg)
 
-运行时自己不打印任何东西，只发布事件；终端、浏览器和轨迹录制器订阅的是同一条事件流。所以录下来的运行可以用和实时运行完全相同的界面代码回放——在线演示页就是这么来的，背后没有服务器。
-
-<details>
-<summary><b>一轮对话的完整路径</b></summary>
-
-![一轮对话的完整路径](docs/assets/diagrams/turn.zh.svg)
-</details>
-
-<details>
-<summary><b>技能是怎么演化的</b></summary>
-
-![技能是怎么演化的](docs/assets/diagrams/evolution.zh.svg)
-</details>
-
-<details>
-<summary><b>事件流与三个消费者</b></summary>
-
-![一条事件流，三个消费者](docs/assets/diagrams/events.zh.svg)
-</details>
-
-<details>
-<summary><b>上下文管理的三层</b></summary>
-
-![上下文管理三层](docs/assets/diagrams/context.zh.svg)
-</details>
-
-这些图由 [`scripts/build_diagrams.py`](scripts/build_diagrams.py) 生成，CI 会检查它们与脚本是否一致。完整说明见 [架构文档](docs/zh/architecture.md)。
-
-## 证据，而不是设计意图
-
-“你怎么知道它真的有用？”——下面每一条的数字和原始产物都提交在仓库里，可以复算。
-
-| | 做了什么 | 结果 |
-|---|---|---|
-| **[ToolHop 评测](bench/REPORT.md)** | 多跳工具调用；n=60，三组对照，配对 bootstrap 95% 置信区间 | 评测抓到了运行时自己的一个真实缺陷：一段提示词让小模型陷入工具调用死循环。[定位根因](bench/spiral-diagnosis.md)、修复、重测：准确率 72.8% → 79.4%，撞轮次上限 15/180 → 0/180，差值的置信区间不含 0 |
-| **[真实 issue 实战](docs/zh/case-study.md)** | 5 个开源项目里已被维护者修复的真实 issue：只给 issue 原文，用项目自己的测试判分，跑了三轮 | 修复 3/5 → 3/5 → 4/5——样本太小，不当成功率看。真正的产出是查出了运行时自己的 5 个缺陷并逐个修掉，例如 Windows 上多行 shell 命令只执行第一行（前两轮 40 条无一完整执行）、循环保护能被模型自己重置。另有 4 个没修的问题连同原因一并写明，15 次运行全部可回放 |
-| **[沙箱编码评测](bench/REPORT.md#sandbox-coding-benchmark--round-3)** | 14 个编码任务（含两道诱导“改测试”的陷阱题），两档模型 | 56 次运行中篡改测试 0 次、越界修改 0 次；抓到一次“没验证就交付”的失败，并重跑确认不是偶然 |
-| **[自进化实弹演示](docs/self-evolution-demo.md)** | 用真实模型把两条技能血缘跑过完整流水线 | 一次**采纳**、一次**隔离**（被门禁拦下，线上文件回滚），各有一张审计卡片 |
-| **运行时开销** | 循环每一步都带计时（`python scripts/perf_report.py`） | 18 次录制的运行里，权限检查 + 技能检索合计 56 毫秒，占总耗时 0.003%；77% 的时间在等模型，20% 在执行工具。说明的是数量级 |
-| **端到端实测** | [`scripts/smoke_live.py`](scripts/smoke_live.py) 用真实模型验证三件事 | 60 秒的命令在约 3 秒时被停止且子进程消失；两个并行会话的事件互不串台；服务重启后恢复会话，模型仍记得之前的内容 |
-
-289 个测试，全部不需要 API Key。已知的问题和取舍——包括发现了但还没修的——都写在 [设计取舍](docs/design-tradeoffs.md) 里。
+运行时自己不打印任何东西，只发布事件；终端、浏览器和轨迹录制器订阅同一条事件流，所以录下来的运行能用同一套界面原样回放。底层没有用 Agent 框架：循环、权限、检查点、验证、上下文折叠都是自己实现的。详见 [架构文档](docs/zh/architecture.md)。
 
 ## 文档
 
 | 我想…… | 中文 | English |
 |---|---|---|
 | 从零开始用起来 | [上手指南](docs/zh/getting-started.md) | [Getting started](docs/getting-started.md) |
-| 查某个功能怎么用、全部命令 | [功能手册](docs/zh/features.md) | [Feature guide](docs/features.md) |
+| 查某个功能怎么用、全部命令和环境变量 | [功能手册](docs/zh/features.md) | [Feature guide](docs/features.md) |
+| 知道它能防什么、不能防什么 | [安全与撤销](docs/zh/safety.md) | [Safety and undo](docs/safety.md) |
+| 看五个保障的实测 | | [bench/FEATURES.md](bench/FEATURES.md) |
+| 看自用记录 | [docs/dogfooding.md](docs/dogfooding.md) | |
 | 了解代码怎么组织 | [架构](docs/zh/architecture.md) | [Architecture](docs/architecture.md) |
-| 了解事件流、多会话、回放的实现 | [Web 控制台](docs/zh/web-console.md) | [Web console](docs/web-console.md) |
-| 了解技能自进化的细节 | [技能进化详解](docs/zh/skill-evolution.md) · [在线评测](docs/zh/online-skill-eval.md) | [Self-evolution demo](docs/self-evolution-demo.md) |
-| 看它在真实项目上表现如何、暴露了什么 | [实战案例](docs/zh/case-study.md) | [Case study](docs/case-study.md) |
-| 看做了哪些妥协、还有哪些已知问题 | | [Design trade-offs](docs/design-tradeoffs.md) |
-| 看评测的完整数字 | | [bench/REPORT.md](bench/REPORT.md) |
+| 看做了哪些妥协 | | [Design trade-offs](docs/design-tradeoffs.md) |
 | 看每个版本改了什么 | | [CHANGELOG.md](CHANGELOG.md) |
 
 ## 开发
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate             # Windows: .venv\Scripts\activate
-pip install -e ".[dev,bench,web]"
+.venv\Scripts\activate                # macOS / Linux: source .venv/bin/activate
+pip install -e ".[dev,bench,web,desktop]"
 
-pytest -q                             # 255 passed，不需要 API Key
-ruff check .
-python scripts/build_diagrams.py      # 重新生成架构图
-python scripts/record_demo.py --all   # 重新录制演示轨迹（需要 API Key）
-python scripts/build_pages.py         # 导出静态演示站到 ./site
-docker compose up                     # 或者用 Docker：控制台在 http://localhost:8765
+pytest -q                             # 626 个测试，不需要 API Key
+ruff check keelson tests scripts
+python -m keelson.bench.features --validate   # 实验题目自检，不需要 API Key
+python scripts/build_desktop.py       # 打包 Windows 桌面版
 ```
 
-<details>
-<summary><b>目录结构</b></summary>
-
-```text
-keelson/
-├── keelson/                 Python 包
-│   ├── agent.py            循环：模型调用、工具调度、上下文压缩、循环保护
-│   ├── tools.py            内置工具、权限门、异步 shell
-│   ├── events.py           事件总线、耗时 span、按会话绑定
-│   ├── ui.py               终端渲染器
-│   ├── doctor.py           keelson doctor / keelson init
-│   ├── web/                Web 控制台：服务端、会话管理、轨迹录制与脱敏、静态前端
-│   ├── skills.py · online_skill_evolution.py · skill_gate.py · skill_history.py · evolution_card.py
-│   ├── memory.py · session.py · session_memory.py · mcp_client.py · subagent.py · prompt.py · paths.py
-│   └── bench/              ToolHop 与沙箱评测的运行器和指标
-├── bench/                  任务、数据划分、REPORT.md、提交入库的运行产物
-├── demo/traces/            控制台回放用的录制轨迹
-├── docs/                   文档（中英）与生成的架构图
-├── scripts/                启动脚本、演示录制、架构图生成、静态站构建、实测脚本
-├── tests/                  255 个测试
-├── start.bat · start.sh    一键启动
-└── Dockerfile · docker-compose.yml
-```
-</details>
-
-参与贡献请看 [CONTRIBUTING.md](CONTRIBUTING.md)；安全问题请看 [SECURITY.md](SECURITY.md)。
+先做 Windows：平台相关的部分（shell、回收站、无窗口子进程、打包）都在 `keelson/platforms/` 里，Linux 和 macOS 以后加后端即可；CI 同时跑 Windows 和 Ubuntu。参与贡献请看 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题请看 [SECURITY.md](SECURITY.md)。
 
 ## 致谢
 
-工具集、权限模式，以及 `SKILL.md` 和 `.mcp.json` 的约定沿用了 Claude Code 的设计；本项目通过用 Python 重新实现这套运行时来研究它。多跳评测使用 [ToolHop](https://huggingface.co/datasets/bytedance-research/ToolHop) 数据集。界面字体为 [Inter](https://rsms.me/inter/) 与 [JetBrains Mono](https://www.jetbrains.com/lp/mono/)（SIL OFL）。
+工具集、权限模式，以及 `SKILL.md` 和 `.mcp.json` 的约定沿用了 Claude Code 的设计。多跳评测使用 [ToolHop](https://huggingface.co/datasets/bytedance-research/ToolHop) 数据集。界面字体为 [Inter](https://rsms.me/inter/) 与 [JetBrains Mono](https://www.jetbrains.com/lp/mono/)（SIL OFL）。
 
 > Keelson（内龙骨）是把船的龙骨和肋骨锁在一起的那根梁。模型是帆；Keelson 负责把帆上的力传到整条船身。
 
