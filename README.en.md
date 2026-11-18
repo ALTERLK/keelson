@@ -62,8 +62,8 @@ keelson desktop     # its own window: a first-run wizard picks the project, find
   every command, `@file` adds a file to the conversation.
 - One-off: `keelson -p "fix the bug in calc.py"`; `--output-format json` includes the verdict and the cost.
 - Without a key: `keelson web --replay` replays recorded runs, or open the [live demo](https://alterlk.github.io/keelson/?lang=en).
-- A Windows build (double-click `Keelson.exe`, no Python needed) can be made with `python scripts/build_desktop.py`;
-  no release package has been published yet.
+- A Windows build (double-click `Keelson.exe`, no Python needed): download the zip from
+  [Releases](https://github.com/ALTERLK/keelson/releases/latest), unzip, double-click; or build it with `python scripts/build_desktop.py`.
 
 New to all this? Start with **[Getting started](docs/getting-started.md)**.
 

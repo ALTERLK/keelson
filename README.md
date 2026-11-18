@@ -52,7 +52,7 @@ keelson desktop     # 桌面窗口：首次运行有向导，选项目、识别�
 - 终端里：Enter 发送、Alt+Enter 换行、Ctrl+C 打断、Shift+Tab 切换模式、`/help` 看全部命令、`@文件` 把文件加进对话。
 - 一次性调用：`keelson -p "修一下 calc.py 的 bug"`；`--output-format json` 带上验证结果和花费。
 - 没有 Key 也能先看：`keelson web --replay` 回放录制好的运行，或者直接打开[在线演示](https://alterlk.github.io/keelson/?lang=zh)。
-- Windows 打包版（双击 `Keelson.exe`，不用装 Python）可以用 `python scripts/build_desktop.py` 自己打包；发布包还没有上传。
+- Windows 打包版（双击 `Keelson.exe`，不用装 Python）：从 [Releases](https://github.com/ALTERLK/keelson/releases/latest) 下载 zip，解压后双击；也可以用 `python scripts/build_desktop.py` 自己打包。
 
 第一次用请看 **[上手指南](docs/zh/getting-started.md)**。
 

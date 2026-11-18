@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "keelson"
-version = "0.3.0"
+version = "0.4.0"
 description = "A self-evolving agent harness: permission-gated tool execution, context folding, long-term memory, and skills that only change when a non-inferiority gate lets them."
 readme = "README.md"
 requires-python = ">=3.11"

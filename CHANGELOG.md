@@ -3,7 +3,7 @@
 Notable changes, newest first. Benchmark figures quoted here are reproduced in
 [`bench/REPORT.md`](bench/REPORT.md) from the committed run artifacts.
 
-## Unreleased — 0.4.0 (in progress)
+## 0.4.0 — 2026-11
 
 ### Added
 - **Feature experiments** (phase 7). `python -m keelson.bench.features` runs
